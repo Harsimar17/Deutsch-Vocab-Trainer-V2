@@ -1,0 +1,1081 @@
+[
+  {
+    "key": "pos2",
+    "name": "Verb an Position 2",
+    "rule": "In a normal statement the conjugated verb is always the SECOND box. Whatever you put first — subject, time, an object — the verb comes right after it, and the subject slides in behind the verb.",
+    "skeleton": [
+      {
+        "text": "etwas",
+        "role": "front"
+      },
+      {
+        "text": "Verb",
+        "role": "v2"
+      },
+      {
+        "text": "… der Rest …",
+        "role": "mid"
+      }
+    ],
+    "examples": [
+      {
+        "en": "I drink a strong coffee in the morning.",
+        "chunks": [
+          {
+            "text": "Ich",
+            "role": "front",
+            "cap": "Subjekt = ①"
+          },
+          {
+            "text": "trinke",
+            "role": "v2"
+          },
+          {
+            "text": "am Morgen",
+            "role": "time"
+          },
+          {
+            "text": "einen starken Kaffee",
+            "role": "obj"
+          }
+        ]
+      },
+      {
+        "en": "In the morning I drink a strong coffee.",
+        "chunks": [
+          {
+            "text": "Am Morgen",
+            "role": "front",
+            "cap": "Zeit = ①"
+          },
+          {
+            "text": "trinke",
+            "role": "v2"
+          },
+          {
+            "text": "ich",
+            "role": "subj"
+          },
+          {
+            "text": "einen starken Kaffee",
+            "role": "obj"
+          }
+        ]
+      },
+      {
+        "en": "My sister has been living in Cologne for three years.",
+        "chunks": [
+          {
+            "text": "Meine Schwester",
+            "role": "front",
+            "cap": "Subjekt = ①"
+          },
+          {
+            "text": "wohnt",
+            "role": "v2"
+          },
+          {
+            "text": "seit drei Jahren",
+            "role": "time"
+          },
+          {
+            "text": "in Köln",
+            "role": "place"
+          }
+        ]
+      },
+      {
+        "en": "Next year we're driving to Italy together.",
+        "chunks": [
+          {
+            "text": "Nächstes Jahr",
+            "role": "front",
+            "cap": "Zeit = ①"
+          },
+          {
+            "text": "fahren",
+            "role": "v2"
+          },
+          {
+            "text": "wir",
+            "role": "subj"
+          },
+          {
+            "text": "zusammen",
+            "role": "manner"
+          },
+          {
+            "text": "nach Italien",
+            "role": "place"
+          }
+        ]
+      },
+      {
+        "en": "This film I found really exciting.",
+        "chunks": [
+          {
+            "text": "Diesen Film",
+            "role": "front",
+            "cap": "Objekt = ①"
+          },
+          {
+            "text": "fand",
+            "role": "v2"
+          },
+          {
+            "text": "ich",
+            "role": "subj"
+          },
+          {
+            "text": "wirklich spannend",
+            "role": "manner"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "key": "perfekt",
+    "name": "Perfekt — die Satzklammer",
+    "rule": "Perfekt uses two verbs. 'haben' or 'sein' sits in position 2; the past participle (ge-…-t / ge-…-en) is thrown to the very end. Everything else is trapped inside that bracket.",
+    "skeleton": [
+      {
+        "text": "Subjekt",
+        "role": "subj"
+      },
+      {
+        "text": "haben / sein",
+        "role": "v2"
+      },
+      {
+        "text": "… Mittelfeld …",
+        "role": "mid"
+      },
+      {
+        "text": "Partizip II",
+        "role": "end",
+        "cap": "ge-…-t"
+      }
+    ],
+    "examples": [
+      {
+        "en": "On Saturday we went for a long walk.",
+        "chunks": [
+          {
+            "text": "Am Samstag",
+            "role": "front",
+            "cap": "Zeit"
+          },
+          {
+            "text": "haben",
+            "role": "v2",
+            "cap": "haben ②"
+          },
+          {
+            "text": "wir",
+            "role": "subj"
+          },
+          {
+            "text": "einen langen Spaziergang",
+            "role": "obj"
+          },
+          {
+            "text": "gemacht",
+            "role": "end",
+            "cap": "Partizip"
+          }
+        ]
+      },
+      {
+        "en": "Yesterday I only got home after midnight.",
+        "chunks": [
+          {
+            "text": "Gestern",
+            "role": "front",
+            "cap": "Zeit"
+          },
+          {
+            "text": "bin",
+            "role": "v2",
+            "cap": "sein ②"
+          },
+          {
+            "text": "ich",
+            "role": "subj"
+          },
+          {
+            "text": "erst nach Mitternacht",
+            "role": "time"
+          },
+          {
+            "text": "nach Hause",
+            "role": "place"
+          },
+          {
+            "text": "gekommen",
+            "role": "end",
+            "cap": "Partizip"
+          }
+        ]
+      },
+      {
+        "en": "Have you already talked to your boss?",
+        "chunks": [
+          {
+            "text": "Hast",
+            "role": "v2",
+            "cap": "haben ①"
+          },
+          {
+            "text": "du",
+            "role": "subj"
+          },
+          {
+            "text": "schon",
+            "role": "time"
+          },
+          {
+            "text": "mit deinem Chef",
+            "role": "obj",
+            "cap": "mit + Dativ"
+          },
+          {
+            "text": "gesprochen",
+            "role": "end",
+            "cap": "Partizip"
+          }
+        ]
+      },
+      {
+        "en": "I left my umbrella on the bus.",
+        "chunks": [
+          {
+            "text": "Ich",
+            "role": "front"
+          },
+          {
+            "text": "habe",
+            "role": "v2",
+            "cap": "haben ②"
+          },
+          {
+            "text": "meinen Regenschirm",
+            "role": "obj"
+          },
+          {
+            "text": "im Bus",
+            "role": "place"
+          },
+          {
+            "text": "vergessen",
+            "role": "end",
+            "cap": "Partizip"
+          }
+        ]
+      },
+      {
+        "en": "My parents met at university.",
+        "chunks": [
+          {
+            "text": "Meine Eltern",
+            "role": "front",
+            "cap": "Subjekt"
+          },
+          {
+            "text": "haben",
+            "role": "v2",
+            "cap": "haben ②"
+          },
+          {
+            "text": "sich",
+            "role": "obj",
+            "cap": "reflexiv"
+          },
+          {
+            "text": "an der Universität",
+            "role": "place"
+          },
+          {
+            "text": "kennengelernt",
+            "role": "end",
+            "cap": "Partizip"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "key": "modal",
+    "name": "Modalverb — die Satzklammer",
+    "rule": "The modal verb (möchten, müssen, können, dürfen …) takes position 2. The real verb goes to the end as a plain infinitive — a separable verb even stays whole there.",
+    "skeleton": [
+      {
+        "text": "Subjekt",
+        "role": "subj"
+      },
+      {
+        "text": "Modalverb",
+        "role": "v2"
+      },
+      {
+        "text": "… Mittelfeld …",
+        "role": "mid"
+      },
+      {
+        "text": "Infinitiv",
+        "role": "end"
+      }
+    ],
+    "examples": [
+      {
+        "en": "On the weekend I want to go to the cinema.",
+        "chunks": [
+          {
+            "text": "Am Wochenende",
+            "role": "front",
+            "cap": "Zeit"
+          },
+          {
+            "text": "möchte",
+            "role": "v2",
+            "cap": "Modal ②"
+          },
+          {
+            "text": "ich",
+            "role": "subj"
+          },
+          {
+            "text": "ins Kino",
+            "role": "place"
+          },
+          {
+            "text": "gehen",
+            "role": "end",
+            "cap": "Infinitiv"
+          }
+        ]
+      },
+      {
+        "en": "You have to finish this task by tomorrow.",
+        "chunks": [
+          {
+            "text": "Du",
+            "role": "front"
+          },
+          {
+            "text": "musst",
+            "role": "v2",
+            "cap": "Modal ②"
+          },
+          {
+            "text": "diese Aufgabe",
+            "role": "obj"
+          },
+          {
+            "text": "bis morgen",
+            "role": "time"
+          },
+          {
+            "text": "fertig machen",
+            "role": "end",
+            "cap": "Infinitiv"
+          }
+        ]
+      },
+      {
+        "en": "Can you please help me with the suitcase?",
+        "chunks": [
+          {
+            "text": "Kannst",
+            "role": "v2",
+            "cap": "Modal ①"
+          },
+          {
+            "text": "du",
+            "role": "subj"
+          },
+          {
+            "text": "mir",
+            "role": "obj",
+            "cap": "Dativ"
+          },
+          {
+            "text": "bitte",
+            "role": "manner"
+          },
+          {
+            "text": "mit dem Koffer",
+            "role": "obj",
+            "cap": "mit + Dativ"
+          },
+          {
+            "text": "helfen",
+            "role": "end",
+            "cap": "Infinitiv"
+          }
+        ]
+      },
+      {
+        "en": "Children aren't allowed to play here without their parents.",
+        "chunks": [
+          {
+            "text": "Hier",
+            "role": "front",
+            "cap": "Ort"
+          },
+          {
+            "text": "dürfen",
+            "role": "v2",
+            "cap": "Modal ②"
+          },
+          {
+            "text": "Kinder",
+            "role": "subj"
+          },
+          {
+            "text": "nicht ohne ihre Eltern",
+            "role": "manner"
+          },
+          {
+            "text": "spielen",
+            "role": "end",
+            "cap": "Infinitiv"
+          }
+        ]
+      },
+      {
+        "en": "I wanted to call you yesterday.",
+        "chunks": [
+          {
+            "text": "Ich",
+            "role": "front"
+          },
+          {
+            "text": "wollte",
+            "role": "v2",
+            "cap": "Modal ②"
+          },
+          {
+            "text": "dich",
+            "role": "obj"
+          },
+          {
+            "text": "gestern",
+            "role": "time"
+          },
+          {
+            "text": "anrufen",
+            "role": "end",
+            "cap": "Infinitiv"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "key": "trennbar",
+    "name": "Trennbare Verben",
+    "rule": "In a main clause the separable prefix (auf-, an-, ab-, mit-, vor- …) snaps off the front of the verb and moves to the very end.",
+    "skeleton": [
+      {
+        "text": "Subjekt",
+        "role": "subj"
+      },
+      {
+        "text": "Verb-Stamm",
+        "role": "v2"
+      },
+      {
+        "text": "… Mittelfeld …",
+        "role": "mid"
+      },
+      {
+        "text": "Präfix",
+        "role": "end"
+      }
+    ],
+    "examples": [
+      {
+        "en": "On weekdays I get up at seven o'clock.",
+        "chunks": [
+          {
+            "text": "An Werktagen",
+            "role": "front",
+            "cap": "Zeit"
+          },
+          {
+            "text": "stehe",
+            "role": "v2",
+            "cap": "steh- ②"
+          },
+          {
+            "text": "ich",
+            "role": "subj"
+          },
+          {
+            "text": "um sieben Uhr",
+            "role": "time"
+          },
+          {
+            "text": "auf",
+            "role": "end",
+            "cap": "auf- · aufstehen"
+          }
+        ]
+      },
+      {
+        "en": "The train to Hamburg leaves in ten minutes.",
+        "chunks": [
+          {
+            "text": "Der Zug nach Hamburg",
+            "role": "front",
+            "cap": "Subjekt"
+          },
+          {
+            "text": "fährt",
+            "role": "v2",
+            "cap": "fähr- ②"
+          },
+          {
+            "text": "in zehn Minuten",
+            "role": "time"
+          },
+          {
+            "text": "ab",
+            "role": "end",
+            "cap": "ab- · abfahren"
+          }
+        ]
+      },
+      {
+        "en": "Please call me this evening.",
+        "chunks": [
+          {
+            "text": "Ruf",
+            "role": "v2",
+            "cap": "ruf- ①"
+          },
+          {
+            "text": "mich",
+            "role": "obj"
+          },
+          {
+            "text": "heute Abend",
+            "role": "time"
+          },
+          {
+            "text": "bitte",
+            "role": "manner"
+          },
+          {
+            "text": "an",
+            "role": "end",
+            "cap": "an- · anrufen"
+          }
+        ]
+      },
+      {
+        "en": "We're preparing the food for the guests.",
+        "chunks": [
+          {
+            "text": "Wir",
+            "role": "front"
+          },
+          {
+            "text": "bereiten",
+            "role": "v2",
+            "cap": "bereit- ②"
+          },
+          {
+            "text": "das Essen",
+            "role": "obj"
+          },
+          {
+            "text": "für die Gäste",
+            "role": "obj"
+          },
+          {
+            "text": "vor",
+            "role": "end",
+            "cap": "vor- · vorbereiten"
+          }
+        ]
+      },
+      {
+        "en": "Please close the window.",
+        "chunks": [
+          {
+            "text": "Mach",
+            "role": "v2",
+            "cap": "mach- ①"
+          },
+          {
+            "text": "bitte",
+            "role": "manner"
+          },
+          {
+            "text": "das Fenster",
+            "role": "obj"
+          },
+          {
+            "text": "zu",
+            "role": "end",
+            "cap": "zu- · zumachen"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "key": "weil",
+    "name": "Nebensatz: weil / dass / obwohl",
+    "rule": "A word like weil, dass or obwohl opens a subordinate clause and kicks the conjugated verb all the way to the END. With two verbs, BOTH go to the end — participle first, then the finite one.",
+    "skeleton": [
+      {
+        "text": "Hauptsatz",
+        "role": "mid",
+        "cap": "der 1. Satz"
+      },
+      {
+        "text": "weil / dass",
+        "role": "konj"
+      },
+      {
+        "text": "Subjekt … Mittelfeld",
+        "role": "mid"
+      },
+      {
+        "text": "VERB",
+        "role": "end",
+        "cap": "ganz hinten"
+      }
+    ],
+    "examples": [
+      {
+        "en": "I'm staying home today because I don't feel well.",
+        "chunks": [
+          {
+            "text": "Ich bleibe heute zu Hause",
+            "role": "mid",
+            "cap": "Hauptsatz"
+          },
+          {
+            "text": "weil",
+            "role": "konj"
+          },
+          {
+            "text": "ich",
+            "role": "subj"
+          },
+          {
+            "text": "mich nicht gut",
+            "role": "manner"
+          },
+          {
+            "text": "fühle",
+            "role": "end",
+            "cap": "Verb → Ende"
+          }
+        ]
+      },
+      {
+        "en": "We had to take a taxi because the last bus was already gone.",
+        "chunks": [
+          {
+            "text": "Wir mussten ein Taxi nehmen",
+            "role": "mid",
+            "cap": "Hauptsatz"
+          },
+          {
+            "text": "weil",
+            "role": "konj"
+          },
+          {
+            "text": "der letzte Bus",
+            "role": "subj"
+          },
+          {
+            "text": "schon weg",
+            "role": "manner"
+          },
+          {
+            "text": "war",
+            "role": "end",
+            "cap": "Verb → Ende"
+          }
+        ]
+      },
+      {
+        "en": "My teacher said that we're writing a test tomorrow.",
+        "chunks": [
+          {
+            "text": "Meine Lehrerin hat gesagt",
+            "role": "mid",
+            "cap": "Hauptsatz"
+          },
+          {
+            "text": "dass",
+            "role": "konj"
+          },
+          {
+            "text": "wir",
+            "role": "subj"
+          },
+          {
+            "text": "morgen einen Test",
+            "role": "obj"
+          },
+          {
+            "text": "schreiben",
+            "role": "end",
+            "cap": "Verb → Ende"
+          }
+        ]
+      },
+      {
+        "en": "I'm sorry that I forgot the appointment.",
+        "chunks": [
+          {
+            "text": "Es tut mir leid",
+            "role": "mid",
+            "cap": "Hauptsatz"
+          },
+          {
+            "text": "dass",
+            "role": "konj"
+          },
+          {
+            "text": "ich",
+            "role": "subj"
+          },
+          {
+            "text": "den Termin",
+            "role": "obj"
+          },
+          {
+            "text": "vergessen habe",
+            "role": "end",
+            "cap": "beide Verben → Ende"
+          }
+        ]
+      },
+      {
+        "en": "Although he was very tired, he kept working.",
+        "chunks": [
+          {
+            "text": "Obwohl",
+            "role": "konj"
+          },
+          {
+            "text": "er",
+            "role": "subj"
+          },
+          {
+            "text": "sehr müde",
+            "role": "manner"
+          },
+          {
+            "text": "war",
+            "role": "end",
+            "cap": "Verb → Ende"
+          },
+          {
+            "text": "hat er weitergearbeitet",
+            "role": "mid",
+            "cap": "Hauptsatz"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "key": "neb-vorne",
+    "name": "Nebensatz zuerst (wenn / als / weil)",
+    "rule": "When the subordinate clause comes FIRST, the whole clause counts as position 1. So the main clause starts straight away with its verb: '…, VERB ich …'. Verb bumps into verb across the comma.",
+    "skeleton": [
+      {
+        "text": "Wenn … VERB",
+        "role": "konj",
+        "cap": "Nebensatz = ①"
+      },
+      {
+        "text": "VERB",
+        "role": "v2",
+        "cap": "Hauptsatz-Verb ②"
+      },
+      {
+        "text": "Subjekt …",
+        "role": "mid"
+      }
+    ],
+    "examples": [
+      {
+        "en": "If I have time, I visit my grandparents.",
+        "chunks": [
+          {
+            "text": "Wenn ich Zeit habe",
+            "role": "konj",
+            "cap": "Nebensatz = ①"
+          },
+          {
+            "text": "besuche",
+            "role": "v2",
+            "cap": "Verb ②"
+          },
+          {
+            "text": "ich",
+            "role": "subj"
+          },
+          {
+            "text": "meine Großeltern",
+            "role": "obj"
+          }
+        ]
+      },
+      {
+        "en": "If the weather stays nice, we drive to the sea.",
+        "chunks": [
+          {
+            "text": "Wenn das Wetter schön bleibt",
+            "role": "konj",
+            "cap": "Nebensatz = ①"
+          },
+          {
+            "text": "fahren",
+            "role": "v2",
+            "cap": "Verb ②"
+          },
+          {
+            "text": "wir",
+            "role": "subj"
+          },
+          {
+            "text": "ans Meer",
+            "role": "place"
+          }
+        ]
+      },
+      {
+        "en": "When I was a child, we lived by the lake.",
+        "chunks": [
+          {
+            "text": "Als ich ein Kind war",
+            "role": "konj",
+            "cap": "Nebensatz = ①"
+          },
+          {
+            "text": "haben",
+            "role": "v2",
+            "cap": "haben ②"
+          },
+          {
+            "text": "wir",
+            "role": "subj"
+          },
+          {
+            "text": "am See",
+            "role": "place"
+          },
+          {
+            "text": "gewohnt",
+            "role": "end",
+            "cap": "Partizip"
+          }
+        ]
+      },
+      {
+        "en": "Before I go to bed, I usually drink a tea.",
+        "chunks": [
+          {
+            "text": "Bevor ich ins Bett gehe",
+            "role": "konj",
+            "cap": "Nebensatz = ①"
+          },
+          {
+            "text": "trinke",
+            "role": "v2",
+            "cap": "Verb ②"
+          },
+          {
+            "text": "ich",
+            "role": "subj"
+          },
+          {
+            "text": "meistens einen Tee",
+            "role": "obj"
+          }
+        ]
+      },
+      {
+        "en": "Because the bus was delayed, I arrived too late.",
+        "chunks": [
+          {
+            "text": "Weil der Bus Verspätung hatte",
+            "role": "konj",
+            "cap": "Nebensatz = ①"
+          },
+          {
+            "text": "bin",
+            "role": "v2",
+            "cap": "sein ②"
+          },
+          {
+            "text": "ich",
+            "role": "subj"
+          },
+          {
+            "text": "zu spät",
+            "role": "manner"
+          },
+          {
+            "text": "gekommen",
+            "role": "end",
+            "cap": "Partizip"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "key": "umzu",
+    "name": "um … zu (Absicht / Zweck)",
+    "rule": "To say WHY someone does something: 'um' + … + 'zu' + infinitive at the end. The um-part has no subject of its own — it's the same person as the main clause.",
+    "skeleton": [
+      {
+        "text": "Hauptsatz",
+        "role": "mid",
+        "cap": "wer + tut was"
+      },
+      {
+        "text": "um",
+        "role": "konj"
+      },
+      {
+        "text": "… Objekt / Angabe …",
+        "role": "mid"
+      },
+      {
+        "text": "zu + Infinitiv",
+        "role": "end",
+        "cap": "der Zweck"
+      }
+    ],
+    "examples": [
+      {
+        "en": "I study vocabulary every evening in order to pass the exam.",
+        "chunks": [
+          {
+            "text": "Ich lerne jeden Abend Vokabeln",
+            "role": "mid",
+            "cap": "Hauptsatz"
+          },
+          {
+            "text": "um",
+            "role": "konj"
+          },
+          {
+            "text": "die Prüfung",
+            "role": "obj"
+          },
+          {
+            "text": "zu bestehen",
+            "role": "end",
+            "cap": "zu + Infinitiv"
+          }
+        ]
+      },
+      {
+        "en": "She drove into town to buy a present.",
+        "chunks": [
+          {
+            "text": "Sie ist in die Stadt gefahren",
+            "role": "mid",
+            "cap": "Hauptsatz"
+          },
+          {
+            "text": "um",
+            "role": "konj"
+          },
+          {
+            "text": "ein Geschenk",
+            "role": "obj"
+          },
+          {
+            "text": "zu kaufen",
+            "role": "end",
+            "cap": "zu + Infinitiv"
+          }
+        ]
+      },
+      {
+        "en": "In winter many families go to the mountains to ski.",
+        "chunks": [
+          {
+            "text": "Im Winter fahren viele Familien in die Berge",
+            "role": "mid",
+            "cap": "Hauptsatz"
+          },
+          {
+            "text": "um",
+            "role": "konj"
+          },
+          {
+            "text": "Ski",
+            "role": "obj"
+          },
+          {
+            "text": "zu fahren",
+            "role": "end",
+            "cap": "zu + Infinitiv"
+          }
+        ]
+      },
+      {
+        "en": "You need a lot of patience to learn a language.",
+        "chunks": [
+          {
+            "text": "Man braucht viel Geduld",
+            "role": "mid",
+            "cap": "Hauptsatz"
+          },
+          {
+            "text": "um",
+            "role": "konj"
+          },
+          {
+            "text": "eine Sprache",
+            "role": "obj"
+          },
+          {
+            "text": "zu lernen",
+            "role": "end",
+            "cap": "zu + Infinitiv"
+          }
+        ]
+      },
+      {
+        "en": "I get up early to be at the office on time.",
+        "chunks": [
+          {
+            "text": "Ich stehe früh auf",
+            "role": "mid",
+            "cap": "Hauptsatz"
+          },
+          {
+            "text": "um",
+            "role": "konj"
+          },
+          {
+            "text": "pünktlich im Büro",
+            "role": "place"
+          },
+          {
+            "text": "zu sein",
+            "role": "end",
+            "cap": "zu + Infinitiv"
+          }
+        ]
+      }
+    ]
+  }
+]
