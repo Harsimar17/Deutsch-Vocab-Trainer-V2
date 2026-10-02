@@ -124,6 +124,30 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   border: 3px solid var(--paper);
 }
 @keyframes tipIn { from { opacity: 0; } to { opacity: 1; } }
+/* Loader on the button that started a request: the label is covered by the
+   button's own background and a ring spins in the label's colour. */
+.btn-busy { color: transparent !important; pointer-events: none; cursor: progress; }
+.btn-busy::before {
+  content: ""; position: absolute; inset: 0; border-radius: inherit; background: inherit;
+}
+.btn-busy::after {
+  content: ""; position: absolute; top: 50%; left: 50%; width: 1.25em; height: 1.25em; margin: -0.625em 0 0 -0.625em;
+  box-sizing: border-box; border-radius: 50%; border: 2px solid var(--busy-color, currentColor); border-right-color: transparent;
+  animation: btnSpin .65s linear infinite;
+}
+@keyframes btnSpin { to { transform: rotate(360deg); } }
+/* Requests not started by a button (Enter key, opening a tab): a thin bar at the top. */
+#net-bar { position: fixed; top: 0; left: 0; right: 0; height: 3px; z-index: 100; overflow: hidden; pointer-events: none; opacity: 0; transition: opacity .2s ease; }
+#net-bar.on { opacity: 1; }
+#net-bar::before {
+  content: ""; position: absolute; top: 0; bottom: 0; width: 40%; border-radius: 3px;
+  background: linear-gradient(90deg, transparent, var(--accent), transparent); animation: netSlide 1s ease-in-out infinite;
+}
+@keyframes netSlide { from { left: -40%; } to { left: 100%; } }
+@media (prefers-reduced-motion: reduce) {
+  .btn-busy::after { animation-duration: 1.6s; }
+  #net-bar::before { animation-duration: 2.4s; }
+}
 @keyframes cardIn {
   from { opacity: 0; transform: translateY(8px); }
   to   { opacity: 1; transform: translateY(0); }
@@ -143,6 +167,7 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 </style>
 </head>
 <body>
+<div id="net-bar" aria-hidden="true"></div>
 <div id="root"></div>
 
 <script type="text/babel">
@@ -199,9 +224,67 @@ const session = (() => {
   };
 })();
 
+// ---------- LOADERS ----------
+// A request started while a button is being clicked shows a spinner on that
+// button (and blocks double clicks); any other request shows the thin bar at
+// the top. Either appears only if the request takes longer than LOADER_DELAY,
+// so fast responses don't flicker.
+const LOADER_DELAY = 120;
+let clickedButton = null;
+document.addEventListener("click", (e) => {
+  const b = e.target && e.target.closest ? e.target.closest("button") : null;
+  clickedButton = b;
+  setTimeout(() => { if (clickedButton === b) clickedButton = null; }, 0); // only for this click
+}, true);
+
+let barCount = 0;
+function setBar(delta) {
+  barCount = Math.max(0, barCount + delta);
+  const bar = document.getElementById("net-bar");
+  if (bar) bar.classList.toggle("on", barCount > 0);
+}
+function setButtonBusy(btn, delta) {
+  btn.__busy = Math.max(0, (btn.__busy || 0) + delta);
+  if (delta > 0 && btn.__busy === 1) {
+    const cs = getComputedStyle(btn);
+    btn.style.setProperty("--busy-color", cs.color);
+    if (cs.position === "static") { btn.style.position = "relative"; btn.__busyPos = true; }
+    btn.classList.add("btn-busy");
+    btn.setAttribute("aria-busy", "true");
+  } else if (btn.__busy === 0) {
+    btn.classList.remove("btn-busy");
+    btn.removeAttribute("aria-busy");
+    btn.style.removeProperty("--busy-color");
+    if (btn.__busyPos) { btn.style.position = ""; btn.__busyPos = false; }
+  }
+}
+// Call when a request starts; returns the function to call when it ends.
+function trackLoading(quiet) {
+  if (quiet) return () => {};
+  const btn = clickedButton;
+  let shownOn = null;
+  const timer = setTimeout(() => {
+    if (btn && btn.isConnected) { shownOn = btn; setButtonBusy(btn, +1); }
+    else { shownOn = "bar"; setBar(+1); }
+  }, LOADER_DELAY);
+  return () => {
+    clearTimeout(timer);
+    if (shownOn === "bar") setBar(-1);
+    else if (shownOn) setButtonBusy(shownOn, -1);
+  };
+}
+
 const api = (() => {
   let onError = null;
-  async function call(method, path, body, extraHeaders) {
+  async function call(method, path, body, extraHeaders, quiet) {
+    const done = trackLoading(quiet); // runs synchronously, while the click is still being handled
+    try {
+      return await send(method, path, body, extraHeaders);
+    } finally {
+      done();
+    }
+  }
+  async function send(method, path, body, extraHeaders) {
     if (!API_CONFIGURED) throw new Error("no backend configured (PROD_API_BASE is empty)");
     const headers = Object.assign({ "X-Time-Zone": TIME_ZONE }, extraHeaders);
     headers.Authorization = "Bearer " + (await session.token());
@@ -218,8 +301,8 @@ const api = (() => {
   }
   return {
     setErrorHandler(fn) { onError = fn; },
-    get: (path) => call("GET", path),
-    post: (path, body, headers) => call("POST", path, body === undefined ? {} : body, headers),
+    get: (path, opts) => call("GET", path, undefined, undefined, opts && opts.quiet),
+    post: (path, body, headers, opts) => call("POST", path, body === undefined ? {} : body, headers, opts && opts.quiet),
     report(e) { if (onError) onError((e && e.message) || String(e)); },
   };
 })();
@@ -373,7 +456,7 @@ function AiSentence({ card, apiKey }) {
   useEffect(() => {
     let cancelled = false;
     setState({ status: "loading" });
-    api.post("/api/sentences/generate", { de: card.de, en: card.en, cat: card.cat }, apiKey ? { "X-Gemini-Key": apiKey } : {})
+    api.post("/api/sentences/generate", { de: card.de, en: card.en, cat: card.cat }, apiKey ? { "X-Gemini-Key": apiKey } : {}, { quiet: true })
       .then((d) => { if (!cancelled) setState(d.needsKey ? { status: "idle" } : { status: "done", data: d }); })
       .catch((e) => { if (!cancelled) setState({ status: "error", message: e.message }); });
     return () => { cancelled = true; };
@@ -1041,7 +1124,7 @@ function PatternStudy({ onChange }) {
   useEffect(() => { api.get("/api/patterns").then(setPatterns).catch((e) => setError(e.message)); }, []);
   // Looking at a pattern counts toward today's goal (the backend counts each once a day).
   useEffect(() => {
-    if (patterns && patterns[pi]) api.post("/api/patterns/" + encodeURIComponent(patterns[pi].key) + "/seen").then(onChange).catch(api.report);
+    if (patterns && patterns[pi]) api.post("/api/patterns/" + encodeURIComponent(patterns[pi].key) + "/seen", undefined, undefined, { quiet: true }).then(onChange).catch(api.report);
   }, [patterns, pi]);
   if (error) return <DrillError message={error} />;
   if (!patterns) return <Loading />;
@@ -1817,7 +1900,7 @@ function App() {
   useEffect(() => { api.setErrorHandler((msg) => setSaveError(msg)); }, []);
 
   const refreshSummary = useCallback(() => {
-    return api.get("/api/summary?ai=" + (geminiKey ? "true" : "false")).then(setSummary).catch(api.report);
+    return api.get("/api/summary?ai=" + (geminiKey ? "true" : "false"), { quiet: true }).then(setSummary).catch(api.report);
   }, [geminiKey]);
 
   useEffect(() => {
