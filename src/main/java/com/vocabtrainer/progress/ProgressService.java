@@ -143,7 +143,7 @@ public class ProgressService {
     // ---- saved quiz rounds (their own subcollection, not cached) ----
 
     public List<Map<String, Object>> sessions(Ctx ctx) {
-        return repo.recentSessions(ctx.token(), 15);
+        return repo.recentSessions(ctx, 15);
     }
 
     public void addSession(Ctx ctx, long right, long total, List<String> cats) {
@@ -152,10 +152,10 @@ public class ProgressService {
         s.put("total", total);
         s.put("cats", cats);
         s.put("timestamp", System.currentTimeMillis());
-        repo.addSession(ctx.token(), s);
+        repo.addSession(ctx, s);
     }
 
     public void clearSessions(Ctx ctx) {
-        repo.clearSessions(ctx.token());
+        repo.clearSessions(ctx);
     }
 }

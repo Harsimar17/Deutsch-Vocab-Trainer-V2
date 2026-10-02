@@ -13,7 +13,7 @@
 <link rel="apple-touch-icon" href="/apple-touch-icon.png">
 <script>
   // Start with the system theme before first paint; the saved choice arrives
-  // with the rest of your progress from the backend (nothing is kept in the browser).
+  // with the rest of your progress from the backend (only the login token is kept in the browser).
   document.documentElement.setAttribute("data-theme",
     window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
 </script>
@@ -194,33 +194,50 @@ const TIME_ZONE = (() => {
   try { return Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC"; } catch (e) { return "UTC"; }
 })();
 
-// Anonymous Firebase session, issued by the backend and kept only in memory.
+// Login session: the backend's JWT. It is the one thing kept in the browser
+// (localStorage), so a reload stays logged in. Every API response carries a
+// renewed token (X-Auth-Token) — the session ends after 24 h without a request.
+// The token's own "exp" is checked before every call: an expired session goes
+// straight to the login page without asking the server.
 const session = (() => {
-  let current = null; // { idToken, refreshToken, expiresAt }
-  let pending = null;
-  const post = (path, body) =>
-    fetch(API_BASE + path, {
-      method: "POST",
-      headers: body ? { "Content-Type": "application/json" } : {},
-      body: body ? JSON.stringify(body) : undefined,
-    }).then((res) => {
-      if (!res.ok) throw new Error("sign-in failed: HTTP " + res.status);
-      return res.json();
-    });
-  const keep = (r) => {
-    current = { idToken: r.idToken, refreshToken: r.refreshToken, expiresAt: Date.now() + (r.expiresIn || 3600) * 1000 };
-    return current.idToken;
+  const KEY = "wortschatz.session";
+  let current = null; // { token, user: { uid, email } }
+  const save = () => {
+    try { if (current) localStorage.setItem(KEY, JSON.stringify(current)); else localStorage.removeItem(KEY); } catch (e) { /* storage blocked: memory only */ }
   };
+  // exp from the JWT payload (base64url JSON), in ms; 0 if unreadable
+  const expiresAt = (token) => {
+    try {
+      const p = JSON.parse(atob(token.split(".")[1].replace(/-/g, "+").replace(/_/g, "/")));
+      return typeof p.exp === "number" ? p.exp * 1000 : 0;
+    } catch (e) { return 0; }
+  };
+  // drops an expired session; true while the session is usable
+  const check = () => {
+    if (current && current.token && expiresAt(current.token) > Date.now()) return true;
+    if (current) { current = null; save(); }
+    return false;
+  };
+  try { current = JSON.parse(localStorage.getItem(KEY)) || null; } catch (e) { current = null; }
+  check(); // opening the app with an expired token → login page right away
   return {
-    signIn() { return post("/api/auth/anonymous").then(keep); },
-    token() {
-      if (!current) return Promise.reject(new Error("not signed in"));
-      if (Date.now() < current.expiresAt - 5 * 60 * 1000) return Promise.resolve(current.idToken);
-      if (!pending) {
-        pending = post("/api/auth/refresh", { refreshToken: current.refreshToken }).then(keep).finally(() => { pending = null; });
-      }
-      return pending;
+    user() { return check() ? current.user : null; },
+    token() { return check() ? current.token : null; },
+    async login(email, password) {
+      const res = await fetch(API_BASE + "/api/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, password }),
+      });
+      let body = null;
+      try { body = await res.json(); } catch (e) { /* non-JSON body */ }
+      if (!res.ok) throw new Error((body && body.message) || "login failed: HTTP " + res.status);
+      current = { token: body.token, user: body.user };
+      save();
+      return current.user;
     },
+    renew(token) { if (current && token) { current.token = token; save(); } },
+    logout() { current = null; save(); },
   };
 })();
 
@@ -276,6 +293,7 @@ function trackLoading(quiet) {
 
 const api = (() => {
   let onError = null;
+  let onLoggedOut = null;
   async function call(method, path, body, extraHeaders, quiet) {
     const done = trackLoading(quiet); // runs synchronously, while the click is still being handled
     try {
@@ -287,9 +305,21 @@ const api = (() => {
   async function send(method, path, body, extraHeaders) {
     if (!API_CONFIGURED) throw new Error("no backend configured (PROD_API_BASE is empty)");
     const headers = Object.assign({ "X-Time-Zone": TIME_ZONE }, extraHeaders);
-    headers.Authorization = "Bearer " + (await session.token());
+    const token = session.token(); // null once expired — checked before anything is sent
+    if (!token) {
+      if (onLoggedOut) onLoggedOut();
+      const err = new Error("session expired — please log in again");
+      err.status = 401;
+      throw err;
+    }
+    headers.Authorization = "Bearer " + token;
     if (body !== undefined) headers["Content-Type"] = "application/json";
     const res = await fetch(API_BASE + path, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) });
+    session.renew(res.headers.get("X-Auth-Token"));
+    if (res.status === 401) {
+      session.logout();
+      if (onLoggedOut) onLoggedOut();
+    }
     if (!res.ok) {
       let msg = "";
       try { msg = (await res.json()).message || ""; } catch (e) { /* non-JSON body */ }
@@ -301,6 +331,7 @@ const api = (() => {
   }
   return {
     setErrorHandler(fn) { onError = fn; },
+    setLoggedOutHandler(fn) { onLoggedOut = fn; },
     get: (path, opts) => call("GET", path, undefined, undefined, opts && opts.quiet),
     post: (path, body, headers, opts) => call("POST", path, body === undefined ? {} : body, headers, opts && opts.quiet),
     report(e) { if (onError) onError((e && e.message) || String(e)); },
@@ -1844,7 +1875,42 @@ function TabBar({ mode, setMode, mistakeCount }) {
   );
 }
 
-function TopBar({ storyMode, onStoryMode, theme, onTheme }) {
+// The logged-in user as a round initial; click for their email and "log out".
+function UserMenu({ user, onLogout }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+  useEffect(() => {
+    if (!open) return;
+    const close = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    const esc = (e) => { if (e.key === "Escape") setOpen(false); };
+    document.addEventListener("mousedown", close);
+    document.addEventListener("keydown", esc);
+    return () => { document.removeEventListener("mousedown", close); document.removeEventListener("keydown", esc); };
+  }, [open]);
+  const email = user.email || "";
+  const initial = (email.trim()[0] || "?").toUpperCase();
+  return (
+    <div ref={ref} style={{ position: "absolute", left: 0 }}>
+      <button onClick={() => setOpen((o) => !o)} aria-label={"logged in as " + email} aria-expanded={open} title={"Logged in as " + email}
+        style={{ width: "36px", height: "36px", borderRadius: "999px", border: "1px solid var(--btn-border)", background: "var(--btn-grad)", color: "#FCF8EE",
+          fontFamily: "var(--font-serif)", fontSize: "17px", fontWeight: 600, lineHeight: 1, cursor: "pointer", boxShadow: "var(--shadow-soft)",
+          display: "flex", alignItems: "center", justifyContent: "center", padding: 0 }}>
+        {initial}
+      </button>
+      {open && (
+        <div role="menu" style={{ position: "absolute", top: "44px", left: 0, zIndex: 20, minWidth: "200px", maxWidth: "min(280px, 80vw)", padding: "12px",
+          borderRadius: "12px", border: "1px solid var(--line)", background: "var(--paper-raised)", boxShadow: "var(--shadow-soft)",
+          display: "flex", flexDirection: "column", gap: "10px" }}>
+          <div style={{ ...monoLabel, fontSize: "9px" }}>logged in as</div>
+          <div style={{ fontFamily: "var(--font-mono)", fontSize: "12px", color: "var(--ink)", overflowWrap: "anywhere" }}>{email}</div>
+          <button role="menuitem" onClick={() => { setOpen(false); onLogout(); }} style={{ ...miniBtn, color: "var(--bad)", borderColor: "var(--bad)", alignSelf: "flex-start" }}>⎋ log out</button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function TopBar({ storyMode, onStoryMode, theme, onTheme, user, onLogout }) {
   const seg = (on) => ({
     fontFamily: "var(--font-mono)", fontSize: "10px", fontWeight: 500, letterSpacing: "0.1em", textTransform: "uppercase", padding: "8px 16px",
     border: "none", borderRadius: "999px", background: on ? "var(--btn-grad)" : "transparent", color: on ? "#FCF8EE" : "var(--ink-soft)",
@@ -1857,6 +1923,7 @@ function TopBar({ storyMode, onStoryMode, theme, onTheme }) {
         <button onClick={() => onStoryMode(false)} aria-pressed={!storyMode} style={seg(!storyMode)}>✎ Üben</button>
         <button onClick={() => onStoryMode(true)} aria-pressed={storyMode} style={seg(storyMode)}>📖 Geschichten</button>
       </div>
+      {user && <UserMenu user={user} onLogout={onLogout} />}
       <button onClick={() => onTheme(dark ? "light" : "dark")} aria-label={dark ? "switch to light mode" : "switch to dark mode"} title={dark ? "Light mode" : "Dark mode"}
         style={{ position: "absolute", right: 0, width: "36px", height: "36px", borderRadius: "999px", border: "1px solid var(--line)", background: "var(--paper-raised)", color: "var(--ink-soft)", fontSize: "15px", lineHeight: 1, cursor: "pointer", boxShadow: "var(--shadow-soft)" }}>
         {dark ? "☀" : "☾"}
@@ -1882,11 +1949,37 @@ function StreakHeader({ header, showCounts }) {
 }
 
 const SYSTEM_THEME = window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+function LoginScreen({ onLoggedIn }) {
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [state, setState] = useState({ busy: false, error: null });
+  const submit = (e) => {
+    e.preventDefault();
+    if (state.busy) return;
+    setState({ busy: true, error: null });
+    session.login(email.trim(), password)
+      .then((user) => onLoggedIn(user))
+      .catch((err) => setState({ busy: false, error: err.message }));
+  };
+  const field = { fontFamily: "var(--font-mono)", fontSize: "13px", padding: "10px 12px", borderRadius: "8px", border: "1px solid var(--line)", background: "var(--paper-raised)", color: "var(--ink)", width: "100%", boxSizing: "border-box" };
+  return (
+    <form onSubmit={submit} style={{ width: "min(340px, 92vw)", display: "flex", flexDirection: "column", gap: "12px" }}>
+      <div style={{ textAlign: "center", fontSize: "26px", color: "var(--ink)" }}>Wortschatz</div>
+      <div style={{ ...monoLabel, textAlign: "center", marginBottom: "6px" }}>log in to your account</div>
+      <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="email" autoComplete="username" required style={field} />
+      <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="password" autoComplete="current-password" required style={field} />
+      <button type="submit" disabled={state.busy} style={{ ...navBtnStyle, opacity: state.busy ? 0.6 : 1 }}>{state.busy ? "logging in …" : "log in"}</button>
+      {state.error && <div role="alert" style={{ fontFamily: "var(--font-mono)", fontSize: "11px", color: "var(--bad)", textAlign: "center" }}>{state.error}</div>}
+    </form>
+  );
+}
+
 // settings changes after which practice rounds start over with the new choices
 const ROUND_SETTINGS = ["toggleLevel", "toggleCat", "toggleDirection", "toggleNoRepeat", "setFocus"];
 
 function App() {
-  const [status, setStatus] = useState("loading"); // "loading" | "ready" | { error }
+  const [status, setStatus] = useState("loading"); // "loading" | "ready" | "login" | { error }
+  const [user, setUser] = useState(session.user());
   const [attempt, setAttempt] = useState(0);
   const [summary, setSummary] = useState(null);
   const [saveError, setSaveError] = useState(null);
@@ -1897,7 +1990,11 @@ function App() {
   const [geminiKey, setGeminiKey] = useState("");
   const [ghToken, setGhToken] = useState("");
 
-  useEffect(() => { api.setErrorHandler((msg) => setSaveError(msg)); }, []);
+  useEffect(() => {
+    api.setErrorHandler((msg) => setSaveError(msg));
+    api.setLoggedOutHandler(() => setUser(null));
+  }, []);
+  const logout = useCallback(() => { session.logout(); setUser(null); }, []);
 
   const refreshSummary = useCallback(() => {
     return api.get("/api/summary?ai=" + (geminiKey ? "true" : "false"), { quiet: true }).then(setSummary).catch(api.report);
@@ -1907,12 +2004,17 @@ function App() {
     let cancelled = false;
     setStatus("loading");
     if (!API_CONFIGURED) { setStatus({ error: "No backend configured — set PROD_API_BASE in index.html to the Spring Boot URL." }); return; }
-    session.signIn()
-      .then(() => api.get("/api/summary?ai=false"))
+    if (!user) {
+      // someone else may log in next: drop everything of the last user
+      setSummary(null); setSaveError(null); setGeminiKey(""); setGhToken(""); setMode("study"); setSettingsOpen(false);
+      setStatus("login");
+      return;
+    }
+    api.get("/api/summary?ai=false")
       .then((s) => { if (!cancelled) { setSummary(s); setStatus("ready"); } })
-      .catch((e) => { if (!cancelled) setStatus({ error: (e && e.message) || String(e) }); });
+      .catch((e) => { if (!cancelled) setStatus(e && e.status === 401 ? "login" : { error: (e && e.message) || String(e) }); });
     return () => { cancelled = true; };
-  }, [attempt]);
+  }, [attempt, user]);
   useEffect(() => { if (status === "ready") refreshSummary(); }, [geminiKey]);
 
   const onSettings = useCallback((action, value) => {
@@ -1946,6 +2048,9 @@ function App() {
       </div>
     );
   }
+  if (status === "login") {
+    return <div style={shellStyle}><LoginScreen onLoggedIn={setUser} /></div>;
+  }
   if (status === "loading" || !summary) {
     return <div style={shellStyle}><div style={{ ...counterStyle, fontSize: "13px" }}>loading …</div></div>;
   }
@@ -1959,7 +2064,7 @@ function App() {
   ) : null;
   const topBar = (
     <React.Fragment>
-      <TopBar storyMode={s.storyMode} onStoryMode={(v) => onSettings("setStoryMode", v)} theme={theme} onTheme={(t) => onSettings("setTheme", t)} />
+      <TopBar storyMode={s.storyMode} onStoryMode={(v) => onSettings("setStoryMode", v)} theme={theme} onTheme={(t) => onSettings("setTheme", t)} user={user} onLogout={logout} />
       {notice}
     </React.Fragment>
   );

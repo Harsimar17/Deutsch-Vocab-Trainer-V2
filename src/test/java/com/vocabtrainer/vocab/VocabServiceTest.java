@@ -34,7 +34,7 @@ class VocabServiceTest {
         server = MockRestServiceServer.bindTo(builder).build();
         props = new AppProperties(null, null, null,
                 new AppProperties.Vocab(URL, Duration.ofMinutes(5), new ByteArrayResource("{\"bundled\":true}".getBytes())),
-                null);
+                null, null);
     }
 
     private static String text(VocabService s) {

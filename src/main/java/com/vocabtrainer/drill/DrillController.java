@@ -30,13 +30,13 @@ public class DrillController {
     @PostMapping("/{mode}")
     public Map<String, Object> start(Ctx ctx, @PathVariable String mode, @RequestBody(required = false) Map<String, Object> params) {
         Drill drill = factory.create(ctx, mode, params == null ? Map.of() : params);
-        return response(store.put(drill), mode, drill.view(ctx));
+        return response(store.put(ctx.uid(), drill), mode, drill.view(ctx));
     }
 
     @PostMapping("/{id}/{action}")
     public Map<String, Object> act(Ctx ctx, @PathVariable String id, @PathVariable String action,
                                    @RequestBody(required = false) Map<String, Object> payload) {
-        Drill drill = store.get(id);
+        Drill drill = store.get(ctx.uid(), id);
         synchronized (drill) {
             drill.act(ctx, action, payload == null ? Map.of() : payload);
             return response(id, null, drill.view(ctx));

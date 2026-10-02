@@ -1,6 +1,6 @@
 package com.vocabtrainer;
 
-import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -51,7 +51,7 @@ public final class TestVocab {
     }
 
     public static Ctx ctx() {
-        return new Ctx("aaa.bbb.ccc", ZoneId.of("Asia/Kolkata"));
+        return new Ctx("user-1", "aaa.bbb.ccc", ZoneId.of("Asia/Kolkata"));
     }
 
     /** A progress service whose "Firestore" is an in-memory document. */
@@ -65,7 +65,7 @@ public final class TestVocab {
 
     public static ProgressRepository fakeRepo(Map<String, Object> doc) {
         ProgressRepository repo = mock(ProgressRepository.class);
-        when(repo.load(anyString())).thenAnswer(i -> new LinkedHashMap<>(doc));
+        when(repo.load(any())).thenAnswer(i -> new LinkedHashMap<>(doc));
         return repo;
     }
 }

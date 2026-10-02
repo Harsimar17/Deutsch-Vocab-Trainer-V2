@@ -14,16 +14,20 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import java.nio.charset.StandardCharsets;
 import java.util.Map;
 
+import com.vocabtrainer.auth.IdTokenCache;
+import com.vocabtrainer.auth.JwtService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
+import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 
 @WebMvcTest(VocabController.class)
+@Import(JwtService.class)
 class VocabControllerTest {
 
     @Autowired
@@ -34,6 +38,12 @@ class VocabControllerTest {
 
     @MockitoBean
     GitHubVocabCommitter committer;
+
+    @MockitoBean
+    IdTokenCache idTokens;
+
+    @Autowired
+    JwtService jwt;
 
     @BeforeEach
     void data() {
@@ -59,7 +69,7 @@ class VocabControllerTest {
     }
 
     @Test
-    void addingAWordNeedsTheFirebaseToken() throws Exception {
+    void addingAWordNeedsASession() throws Exception {
         mvc.perform(post("/api/vocab/words").header("X-GitHub-Token", "gh")
                         .contentType(MediaType.APPLICATION_JSON).content("{\"lvl\":\"A2\",\"cat\":\"verb\",\"de\":\"a\",\"en\":\"b\"}"))
                 .andExpect(status().isUnauthorized());
@@ -71,7 +81,7 @@ class VocabControllerTest {
         when(committer.add(eq("gh"), any())).thenReturn(new GitHubVocabCommitter.CommitResult(
                 Map.of("de", "abholen", "en", "to pick up"), "A2", "verb", "https://github.com/c/1"));
         mvc.perform(post("/api/vocab/words")
-                        .header("Authorization", "Bearer aaa.bbb.ccc")
+                        .header("Authorization", "Bearer " + jwt.issue("user-1", "a@b.de", "firebase-refresh"))
                         .header("X-GitHub-Token", "gh")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"lvl\":\"A2\",\"cat\":\"verb\",\"de\":\"abholen\",\"en\":\"to pick up\"}"))

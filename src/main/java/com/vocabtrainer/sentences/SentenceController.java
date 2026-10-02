@@ -49,7 +49,7 @@ public class SentenceController {
     @GetMapping
     public ResponseEntity<Map<String, Object>> get(Ctx ctx, @RequestParam String word) {
         requireWord(word);
-        Map<String, Object> s = repo.sentence(ctx.token(), word);
+        Map<String, Object> s = repo.sentence(ctx, word);
         return s == null ? ResponseEntity.notFound().build() : ResponseEntity.ok(Map.of("de", s.get("de"), "en", s.getOrDefault("en", "")));
     }
 
@@ -61,7 +61,7 @@ public class SentenceController {
     public Map<String, Object> generate(Ctx ctx, @RequestHeader(name = "X-Gemini-Key", required = false) String key,
                                         @RequestBody GenerateRequest req) {
         requireWord(req.de());
-        Map<String, Object> saved = repo.sentence(ctx.token(), req.de());
+        Map<String, Object> saved = repo.sentence(ctx, req.de());
         if (saved != null) {
             return Map.of("de", saved.get("de"), "en", saved.getOrDefault("en", ""));
         }
@@ -69,7 +69,7 @@ public class SentenceController {
             return Map.of("needsKey", true); // nothing saved yet and no key to generate one — not an error
         }
         Map<String, String> s = ask(key, req);
-        repo.saveSentence(ctx.token(), req.de(), s.get("de"), s.get("en"));
+        repo.saveSentence(ctx, req.de(), s.get("de"), s.get("en"));
         return Map.of("de", s.get("de"), "en", s.get("en"));
     }
 

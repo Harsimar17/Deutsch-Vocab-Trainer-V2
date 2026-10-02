@@ -70,7 +70,7 @@ class GitHubVocabCommitterTest {
         server = MockRestServiceServer.bindTo(builder).build();
         vocab = mock(VocabService.class);
         AppProperties props = new AppProperties(null, null, null, null,
-                new AppProperties.Github(API, "o", "r", "main", "german_vocab.json"));
+                new AppProperties.Github(API, "o", "r", "main", "german_vocab.json"), null);
         committer = new GitHubVocabCommitter(builder.build(), props, JsonMapper.builder().build(), vocab);
     }
 

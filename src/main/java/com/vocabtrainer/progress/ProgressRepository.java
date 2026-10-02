@@ -30,11 +30,10 @@ import org.springframework.web.server.ResponseStatusException;
  * is made with the caller's Firebase ID token, so Firestore verifies it and
  * applies the project's security rules — no service-account key involved.
  *
- * One shared document, scores/{progressDocId}, holds the learner's state (the
- * same document the page wrote to directly before). Quiz rounds live in its
- * "sessions" subcollection and generated example sentences in its
- * "aiSentences" subcollection — under the same document, so the same rules
- * that let the page write "sessions" cover them.
+ * Each user has one document, scores/{uid}, holding their state. Quiz rounds
+ * live in its "sessions" subcollection and generated example sentences in its
+ * "aiSentences" subcollection — all under the user's own document, so one
+ * security rule ("scores/{uid}/** only for that uid") covers everything.
  */
 @Repository
 public class ProgressRepository {
@@ -48,20 +47,39 @@ public class ProgressRepository {
     private final RestClient http;
     private final String apiKey;
     private final String documentsRoot; // projects/{p}/databases/(default)/documents
-    private final String progressName;  // …/documents/scores/{doc}
+    private final String legacyName;    // …/documents/scores/{the old shared record}
 
     public ProgressRepository(RestClient firestoreRestClient, AppProperties props) {
         this.http = firestoreRestClient;
         this.apiKey = props.firebase().webApiKey();
         this.documentsRoot = "projects/" + props.firebase().projectId() + "/databases/(default)/documents";
-        this.progressName = documentsRoot + "/scores/" + props.progressDocId();
+        this.legacyName = documentsRoot + "/scores/" + props.legacyProgressDocId();
+    }
+
+    /** …/documents/scores/{uid} — the uid was checked when the session token was read. */
+    private String progressName(Ctx ctx) {
+        return documentsRoot + "/scores/" + ctx.uid();
     }
 
     // ---- the progress document ----
 
-    public Map<String, Object> load(String token) {
-        Map<String, Object> doc = getDocument(token, progressName);
+    public Map<String, Object> load(Ctx ctx) {
+        Map<String, Object> doc = getDocument(ctx.token(), progressName(ctx));
         return doc == null ? new HashMap<>() : fieldsOf(doc);
+    }
+
+    /**
+     * Copies the old shared record (from before user accounts) into this user's
+     * document, replacing it. False if there is no old record. Quiz-round history
+     * and saved sentences (subcollections) are not copied.
+     */
+    public boolean importLegacy(Ctx ctx) {
+        Map<String, Object> doc = getDocument(ctx.token(), legacyName);
+        if (doc == null) {
+            return false;
+        }
+        commit(ctx.token(), List.of(update(progressName(ctx), fieldsOf(doc), null)));
+        return true;
     }
 
     /** One field change: set path = value, or delete path. */
@@ -81,7 +99,7 @@ public class ProgressRepository {
      * in one commit. Only the listed paths are touched; a path that is listed but
      * absent from the data is deleted — that's how the Firestore update mask works.
      */
-    public void write(String token, List<FieldWrite> writes, Map<String, Long> increments) {
+    public void write(Ctx ctx, List<FieldWrite> writes, Map<String, Long> increments) {
         Map<String, Object> data = new LinkedHashMap<>();
         List<String> mask = new ArrayList<>();
         for (FieldWrite w : writes) {
@@ -90,14 +108,14 @@ public class ProgressRepository {
                 putPath(data, w.path(), w.value());
             }
         }
-        Map<String, Object> write = update(progressName, data, mask);
+        Map<String, Object> write = update(progressName(ctx), data, mask);
         if (increments != null && !increments.isEmpty()) {
             List<Map<String, Object>> transforms = new ArrayList<>();
             increments.forEach((field, by) -> transforms.add(
                     Map.of("fieldPath", fieldPath(field), "increment", Map.of("integerValue", String.valueOf(by)))));
             write.put("updateTransforms", transforms);
         }
-        commit(token, List.of(write));
+        commit(ctx.token(), List.of(write));
     }
 
     @SuppressWarnings("unchecked")
@@ -111,14 +129,14 @@ public class ProgressRepository {
 
     // ---- quiz rounds ----
 
-    public List<Map<String, Object>> recentSessions(String token, int limit) {
+    public List<Map<String, Object>> recentSessions(Ctx ctx, int limit) {
         Map<String, Object> query = Map.of("structuredQuery", Map.of(
                 "from", List.of(Map.of("collectionId", "sessions")),
                 "orderBy", List.of(Map.of("field", Map.of("fieldPath", "timestamp"), "direction", "DESCENDING")),
                 "limit", limit));
         List<Map<String, Object>> rows = call(() -> http.post()
-                .uri("/" + progressName + ":runQuery?key={key}", apiKey)
-                .headers(h -> h.setBearerAuth(token))
+                .uri("/" + progressName(ctx) + ":runQuery?key={key}", apiKey)
+                .headers(h -> h.setBearerAuth(ctx.token()))
                 .contentType(MediaType.APPLICATION_JSON)
                 .body(query)
                 .retrieve()
@@ -138,17 +156,19 @@ public class ProgressRepository {
         return out;
     }
 
-    public void addSession(String token, Map<String, Object> session) {
+    public void addSession(Ctx ctx, Map<String, Object> session) {
         call(() -> http.post()
-                .uri("/" + progressName + "/sessions?key={key}", apiKey)
-                .headers(h -> h.setBearerAuth(token))
+                .uri("/" + progressName(ctx) + "/sessions?key={key}", apiKey)
+                .headers(h -> h.setBearerAuth(ctx.token()))
                 .contentType(MediaType.APPLICATION_JSON)
                 .body(Map.of("fields", encodeFields(session)))
                 .retrieve()
                 .toBodilessEntity());
     }
 
-    public void clearSessions(String token) {
+    public void clearSessions(Ctx ctx) {
+        String token = ctx.token();
+        String progressName = progressName(ctx);
         List<String> names = new ArrayList<>();
         String pageToken = "";
         do {
@@ -173,15 +193,15 @@ public class ProgressRepository {
 
     // ---- cached example sentences ----
 
-    public Map<String, Object> sentence(String token, String word) {
-        Map<String, Object> doc = getDocument(token, progressName + "/aiSentences/" + sentenceId(word));
+    public Map<String, Object> sentence(Ctx ctx, String word) {
+        Map<String, Object> doc = getDocument(ctx.token(), progressName(ctx) + "/aiSentences/" + sentenceId(word));
         return doc == null ? null : fieldsOf(doc);
     }
 
-    public void saveSentence(String token, String word, String de, String en) {
+    public void saveSentence(Ctx ctx, String word, String de, String en) {
         Map<String, Object> data = Map.of("word", word, "de", de, "en", en, "createdAt", System.currentTimeMillis());
         // No update mask: the whole document is written (created or replaced).
-        commit(token, List.of(update(progressName + "/aiSentences/" + sentenceId(word), data, null)));
+        commit(ctx.token(), List.of(update(progressName(ctx) + "/aiSentences/" + sentenceId(word), data, null)));
     }
 
     /** Words can contain "/" and other characters Firestore ids can't — hash them. */
