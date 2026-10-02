@@ -1,0 +1,363 @@
+package com.vocabtrainer.repository;
+
+import static com.vocabtrainer.repository.FirestoreValues.decodeFields;
+import static com.vocabtrainer.repository.FirestoreValues.encode;
+import static com.vocabtrainer.repository.FirestoreValues.encodeFields;
+import static com.vocabtrainer.repository.FirestoreValues.fieldPath;
+
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.HexFormat;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+
+import com.vocabtrainer.config.AppProperties;
+import com.vocabtrainer.model.Ctx;
+import org.springframework.core.ParameterizedTypeReference;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
+import org.springframework.stereotype.Repository;
+import org.springframework.web.client.ResourceAccessException;
+import org.springframework.web.client.RestClient;
+import org.springframework.web.client.RestClientResponseException;
+import org.springframework.web.server.ResponseStatusException;
+
+/**
+ * All reading and saving of a learner's data, through the Firestore REST API.
+ * Services call this; nothing else talks to Firestore. Every call is made with
+ * the caller's Firebase ID token, so Firestore verifies it and applies the
+ * project's security rules — no service-account key involved.
+ *
+ * Each user has one document, scores/{uid}, holding their state. Quiz rounds
+ * live in its "sessions" subcollection and generated example sentences in its
+ * "aiSentences" subcollection — all under the user's own document, so one
+ * security rule ("scores/{uid}/** only for that uid") covers everything.
+ *
+ * The progress document is read on almost every request, so {@link #find}
+ * keeps each user's copy for {@value #CACHE_MS} ms; {@link #save} writes to
+ * Firestore first and then updates that copy.
+ */
+@Repository
+public class ProgressRepository {
+
+    private static final ParameterizedTypeReference<Map<String, Object>> MAP = new ParameterizedTypeReference<>() {
+    };
+    private static final ParameterizedTypeReference<List<Map<String, Object>>> LIST_OF_MAPS =
+            new ParameterizedTypeReference<>() {
+            };
+
+    static final long CACHE_MS = 30_000;
+    private static final long FORGET_AFTER_MS = 60 * 60 * 1000L;
+
+    /** One user's cached progress document. */
+    private static final class Cached {
+        Map<String, Object> doc;
+        long loadedAt;
+        volatile long used;
+    }
+
+    private final Map<String, Cached> cache = new ConcurrentHashMap<>();
+    private final RestClient http;
+    private final String apiKey;
+    private final String documentsRoot; // projects/{p}/databases/(default)/documents
+    private final String legacyName;    // …/documents/scores/{the old shared record}
+
+    public ProgressRepository(RestClient firestoreRestClient, AppProperties props) {
+        this.http = firestoreRestClient;
+        this.apiKey = props.firebase().webApiKey();
+        this.documentsRoot = "projects/" + props.firebase().projectId() + "/databases/(default)/documents";
+        this.legacyName = documentsRoot + "/scores/" + props.legacyProgressDocId();
+    }
+
+    /** …/documents/scores/{uid} — the uid was checked when the session token was read. */
+    private String progressName(Ctx ctx) {
+        return documentsRoot + "/scores/" + ctx.uid();
+    }
+
+    // ---- the progress document ----
+
+    private Cached cached(Ctx ctx) {
+        long now = System.currentTimeMillis();
+        cache.values().removeIf(c -> now - c.used > FORGET_AFTER_MS);
+        Cached c = cache.computeIfAbsent(ctx.uid(), k -> new Cached());
+        c.used = now;
+        return c;
+    }
+
+    /** The user's progress document (empty if they have none yet). Read-only for callers. */
+    public Map<String, Object> find(Ctx ctx) {
+        Cached c = cached(ctx);
+        synchronized (c) {
+            if (c.doc == null || System.currentTimeMillis() - c.loadedAt > CACHE_MS) {
+                Map<String, Object> doc = getDocument(ctx.token(), progressName(ctx));
+                c.doc = doc == null ? new HashMap<>() : fieldsOf(doc);
+                c.loadedAt = System.currentTimeMillis();
+            }
+            return c.doc;
+        }
+    }
+
+    /**
+     * Copies the old shared record (from before user accounts) into this user's
+     * document, replacing it. False if there is no old record. Quiz-round history
+     * and saved sentences (subcollections) are not copied.
+     */
+    public boolean copyLegacyProgress(Ctx ctx) {
+        Map<String, Object> doc = getDocument(ctx.token(), legacyName);
+        if (doc == null) {
+            return false;
+        }
+        commit(ctx.token(), List.of(update(progressName(ctx), fieldsOf(doc), null)));
+        cache.remove(ctx.uid());
+        return true;
+    }
+
+    /** One field change: set path = value, or delete path. */
+    public record FieldWrite(List<String> path, Object value, boolean delete) {
+
+        public static FieldWrite set(Object value, String... path) {
+            return new FieldWrite(List.of(path), value, false);
+        }
+
+        public static FieldWrite delete(String... path) {
+            return new FieldWrite(List.of(path), null, true);
+        }
+    }
+
+    /**
+     * Saves field changes (and server-side increments) to the progress document
+     * in one commit. Only the listed paths are touched; a path that is listed but
+     * absent from the data is deleted — that's how the Firestore update mask works.
+     */
+    public void save(Ctx ctx, List<FieldWrite> writes, Map<String, Long> increments) {
+        Cached c = cached(ctx);
+        synchronized (c) {
+            commit(ctx.token(), List.of(saveRequest(ctx, writes, increments)));
+            if (c.doc != null) { // keep the cached copy in step with what was saved
+                for (FieldWrite w : writes) {
+                    if (w.delete()) {
+                        removePath(c.doc, w.path());
+                    } else {
+                        putPath(c.doc, w.path(), w.value());
+                    }
+                }
+                if (increments != null) {
+                    increments.forEach((f, by) -> c.doc.put(f, num(c.doc.get(f)) + by));
+                }
+            }
+        }
+    }
+
+    private Map<String, Object> saveRequest(Ctx ctx, List<FieldWrite> writes, Map<String, Long> increments) {
+        Map<String, Object> data = new LinkedHashMap<>();
+        List<String> mask = new ArrayList<>();
+        for (FieldWrite w : writes) {
+            mask.add(fieldPath(w.path().toArray(String[]::new)));
+            if (!w.delete()) {
+                putPath(data, w.path(), w.value());
+            }
+        }
+        Map<String, Object> write = update(progressName(ctx), data, mask);
+        if (increments != null && !increments.isEmpty()) {
+            List<Map<String, Object>> transforms = new ArrayList<>();
+            increments.forEach((field, by) -> transforms.add(
+                    Map.of("fieldPath", fieldPath(field), "increment", Map.of("integerValue", String.valueOf(by)))));
+            write.put("updateTransforms", transforms);
+        }
+        return write;
+    }
+
+    private static long num(Object o) {
+        return o instanceof Number n ? n.longValue() : 0;
+    }
+
+    @SuppressWarnings("unchecked")
+    private static void removePath(Map<String, Object> root, List<String> path) {
+        Map<String, Object> m = root;
+        for (int i = 0; i < path.size() - 1; i++) {
+            if (!(m.get(path.get(i)) instanceof Map<?, ?> next)) {
+                return;
+            }
+            m = (Map<String, Object>) next;
+        }
+        m.remove(path.get(path.size() - 1));
+    }
+
+    @SuppressWarnings("unchecked")
+    static void putPath(Map<String, Object> root, List<String> path, Object value) {
+        Map<String, Object> m = root;
+        for (int i = 0; i < path.size() - 1; i++) {
+            m = (Map<String, Object>) m.computeIfAbsent(path.get(i), k -> new LinkedHashMap<>());
+        }
+        m.put(path.get(path.size() - 1), value);
+    }
+
+    // ---- quiz rounds ----
+
+    public List<Map<String, Object>> findSessions(Ctx ctx, int limit) {
+        Map<String, Object> query = Map.of("structuredQuery", Map.of(
+                "from", List.of(Map.of("collectionId", "sessions")),
+                "orderBy", List.of(Map.of("field", Map.of("fieldPath", "timestamp"), "direction", "DESCENDING")),
+                "limit", limit));
+        List<Map<String, Object>> rows = call(() -> http.post()
+                .uri("/" + progressName(ctx) + ":runQuery?key={key}", apiKey)
+                .headers(h -> h.setBearerAuth(ctx.token()))
+                .contentType(MediaType.APPLICATION_JSON)
+                .body(query)
+                .retrieve()
+                .body(LIST_OF_MAPS));
+        List<Map<String, Object>> out = new ArrayList<>();
+        if (rows != null) {
+            for (Map<String, Object> row : rows) {
+                if (row.get("document") instanceof Map<?, ?> d) {
+                    @SuppressWarnings("unchecked")
+                    Map<String, Object> doc = (Map<String, Object>) d;
+                    Map<String, Object> m = fieldsOf(doc);
+                    m.put("id", lastSegment((String) doc.get("name")));
+                    out.add(m);
+                }
+            }
+        }
+        return out;
+    }
+
+    public void saveSession(Ctx ctx, Map<String, Object> session) {
+        call(() -> http.post()
+                .uri("/" + progressName(ctx) + "/sessions?key={key}", apiKey)
+                .headers(h -> h.setBearerAuth(ctx.token()))
+                .contentType(MediaType.APPLICATION_JSON)
+                .body(Map.of("fields", encodeFields(session)))
+                .retrieve()
+                .toBodilessEntity());
+    }
+
+    public void deleteSessions(Ctx ctx) {
+        String token = ctx.token();
+        String progressName = progressName(ctx);
+        List<String> names = new ArrayList<>();
+        String pageToken = "";
+        do {
+            String pt = pageToken;
+            Map<String, Object> page = call(() -> http.get()
+                    .uri("/" + progressName + "/sessions?pageSize=300&mask.fieldPaths=timestamp&pageToken={pt}&key={key}",
+                            pt, apiKey)
+                    .headers(h -> h.setBearerAuth(token))
+                    .retrieve()
+                    .body(MAP));
+            if (page != null && page.get("documents") instanceof List<?> docs) {
+                docs.forEach(d -> names.add((String) ((Map<?, ?>) d).get("name")));
+            }
+            pageToken = page != null && page.get("nextPageToken") != null ? (String) page.get("nextPageToken") : "";
+        } while (!pageToken.isEmpty());
+        // A commit takes at most 500 writes.
+        for (int i = 0; i < names.size(); i += 450) {
+            commit(token, names.subList(i, Math.min(i + 450, names.size())).stream()
+                    .<Map<String, Object>>map(n -> Map.of("delete", n)).toList());
+        }
+    }
+
+    // ---- cached example sentences ----
+
+    public Map<String, Object> findSentence(Ctx ctx, String word) {
+        Map<String, Object> doc = getDocument(ctx.token(), progressName(ctx) + "/aiSentences/" + sentenceId(word));
+        return doc == null ? null : fieldsOf(doc);
+    }
+
+    public void saveSentence(Ctx ctx, String word, String de, String en) {
+        Map<String, Object> data = Map.of("word", word, "de", de, "en", en, "createdAt", System.currentTimeMillis());
+        // No update mask: the whole document is written (created or replaced).
+        commit(ctx.token(), List.of(update(progressName(ctx) + "/aiSentences/" + sentenceId(word), data, null)));
+    }
+
+    /** Words can contain "/" and other characters Firestore ids can't — hash them. */
+    static String sentenceId(String word) {
+        try {
+            byte[] hash = MessageDigest.getInstance("SHA-256").digest(word.getBytes(StandardCharsets.UTF_8));
+            return HexFormat.of().formatHex(hash);
+        } catch (NoSuchAlgorithmException e) {
+            throw new IllegalStateException(e);
+        }
+    }
+
+    // ---- REST plumbing ----
+    // Document names go into the URL literally: as URI *variables* their "/"
+    // would be percent-encoded and Firestore would see a different path.
+
+    private Map<String, Object> getDocument(String token, String name) {
+        try {
+            return call(() -> http.get()
+                    .uri("/" + name + "?key={key}", apiKey)
+                    .headers(h -> h.setBearerAuth(token))
+                    .retrieve()
+                    .body(MAP));
+        } catch (NotFound e) {
+            return null;
+        }
+    }
+
+    private Map<String, Object> update(String name, Map<String, ?> data, List<String> mask) {
+        Map<String, Object> write = new LinkedHashMap<>();
+        write.put("update", Map.of("name", name, "fields", encodeFields(data)));
+        if (mask != null) {
+            write.put("updateMask", Map.of("fieldPaths", mask));
+        }
+        return write;
+    }
+
+    private void commit(String token, List<Map<String, Object>> writes) {
+        call(() -> http.post()
+                .uri("/" + documentsRoot + ":commit?key={key}", apiKey)
+                .headers(h -> h.setBearerAuth(token))
+                .contentType(MediaType.APPLICATION_JSON)
+                .body(Map.of("writes", writes))
+                .retrieve()
+                .toBodilessEntity());
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Map<String, Object> fieldsOf(Map<String, Object> doc) {
+        return decodeFields((Map<String, Object>) doc.get("fields"));
+    }
+
+    private static String lastSegment(String name) {
+        return name == null ? null : name.substring(name.lastIndexOf('/') + 1);
+    }
+
+    /** Marker for a 404 on a document read (an absent document is not an error). */
+    private static final class NotFound extends RuntimeException {
+        NotFound() {
+            super(null, null, false, false);
+        }
+    }
+
+    private interface Call<T> {
+        T run();
+    }
+
+    /**
+     * Firestore's verdict on the token / rules is passed through (401, 403);
+     * anything else is reported as a storage failure (502).
+     */
+    private static <T> T call(Call<T> c) {
+        try {
+            return c.run();
+        } catch (RestClientResponseException e) {
+            int status = e.getStatusCode().value();
+            if (status == 404) {
+                throw new NotFound();
+            }
+            if (status == 401 || status == 403) {
+                throw new ResponseStatusException(HttpStatus.valueOf(status),
+                        "Firestore refused the request (" + status + ") — token expired or security rules deny it");
+            }
+            throw new FirestoreAccessException("Firestore returned " + status + ": " + e.getResponseBodyAsString(), e);
+        } catch (ResourceAccessException e) {
+            throw new FirestoreAccessException("Firestore unreachable: " + e.getMessage(), e);
+        }
+    }
+}

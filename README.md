@@ -20,22 +20,45 @@ The vocabulary itself (`german_vocab.json`) is maintained in
 the app reads it from there and "+ Add word" commits to it. A copy is bundled
 in `src/main/resources/data/` as the fallback when GitHub can't be reached.
 
-## What runs where
+## How the code is organised
 
-| Concern | Java |
-|---|---|
-| Vocabulary + stories | read from GitHub (`app.vocab.url`), cached, re-checked every 5 min; bundled copy as fallback — `vocab/VocabService` |
-| Cards, filters by level/category | `cards/CardCatalog` |
-| Answer checking (lenient spelling, articles, umlauts) | `cards/German` |
-| Spaced repetition, daily goal, streak (in the learner's time zone) | `progress/Srs`, `progress/ProgressService` |
-| Practice rounds — Study, Write, Cards, Quiz, Articles, Trennbare Verben, Fill-in, Review | `drill/*Drill` (server-side state machines) |
-| Settings (levels, categories, direction, focus, theme, story mode, …) | `settings/SettingsService` |
-| Story reader: words + meanings for every story | `stories/StoryService`, `stories/WordLookup` |
-| Phasentest (successive relearning, refreshers at 1/7/30/90/180 days) | `stories/PhaseTests`, `drill/PhaseDrill` |
-| Sentence patterns (Muster) | `patterns/PatternsController` + `patterns.json` |
-| Example sentences via Gemini, cached in Firestore | `sentences/SentenceController` |
-| "+ Add word" → commit to GitHub | `vocab/GitHubVocabCommitter` |
-| Users (admin-created), login, session JWT with a 24 h idle timeout | `auth/UserController`, `auth/AuthController`, `auth/JwtService`, `security/SessionInterceptor` |
+All Java code is in `src/main/java/com/vocabtrainer`, one package per layer.
+Every request goes **controller → service → repository**, and each layer only
+calls the one below it:
+
+```
+com.vocabtrainer
+├── controller/    HTTP only: read the request, call one service, return its answer — no logic
+├── service/       all business logic (the rules of the app)
+│   └── drill/     the practice rounds, one class per mode
+├── repository/    saving and finding data, nothing else (Firestore, Firebase Auth, rounds in memory)
+├── model/         plain data passed between the layers (Card, Ctx, Settings, Gloss)
+├── security/      login sessions: the JWT, checking it on every request
+├── config/        Spring setup and app.* settings
+├── job/           the keep-alive ping
+└── util/          small helpers
+```
+
+Repository methods are named after what they do: `find…`, `save…`, `delete…`.
+`ProgressRepository.find` keeps each user's progress document for 30 s, since
+almost every request reads it; `save` writes to Firestore and then updates that copy.
+Tests mirror the same packages under `src/test/java`.
+
+### Where each feature lives
+
+| Feature | Controller | Service (the logic) | Repository |
+|---|---|---|---|
+| Header numbers, settings | `AppController` | `SummaryService`, `SettingsService` | `ProgressRepository` |
+| Spaced repetition, daily goal, streak (in the learner's time zone) | — | `ProgressService`, `Srs` | `ProgressRepository` |
+| Practice rounds — Study, Write, Cards, Quiz, Articles, Trennbare Verben, Fill-in, Review, Phasentest | `DrillController` | `DrillService`, `drill/*Drill`, `drill/DrillFactory` | `DrillRepository` (in memory) |
+| Cards, filters, answer checking (lenient spelling, articles, umlauts) | — | `CardCatalog`, `German` | — |
+| Stories: list, reader with word meanings, read marks | `StoriesController` | `StoryListService`, `StoryService`, `WordLookup` | `ProgressRepository` |
+| Phasentest overview (successive relearning, refreshers at 1/7/30/90/180 days) | `StoriesController` | `PhaseTestService` | `ProgressRepository` |
+| Sentence patterns (Muster) | `PatternsController` | `PatternService` + `patterns.json` | `ProgressRepository` |
+| Example sentences via Gemini | `SentenceController` | `SentenceService` | `ProgressRepository` |
+| Vocabulary file: read from GitHub (cached, re-checked every 5 min, bundled fallback), "+ Add word" commits | `VocabController` | `VocabService`, `GitHubVocabCommitter` | — (GitHub) |
+| Login, creating users | `AuthController`, `UserController` | `AuthService`, `UserService` | `FirebaseAuthClient` |
+| Session JWT with a 24 h idle timeout | — | — | `security/JwtService`, `security/SessionInterceptor` |
 
 ## API
 
@@ -53,7 +76,7 @@ it was issued, so a session ends after 24 h without a request. Send
 | `GET /api/summary?ai=` | header numbers, settings, settings label, level title, card count, Review count |
 | `POST /api/settings/{action}` `{value}` | `toggleLevel`, `toggleCat`, `toggleDirection`, `toggleNoRepeat`, `setFocus`, `setTheme`, `setStoryMode`, `setStoryShowEn`, `openStory`, `openPhaseTest` |
 | `POST /api/drills/{mode}` | start a round: `study`, `write`, `flash`, `quiz`, `articles`, `sep`, `cloze`, `review`, `phase` (`{phase, refresh}`) → `{id, view}` |
-| `POST /api/drills/{id}/{action}` `{…}` | e.g. `answer {key}`, `grade {grade}`, `check {input}`, `next`, `hint`, `overrule`, `finish` → `{id, view}` |
+| `POST /api/drills/{id}/{action}` `{…}` | e.g. `answer {key}`, `choose {key}`, `grade {grade}`, `check {input}`, `next`, `finish` → `{id, view}` |
 | `GET /api/stories`, `GET /api/stories/{id}`, `POST /api/stories/{id}/read` | story list, analysed reader view, read mark |
 | `GET /api/phase-tests/{idx}`, `POST /api/phase-tests/{idx}/reset` | Phasentest overview |
 | `GET /api/patterns`, `POST /api/patterns/{key}/seen` | Muster |
@@ -61,10 +84,9 @@ it was issued, so a session ends after 24 h without a request. Send
 | `POST /api/vocab/words` (+ `X-GitHub-Token`) | add a word = one commit on GitHub |
 | `GET /api/vocab` | the raw file (public) |
 
-Rounds are kept in memory (`drill/DrillStore`, 6 h idle limit) and belong to
-the user who started them; every answer is saved to Firestore as it happens,
-so losing a round only means starting a new one. Progress is cached in memory
-per user and written through (`progress/ProgressStore`).
+Rounds are kept in memory (`repository/DrillRepository`, 6 h idle limit) and belong
+to the user who started them; every answer is saved to Firestore as it happens,
+so losing a round only means starting a new one.
 
 ## Users
 

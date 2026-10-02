@@ -1,7 +1,7 @@
 package com.vocabtrainer;
 
-import com.vocabtrainer.auth.FakeFirebaseAuth;
-import com.vocabtrainer.progress.InMemoryProgressRepository;
+import com.vocabtrainer.repository.FakeFirebaseAuth;
+import com.vocabtrainer.repository.InMemoryProgressRepository;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Primary;

@@ -2,8 +2,8 @@ package com.vocabtrainer.config;
 
 import java.util.List;
 
-import com.vocabtrainer.auth.IdTokenCache;
 import com.vocabtrainer.security.CtxArgumentResolver;
+import com.vocabtrainer.security.IdTokenCache;
 import com.vocabtrainer.security.SessionInterceptor;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Configuration;

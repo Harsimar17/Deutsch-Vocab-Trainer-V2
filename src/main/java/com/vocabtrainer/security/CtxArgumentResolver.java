@@ -4,9 +4,7 @@ import java.time.DateTimeException;
 import java.time.ZoneId;
 import java.time.ZoneOffset;
 
-import com.vocabtrainer.auth.IdTokenCache;
-import com.vocabtrainer.auth.JwtService;
-import com.vocabtrainer.progress.Ctx;
+import com.vocabtrainer.model.Ctx;
 import org.springframework.core.MethodParameter;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.support.WebDataBinderFactory;

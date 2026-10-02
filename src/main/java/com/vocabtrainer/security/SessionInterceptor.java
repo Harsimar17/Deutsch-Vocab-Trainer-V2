@@ -1,6 +1,5 @@
 package com.vocabtrainer.security;
 
-import com.vocabtrainer.auth.JwtService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.http.HttpHeaders;

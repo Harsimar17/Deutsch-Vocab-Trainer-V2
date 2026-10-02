@@ -2,7 +2,7 @@ package com.vocabtrainer;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
-import com.vocabtrainer.vocab.VocabService;
+import com.vocabtrainer.service.VocabService;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;

@@ -14,11 +14,12 @@ import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 
-import com.vocabtrainer.auth.FakeFirebaseAuth;
-import com.vocabtrainer.auth.IdTokenCache;
-import com.vocabtrainer.auth.JwtService;
 import com.vocabtrainer.config.AppProperties;
-import com.vocabtrainer.progress.InMemoryProgressRepository;
+import com.vocabtrainer.repository.FakeFirebaseAuth;
+import com.vocabtrainer.repository.InMemoryProgressRepository;
+import com.vocabtrainer.security.IdTokenCache;
+import com.vocabtrainer.security.JwtService;
+import com.vocabtrainer.service.German;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;

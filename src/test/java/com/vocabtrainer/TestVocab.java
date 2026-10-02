@@ -1,6 +1,5 @@
 package com.vocabtrainer;
 
-import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -12,13 +11,12 @@ import java.time.ZoneId;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
-import com.vocabtrainer.cards.CardCatalog;
-import com.vocabtrainer.progress.Ctx;
-import com.vocabtrainer.progress.ProgressRepository;
-import com.vocabtrainer.progress.ProgressService;
-import com.vocabtrainer.progress.ProgressStore;
-import com.vocabtrainer.stories.StoryService;
-import com.vocabtrainer.vocab.VocabService;
+import com.vocabtrainer.model.Ctx;
+import com.vocabtrainer.repository.InMemoryProgressRepository;
+import com.vocabtrainer.service.CardCatalog;
+import com.vocabtrainer.service.ProgressService;
+import com.vocabtrainer.service.StoryService;
+import com.vocabtrainer.service.VocabService;
 import tools.jackson.databind.json.JsonMapper;
 
 /** Test fixtures built on the real german_vocab.json (cards + stories) and a fake Firestore. */
@@ -51,21 +49,17 @@ public final class TestVocab {
     }
 
     public static Ctx ctx() {
-        return new Ctx("user-1", "aaa.bbb.ccc", ZoneId.of("Asia/Kolkata"));
+        return new Ctx("user-1", "id-user-1-test", ZoneId.of("Asia/Kolkata"));
     }
 
-    /** A progress service whose "Firestore" is an in-memory document. */
+    /** A progress service whose repository keeps everything in memory, starting from {@code doc}. */
     public static ProgressService progress(Map<String, Object> doc) {
-        return new ProgressService(new ProgressStore(fakeRepo(doc)), fakeRepo(doc));
+        InMemoryProgressRepository repo = new InMemoryProgressRepository();
+        repo.seed(ctx().uid(), doc);
+        return new ProgressService(repo);
     }
 
     public static ProgressService progress() {
         return progress(new LinkedHashMap<>());
-    }
-
-    public static ProgressRepository fakeRepo(Map<String, Object> doc) {
-        ProgressRepository repo = mock(ProgressRepository.class);
-        when(repo.load(any())).thenAnswer(i -> new LinkedHashMap<>(doc));
-        return repo;
     }
 }
