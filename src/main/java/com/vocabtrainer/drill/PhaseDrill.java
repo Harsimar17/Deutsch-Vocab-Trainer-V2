@@ -7,7 +7,6 @@ import java.util.List;
 import java.util.Map;
 
 import com.vocabtrainer.cards.Card;
-import com.vocabtrainer.cards.German;
 import com.vocabtrainer.progress.Ctx;
 import com.vocabtrainer.progress.Srs;
 import com.vocabtrainer.stories.PhaseTests;
@@ -15,10 +14,11 @@ import com.vocabtrainer.stories.StoryService.PhaseWord;
 import com.vocabtrainer.util.Rand;
 
 /**
- * One Phasentest round. Each word is first recognised (DE→EN, 4 choices) and
- * later in the round produced (EN→DE, typed). Only a correct FIRST attempt
- * counts toward mastery; a miss comes back a few items later (no credit) until
- * it's right. Hints and synonyms neither earn nor cost credit.
+ * One Phasentest round. Each word is first recognised (DE→EN: pick the meaning
+ * out of 4) and later in the round produced (EN→DE: pick the German word out
+ * of 4). Only a correct FIRST attempt counts toward mastery; a miss comes back
+ * a few items later (no credit) until it's right. Distractors never share the
+ * asked word's meaning, so exactly one option is right.
  */
 class PhaseDrill implements Drill {
 
@@ -36,9 +36,6 @@ class PhaseDrill implements Drill {
         }
     }
 
-    private record Undo(String key, Map<String, Object> prev, String field, int relearnId) {
-    }
-
     private final String idx;
     private final boolean refresh;
     private final List<PhaseWord> words;
@@ -48,10 +45,7 @@ class PhaseDrill implements Drill {
     private int seq = 1000;
     // the current question
     private List<PhaseWord> options;
-    private List<PhaseWord> synonyms;
-    private boolean hint;
     private Map<String, Object> answer; // what happened, for the view
-    private Undo undo;
     // round results
     private int first;
     private int right;
@@ -127,18 +121,14 @@ class PhaseDrill implements Drill {
         return finished == null && pos < queue.size() ? queue.get(pos) : null;
     }
 
-    /** Per-question setup: options for recognition, same-meaning words for production. */
+    /** Per-question setup: the four choices (same for both directions, shown in the other language). */
     private void prepare() {
         Item it = item();
-        hint = false;
         answer = null;
-        undo = null;
         if (it == null) {
             return;
         }
-        options = "de-en".equals(it.dir) ? options(it.w, words) : List.of();
-        String en = it.w.card().en().toLowerCase();
-        synonyms = words.stream().filter(o -> !o.card().de().equals(it.w.card().de()) && o.card().en().toLowerCase().equals(en)).toList();
+        options = options(it.w, words);
     }
 
     @Override
@@ -167,33 +157,17 @@ class PhaseDrill implements Drill {
         v.put("cat", c.cat());
         v.put("typeLabel", PhaseTests.TYPE_LABEL.getOrDefault(it.w.type(), it.w.type()));
         v.put("chapter", it.w.chapter());
-        if (deEn) {
-            v.put("prompt", c.de());
-            List<Map<String, Object>> opts = new ArrayList<>();
-            for (PhaseWord o : options) {
-                opts.add(Map.of("key", o.card().de(), "text", o.card().en()));
-            }
-            v.put("options", opts);
-        } else {
-            v.put("prompt", c.en());
-            v.put("isNoun", c.isNoun());
-            v.put("synonyms", synonyms.size());
-            v.put("startsWith", firstTwo(German.ptBare(c)));
-            if (hint) {
-                v.put("hint", Map.of("startsWith", firstTwo(German.ptBare(c)),
-                        "cloze", java.util.Objects.toString(German.ptCloze(c, it.w.type()), "")));
-            }
+        v.put("prompt", deEn ? c.de() : c.en());
+        List<Map<String, Object>> opts = new ArrayList<>();
+        for (PhaseWord o : options) {
+            opts.add(Map.of("key", o.card().de(), "text", deEn ? o.card().en() : o.card().de()));
         }
+        v.put("options", opts);
         if (answer != null) {
             v.put("answer", answer);
             v.put("card", c.view()); // revealed only once answered
-            v.put("canOverrule", undo != null && !deEn && !it.relearn);
         }
         return v;
-    }
-
-    private static String firstTwo(String s) {
-        return s.substring(0, Math.min(2, s.length()));
     }
 
     @Override
@@ -201,7 +175,7 @@ class PhaseDrill implements Drill {
         Item it = item();
         switch (action) {
             case "choose" -> {
-                if (it == null || answer != null || !"de-en".equals(it.dir)) {
+                if (it == null || answer != null) {
                     return;
                 }
                 String key = Drill.str(payload, "key");
@@ -210,46 +184,8 @@ class PhaseDrill implements Drill {
                 }
                 boolean correct = key.equals(it.w.card().de());
                 answer = new LinkedHashMap<>(Map.of("correct", correct, "pick", key, "verdict", correct ? "correct" : "wrong"));
-                record(ctx, it, correct, false);
+                record(ctx, it, correct);
             }
-            case "hint" -> {
-                if (it != null && answer == null && "en-de".equals(it.dir)) {
-                    hint = true;
-                }
-            }
-            case "check" -> {
-                if (it == null || answer != null || !"en-de".equals(it.dir)) {
-                    return;
-                }
-                String input = Drill.str(payload, "input");
-                German.Check res = German.ptCheck(it.w.card(), input);
-                if ("empty".equals(res.verdict())) {
-                    return;
-                }
-                String verdict = res.verdict();
-                String other = null;
-                if (!res.correct()) {
-                    // a same-meaning word of this phase is a right translation: no penalty, no credit
-                    for (PhaseWord o : synonyms) {
-                        if (German.ptCheck(o.card(), input).correct()) {
-                            verdict = "synonym";
-                            other = o.card().de();
-                            break;
-                        }
-                    }
-                }
-                boolean correct = res.correct() || "synonym".equals(verdict);
-                boolean hinted = hint || "synonym".equals(verdict);
-                answer = new LinkedHashMap<>();
-                answer.put("correct", correct);
-                answer.put("verdict", verdict);
-                answer.put("hinted", hinted);
-                answer.put("spelled", res.spelled());
-                answer.put("hintText", res.hint());
-                answer.put("other", other);
-                record(ctx, it, correct, hinted);
-            }
-            case "overrule" -> overrule(ctx, it); // "ich hatte recht (Tippfehler)"
             case "next" -> {
                 if (it == null || answer == null) {
                     return;
@@ -265,7 +201,7 @@ class PhaseDrill implements Drill {
         }
     }
 
-    private void record(Ctx ctx, Item it, boolean correct, boolean hinted) {
+    private void record(Ctx ctx, Item it, boolean correct) {
         if (it.relearn) {
             if (!correct) {
                 requeue(it);
@@ -276,48 +212,27 @@ class PhaseDrill implements Drill {
         String f = "de-en".equals(it.dir) ? "r" : "p";
         Map<String, Object> st = new LinkedHashMap<>(tests.state(ctx, idx));
         Map<String, Map<String, Object>> ws = PhaseTests.words(st);
-        Map<String, Object> prev = ws.get(key);
-        Map<String, Object> cur = withDefaults(prev);
-        if (correct && !hinted) {
+        Map<String, Object> cur = withDefaults(ws.get(key));
+        if (correct) {
             cur.put(f, Math.min(PhaseTests.MASTER, Srs.num(cur.get(f), 0) + 1));
-        } else if (!correct) {
+        } else {
             cur.put(f, 0L);
             cur.put("miss", Srs.num(cur.get("miss"), 0) + 1);
         }
         saveWord(ctx, st, ws, key, cur);
         first++;
-        right += correct && !hinted ? 1 : 0;
+        right += correct ? 1 : 0;
         if (!correct) {
             tests.progress().grade(ctx, it.w.card(), "again");
-        } else if ("en-de".equals(it.dir) && !hinted) {
+            requeue(it);
+        } else if ("en-de".equals(it.dir)) {
             tests.progress().grade(ctx, it.w.card(), "good");
         }
-        undo = correct ? null : new Undo(key, prev, f, requeue(it));
     }
 
     /** Puts a missed item back a few places later (relearning within the round). */
-    private int requeue(Item it) {
-        int id = ++seq;
-        queue.add(Math.min(pos + 4, queue.size()), new Item(it.w, it.dir, id, true));
-        return id;
-    }
-
-    private void overrule(Ctx ctx, Item it) {
-        if (undo == null || it == null) {
-            return;
-        }
-        Map<String, Object> st = new LinkedHashMap<>(tests.state(ctx, idx));
-        Map<String, Map<String, Object>> ws = PhaseTests.words(st);
-        Map<String, Object> cur = withDefaults(undo.prev());
-        cur.put(undo.field(), Math.min(PhaseTests.MASTER, Srs.num(cur.get(undo.field()), 0) + 1));
-        saveWord(ctx, st, ws, undo.key(), cur);
-        int relearnId = undo.relearnId();
-        queue.removeIf(q -> q.id == relearnId);
-        right++;
-        tests.progress().grade(ctx, it.w.card(), "good");
-        answer.put("correct", true);
-        answer.put("overruled", true);
-        undo = null;
+    private void requeue(Item it) {
+        queue.add(Math.min(pos + 4, queue.size()), new Item(it.w, it.dir, ++seq, true));
     }
 
     private void saveWord(Ctx ctx, Map<String, Object> st, Map<String, Map<String, Object>> ws, String key, Map<String, Object> cur) {

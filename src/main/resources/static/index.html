@@ -1480,7 +1480,7 @@ function PhaseTestPage({ idx, onSettings, onChange }) {
         {howOpen && (
           <ol style={{ fontFamily: "var(--font-serif)", fontSize: "14px", color: "var(--ink-soft)", lineHeight: 1.6, paddingLeft: "20px", margin: "10px 0 0" }}>
             <li><strong>Erkennen</strong> (DE → EN): wähle die Bedeutung aus vier. Tasten 1–4.</li>
-            <li><strong>Produzieren</strong> (EN → DE): tippe das deutsche Wort selbst — bei Nomen mit Artikel. Das ist der Teil, der im Gespräch zählt.</li>
+            <li><strong>Produzieren</strong> (EN → DE): wähle das deutsche Wort aus vier — bei Nomen mit Artikel. Tasten 1–4.</li>
             <li>Ein Wort sitzt erst, wenn du es in <strong>zwei verschiedenen Runden</strong> beim ersten Versuch richtig hast — in beide Richtungen.</li>
             <li>Fehler kommen in derselben Runde ein paar Fragen später wieder, bis sie sitzen.</li>
             <li>Nach dem Bestehen: <strong>Auffrischungen nach {o.refreshDays.join(", ").replace(/, (\d+)$/, " und $1")} Tagen</strong> — schwächste Wörter zuerst. Wer dort patzt, übt das Wort erneut.</li>
@@ -1501,28 +1501,22 @@ function PhaseTestPage({ idx, onSettings, onChange }) {
 function PhaseRound({ idx, refresh, onExit, onNext, onChange }) {
   const drill = useDrill("phase", { phase: idx, refresh }, 0, onChange);
   const v = drill.view;
-  const [val, setVal] = useState("");
-  const inputRef = useRef(null);
   const nextRef = useRef(null);
   const answered = !!(v && v.answer);
   const qid = v ? v.state + "#" + v.position + "#" + v.total : "";
-  useEffect(() => { setVal(""); }, [v && v.position, v && v.state]);
-  // Focus: the text box while answering, "weiter" after — so Enter always does the obvious thing.
+  // Focus "weiter" once answered — so Enter always does the obvious thing.
   useEffect(() => {
-    if (!v || v.state !== "question") return;
-    if (answered && nextRef.current) nextRef.current.focus();
-    else if (!answered && v.dir === "en-de" && inputRef.current) inputRef.current.focus();
+    if (v && v.state === "question" && answered && nextRef.current) nextRef.current.focus();
   }, [qid, answered]);
   useEffect(() => {
     if (!v || v.state !== "question") return;
     const onKey = (e) => {
       if (e.isComposing) return;
       const el = e.target;
-      if (el && el !== inputRef.current && /^(BUTTON|INPUT|TEXTAREA|SELECT)$/.test(el.tagName)) return;
+      if (el && el !== nextRef.current && /^(BUTTON|INPUT|TEXTAREA|SELECT)$/.test(el.tagName)) return;
       if (e.key === "Enter") {
-        e.preventDefault();
-        if (answered) drill.act("next"); else if (v.dir === "en-de") drill.act("check", { input: val });
-      } else if (!answered && v.dir === "de-en" && /^[1-4]$/.test(e.key) && v.options[+e.key - 1]) {
+        if (answered) { e.preventDefault(); drill.act("next"); }
+      } else if (!answered && /^[1-4]$/.test(e.key) && v.options[+e.key - 1]) {
         drill.act("choose", { key: v.options[+e.key - 1].key });
       }
     };
@@ -1565,15 +1559,13 @@ function PhaseRound({ idx, refresh, onExit, onNext, onChange }) {
 
   const deEn = v.dir === "de-en";
   const a = v.answer;
-  const tone = a ? (a.correct ? "var(--good)" : a.verdict === "close" ? "var(--accent)" : "var(--bad)") : "var(--line)";
-  const verdictText = !a ? "" : a.correct
-    ? (a.overruled ? "✓ ALS RICHTIG GEWERTET" : a.verdict === "synonym" ? "✓ AUCH RICHTIG (" + a.other + ") — gesucht war:" : a.hinted ? "✓ RICHTIG (mit Hinweis)" : "✓ RICHTIG")
-    : a.verdict === "close" ? "≈ FAST" : "✗ NOCH NICHT — kommt gleich nochmal";
+  const tone = a ? (a.correct ? "var(--good)" : "var(--bad)") : "var(--line)";
+  const verdictText = !a ? "" : a.correct ? "✓ RICHTIG" : "✗ NOCH NICHT — kommt gleich nochmal";
   return wrap(
     <React.Fragment>
       <MasteryBar status={v.status} />
       <div style={{ display: "flex", justifyContent: "space-between", ...monoLabel }}>
-        <span>{deEn ? "DE → EN · erkennen" : "EN → DE · selbst schreiben"}{v.relearn ? " · nochmal" : ""}</span>
+        <span>{deEn ? "DE → EN · erkennen" : "EN → DE · deutsches Wort wählen"}{v.relearn ? " · nochmal" : ""}</span>
         <span>{v.position} / {v.total}{v.refresh ? " · Auffrischung" : ""}</span>
       </div>
       <div style={{ textAlign: "center", padding: "10px 0 4px" }}>
@@ -1584,41 +1576,17 @@ function PhaseRound({ idx, refresh, onExit, onNext, onChange }) {
           {deEn && <SpeakButton text={v.prompt} />}
           <div style={{ fontFamily: "var(--font-serif)", fontWeight: 600, fontSize: v.prompt.length > 26 ? "22px" : "30px", color: "var(--ink)", lineHeight: 1.25 }}>{v.prompt}</div>
         </div>
-        {!deEn && v.synonyms > 0 && <div style={{ fontFamily: "var(--font-serif)", fontStyle: "italic", fontSize: "13px", color: "var(--ink-soft)", marginTop: "8px" }}>{v.synonyms + 1} Wörter dieser Phase bedeuten das — gesucht: „{v.startsWith}…“</div>}
       </div>
-      {deEn ? (
-        <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
-          {v.options.map((o, i) => {
-            const c = optionColors(a && o.key === v.card.de, a && o.key === a.pick, !!a);
-            return (
-              <button key={o.key} onClick={() => drill.act("choose", { key: o.key })} style={{ display: "flex", gap: "12px", alignItems: "baseline", textAlign: "left", fontFamily: "var(--font-serif)", fontSize: o.text.length > 30 ? "14px" : "17px", padding: "13px 16px", borderRadius: "12px", border: "1px solid " + c.border, background: c.bg, color: c.color, boxShadow: c.shadow, cursor: a ? "default" : "pointer" }}>
-                <span style={{ fontFamily: "var(--font-mono)", fontSize: "10px", opacity: 0.6 }}>{i + 1}</span>{o.text}
-              </button>
-            );
-          })}
-        </div>
-      ) : (
-        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "10px" }}>
-          <input ref={inputRef} value={val} onChange={(e) => setVal(e.target.value)} readOnly={!!a}
-            placeholder={v.isNoun ? "der / die / das …" : "auf Deutsch …"} autoCapitalize="off" autoCorrect="off" autoComplete="off" spellCheck={false}
-            style={{ width: "100%", maxWidth: "440px", boxSizing: "border-box", padding: "14px 16px", textAlign: "center", fontFamily: "var(--font-serif)", fontSize: "20px", border: "1px solid " + tone, borderRadius: "12px", background: "var(--paper-raised)", color: "var(--ink)", outline: "none" }} />
-          {!a && (
-            <React.Fragment>
-              <UmlautButtons inputRef={inputRef} setVal={setVal} />
-              {v.hint ? (
-                <div style={{ textAlign: "center", fontFamily: "var(--font-serif)", fontSize: "15px", color: "var(--ink-soft)", lineHeight: 1.5, maxWidth: "440px" }}>
-                  beginnt mit „<strong style={{ color: "var(--ink)" }}>{v.hint.startsWith}…</strong>“
-                  {v.hint.cloze && <div style={{ fontStyle: "italic", marginTop: "4px" }}>{v.hint.cloze}</div>}
-                  <div style={{ ...monoLabel, fontSize: "8px", marginTop: "4px" }}>mit Hinweis zählt es nicht für „gemeistert“</div>
-                </div>
-              ) : (
-                <button onClick={() => { drill.act("hint"); if (inputRef.current) inputRef.current.focus(); }} style={{ ...monoLabel, background: "transparent", border: "1px solid var(--line)", borderRadius: "999px", padding: "5px 12px", cursor: "pointer", color: "var(--ink-soft)" }}>💡 Hinweis</button>
-              )}
-              <button onClick={() => drill.act("check", { input: val })} style={navBtnStyle}>prüfen › <span style={{ opacity: 0.6 }}>⏎</span></button>
-            </React.Fragment>
-          )}
-        </div>
-      )}
+      <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+        {v.options.map((o, i) => {
+          const c = optionColors(a && o.key === v.card.de, a && o.key === a.pick, !!a);
+          return (
+            <button key={o.key} onClick={() => drill.act("choose", { key: o.key })} style={{ display: "flex", gap: "12px", alignItems: "baseline", textAlign: "left", fontFamily: "var(--font-serif)", fontSize: o.text.length > 30 ? "14px" : "17px", padding: "13px 16px", borderRadius: "12px", border: "1px solid " + c.border, background: c.bg, color: c.color, boxShadow: c.shadow, cursor: a ? "default" : "pointer" }}>
+              <span style={{ fontFamily: "var(--font-mono)", fontSize: "10px", opacity: 0.6 }}>{i + 1}</span>{o.text}
+            </button>
+          );
+        })}
+      </div>
       {a && (
         <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "10px" }}>
           <div style={{ fontFamily: "var(--font-mono)", fontSize: "12px", letterSpacing: "0.08em", color: tone }}>{verdictText}</div>
@@ -1628,8 +1596,6 @@ function PhaseRound({ idx, refresh, onExit, onNext, onChange }) {
               <div style={{ fontFamily: "var(--font-serif)", fontWeight: 600, fontSize: "22px", color: catColor(v.card.cat), textAlign: "center" }}>{v.card.de}</div>
             </div>
           )}
-          {a.spelled && a.correct && <div style={{ fontFamily: "var(--font-serif)", fontSize: "14px", color: "var(--ink-soft)" }}>mit Umlaut: <strong style={{ color: "var(--ink)" }}>{a.spelled}</strong></div>}
-          {a.hintText && <div style={{ fontFamily: "var(--font-serif)", fontStyle: "italic", fontSize: "14px", color: "var(--ink-soft)" }}>{a.hintText}</div>}
           {deEn && !a.correct && <div style={{ fontFamily: "var(--font-serif)", fontSize: "15px", color: "var(--ink-soft)" }}>{v.card.de} = <strong style={{ color: "var(--ink)" }}>{v.card.en}</strong></div>}
           {v.card.example && (
             <div style={{ display: "flex", alignItems: "center", gap: "10px", maxWidth: "min(440px, 100%)", padding: "10px 14px", background: "var(--paper-raised)", border: "1px solid var(--line)", borderRadius: "12px", boxShadow: "var(--shadow-soft)" }}>
@@ -1638,7 +1604,6 @@ function PhaseRound({ idx, refresh, onExit, onNext, onChange }) {
             </div>
           )}
           <div style={{ display: "flex", gap: "10px", alignItems: "center", flexWrap: "wrap", justifyContent: "center" }}>
-            {v.canOverrule && <button onClick={() => drill.act("overrule")} style={{ ...monoLabel, background: "transparent", border: "1px solid var(--line)", borderRadius: "999px", padding: "6px 12px", cursor: "pointer", color: "var(--ink-soft)" }}>ich hatte recht (Tippfehler)</button>}
             <button ref={nextRef} onClick={() => drill.act("next")} style={navBtnStyle}>weiter › <span style={{ opacity: 0.6 }}>⏎</span></button>
           </div>
           <div style={{ ...monoLabel, fontSize: "8px" }}>aus Kapitel {v.chapter}</div>

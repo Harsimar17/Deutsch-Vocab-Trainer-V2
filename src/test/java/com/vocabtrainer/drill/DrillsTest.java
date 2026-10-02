@@ -140,42 +140,47 @@ class DrillsTest {
         assertNotNull(tests.state(ctx, idx).get("due"), "first refresher scheduled");
     }
 
-    /** Answers like a learner who knows the word: for shared meanings, the "starts with" cue picks the one asked for. */
+    /** Answers like a learner who knows the word: the one option that means / is the asked word. */
     private void answerCorrectly(PhaseDrill d, Map<String, Object> v, Map<String, List<Card>> byEn) {
         if ("de-en".equals(v.get("dir"))) {
             d.act(ctx, "choose", Map.of("key", v.get("prompt")));
         } else {
-            String de = byEn.get((String) v.get("prompt")).stream()
-                    .filter(c -> com.vocabtrainer.cards.German.ptBare(c).startsWith((String) v.get("startsWith")))
-                    .findFirst().orElseThrow().de();
-            d.act(ctx, "check", Map.of("input", de.replaceAll("\\s*\\((?:Pl\\.|WG)\\)", "").split(" / ")[0]));
+            List<String> meant = byEn.get((String) v.get("prompt")).stream().map(Card::de).toList();
+            List<String> right = options(v).stream().map(o -> (String) o.get("key")).filter(meant::contains).toList();
+            assertEquals(1, right.size(), "exactly one option means " + v.get("prompt"));
+            d.act(ctx, "choose", Map.of("key", right.get(0)));
             @SuppressWarnings("unchecked")
             Map<String, Object> a = (Map<String, Object>) d.view(ctx).get("answer");
-            assertTrue((Boolean) a.get("correct"), "accepted: " + de);
+            assertTrue((Boolean) a.get("correct"), "accepted: " + right.get(0));
         }
     }
 
     @Test
-    void phaseTestTypoCanBeOverruled() {
+    void phaseTestProductionIsMultipleChoiceInGerman() {
         ProgressService p = TestVocab.progress();
         StoryService stories = TestVocab.stories();
         PhaseTests tests = new PhaseTests(p, stories);
         String idx = stories.groups().get(0).index();
+        Map<String, String> enOf = new LinkedHashMap<>();
+        stories.phaseWords(idx).forEach(w -> enOf.put(w.card().de(), w.card().en()));
         PhaseDrill d = new PhaseDrill(ctx, idx, false, tests);
         Map<String, Object> v = d.view(ctx);
-        while ("de-en".equals(v.get("dir"))) { // skip to the typing part
+        while ("de-en".equals(v.get("dir"))) { // skip to the EN→DE part
             d.act(ctx, "choose", Map.of("key", v.get("prompt")));
             d.act(ctx, "next", Map.of());
             v = d.view(ctx);
         }
+        List<Map<String, Object>> opts = options(v);
+        assertEquals(4, opts.size());
+        for (Map<String, Object> o : opts) {
+            assertEquals(o.get("key"), o.get("text"), "EN→DE options are shown in German");
+        }
         int total = (int) v.get("total");
-        d.act(ctx, "check", Map.of("input", "völlig falsch"));
+        String prompt = (String) v.get("prompt");
+        String wrong = opts.stream().map(o -> (String) o.get("key")).filter(k -> !prompt.equals(enOf.get(k))).findFirst().orElseThrow();
+        d.act(ctx, "choose", Map.of("key", wrong));
         Map<String, Object> after = d.view(ctx);
-        assertEquals(true, after.get("canOverrule"));
-        assertEquals(total + 1, after.get("total"));
-        d.act(ctx, "overrule", Map.of());
-        Map<String, Object> over = d.view(ctx);
-        assertEquals(total, over.get("total"), "the re-ask is dropped again");
-        assertFalse((Boolean) over.get("canOverrule"));
+        assertFalse((Boolean) ((Map<?, ?>) after.get("answer")).get("correct"));
+        assertEquals(total + 1, after.get("total"), "the miss is re-asked later in the round");
     }
 }

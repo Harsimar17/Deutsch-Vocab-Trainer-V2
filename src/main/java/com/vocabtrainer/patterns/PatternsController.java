@@ -32,7 +32,7 @@ public class PatternsController {
 
     private final List<Map<String, Object>> patterns;
     private final ProgressService progress;
-    private final Set<String> seenToday = ConcurrentHashMap.newKeySet();
+    private final Set<String> seenToday = ConcurrentHashMap.newKeySet(); // "yyyy-MM-dd|uid|key"
 
     @SuppressWarnings("unchecked")
     public PatternsController(JsonMapper json, ProgressService progress) throws IOException {
@@ -77,7 +77,11 @@ public class PatternsController {
         if (patterns.stream().noneMatch(p -> key.equals(p.get("key")))) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "no such pattern");
         }
-        boolean counted = seenToday.add(ctx.today() + "|" + key);
+        // once per pattern, user and (their) day. Zones are up to 26 h apart, so
+        // another user's "today" can be 2 days behind — anything older is done.
+        String oldest = java.time.LocalDate.now(ctx.zone()).minusDays(2).toString();
+        seenToday.removeIf(s -> s.substring(0, 10).compareTo(oldest) < 0);
+        boolean counted = seenToday.add(ctx.today() + "|" + ctx.uid() + "|" + key);
         if (counted) {
             progress.tickDaily(ctx);
         }
