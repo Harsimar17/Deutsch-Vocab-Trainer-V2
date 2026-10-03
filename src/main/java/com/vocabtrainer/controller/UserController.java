@@ -26,11 +26,9 @@ public class UserController {
     public static final String ADMIN_KEY_HEADER = "X-Admin-Key";
 
     private final UserService users;
-    private final String adminKey;
 
     public UserController(UserService users, AppProperties props) {
         this.users = users;
-        this.adminKey = props.auth().adminKey();
     }
 
     public record CreateUserRequest(String email, String password, Boolean importLegacyProgress) {
