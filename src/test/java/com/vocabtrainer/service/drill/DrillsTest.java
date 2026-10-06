@@ -102,7 +102,7 @@ class DrillsTest {
         words.forEach(w -> byEn.computeIfAbsent(w.card().en(), k -> new java.util.ArrayList<>()).add(w.card()));
 
         // first round: miss the first question on purpose
-        PhaseDrill d = new PhaseDrill(ctx, idx, PhaseTestService.WORDS, false, tests);
+        PhaseDrill d = new PhaseDrill(ctx, idx, PhaseTestService.WORDS, false, null, tests);
         Map<String, Object> v = d.view(ctx);
         int total = (int) v.get("total");
         d.act(ctx, "choose", Map.of("key", options(v).stream()
@@ -125,7 +125,7 @@ class DrillsTest {
         // keep playing clean rounds until every word is mastered in both directions
         int rounds = 1;
         while (!Boolean.TRUE.equals(cur.get("passedNow")) && rounds++ < 30) {
-            d = new PhaseDrill(ctx, idx, PhaseTestService.WORDS, false, tests);
+            d = new PhaseDrill(ctx, idx, PhaseTestService.WORDS, false, null, tests);
             cur = d.view(ctx);
             while (!"finished".equals(cur.get("state"))) {
                 answerCorrectly(d, cur, byEn);
@@ -170,7 +170,7 @@ class DrillsTest {
         Map<String, Object> cur = null;
         int rounds = 0;
         while ((cur == null || !Boolean.TRUE.equals(cur.get("passedNow"))) && rounds++ < 10) {
-            PhaseDrill d = new PhaseDrill(ctx, idx, PhaseTestService.VERBS, false, tests);
+            PhaseDrill d = new PhaseDrill(ctx, idx, PhaseTestService.VERBS, false, null, tests);
             cur = d.view(ctx);
             assertEquals(PhaseTestService.VERBS, cur.get("set"));
             while (!"finished".equals(cur.get("state"))) {
@@ -204,6 +204,59 @@ class DrillsTest {
     }
 
     @Test
+    @SuppressWarnings("unchecked")
+    void aRetakeKeepsOnlyItsScoreAndChangesNoProgress() {
+        ProgressService p = TestVocab.progress();
+        StoryService stories = TestVocab.stories();
+        PhaseTestService tests = new PhaseTestService(p, stories);
+        String key = PhaseTestService.storageKey("1", PhaseTestService.VERBS);
+        // a passed verb test: every verb mastered, refresher scheduled
+        Map<String, Object> words = new LinkedHashMap<>();
+        stories.phaseVerbs("1").forEach(w -> words.put(w.card().de(), Map.of("r", 2L, "p", 2L, "miss", 1L)));
+        Map<String, Object> passed = new LinkedHashMap<>(Map.of("words", words, "passed", 1000L, "stage", 1L, "due", 5000L));
+        tests.save(ctx, key, passed);
+        Map<String, Object> before = new LinkedHashMap<>(tests.state(ctx, key));
+
+        PhaseDrill d = new PhaseDrill(ctx, "1", PhaseTestService.VERBS, false, PhaseTestService.RETAKE_ALL, tests);
+        Map<String, Object> v = d.view(ctx);
+        assertEquals(PhaseTestService.RETAKE_ALL, v.get("retake"));
+        int total = (int) v.get("total");
+        assertEquals(2 * words.size(), total, "every verb, both directions");
+        while (!"finished".equals(v.get("state"))) {
+            String prompt = (String) v.get("prompt");
+            List<String> keys = options(v).stream().map(o -> (String) o.get("key")).toList();
+            String pick;
+            if ((int) v.get("position") == 1) { // the first question (DE→EN) answered wrong on purpose
+                pick = keys.stream().filter(k -> !k.equals(prompt)).findFirst().orElseThrow();
+            } else {
+                pick = "de-en".equals(v.get("dir")) ? prompt : keys.get(0);
+            }
+            d.act(ctx, "choose", Map.of("key", pick));
+            d.act(ctx, "next", Map.of());
+            v = d.view(ctx);
+            assertEquals(total, v.getOrDefault("total", total), "a retake never re-asks");
+        }
+        Map<String, Object> after = tests.state(ctx, key);
+        assertEquals(before.get("words"), after.get("words"), "mastery untouched");
+        assertEquals(before.get("passed"), after.get("passed"));
+        assertEquals(before.get("due"), after.get("due"), "refresher date untouched");
+        assertTrue(p.srs(ctx).isEmpty(), "the Study plan is untouched");
+        List<Map<String, Object>> attempts = PhaseTestService.attempts(after);
+        assertEquals(1, attempts.size());
+        assertEquals((long) total, attempts.get(0).get("total"));
+        assertTrue((long) attempts.get(0).get("right") < total, "the miss is counted");
+        assertEquals(PhaseTestService.RETAKE_ALL, attempts.get(0).get("size"));
+    }
+
+    @Test
+    void aShortRetakeAsksTenWordsBothWays() {
+        StoryService stories = TestVocab.stories();
+        PhaseTestService tests = new PhaseTestService(TestVocab.progress(), stories);
+        PhaseDrill d = new PhaseDrill(ctx, "1", PhaseTestService.WORDS, false, PhaseTestService.RETAKE_SHORT, tests);
+        assertEquals(2 * PhaseTestService.RETAKE_SHORT_WORDS, d.view(ctx).get("total"));
+    }
+
+    @Test
     void phaseTestProductionIsMultipleChoiceInGerman() {
         ProgressService p = TestVocab.progress();
         StoryService stories = TestVocab.stories();
@@ -211,7 +264,7 @@ class DrillsTest {
         String idx = stories.groups().get(0).index();
         Map<String, String> enOf = new LinkedHashMap<>();
         stories.phaseWords(idx).forEach(w -> enOf.put(w.card().de(), w.card().en()));
-        PhaseDrill d = new PhaseDrill(ctx, idx, PhaseTestService.WORDS, false, tests);
+        PhaseDrill d = new PhaseDrill(ctx, idx, PhaseTestService.WORDS, false, null, tests);
         Map<String, Object> v = d.view(ctx);
         while ("de-en".equals(v.get("dir"))) { // skip to the EN→DE part
             d.act(ctx, "choose", Map.of("key", v.get("prompt")));

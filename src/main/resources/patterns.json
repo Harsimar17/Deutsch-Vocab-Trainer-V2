@@ -1,7 +1,7 @@
 [
   {
     "key": "pos2",
-    "name": "Verb an Position 2",
+    "name": "Verb in position 2",
     "rule": "In a normal statement the conjugated verb is always the SECOND box. Whatever you put first — subject, time, an object — the verb comes right after it, and the subject slides in behind the verb.",
     "skeleton": [
       {
@@ -136,7 +136,7 @@
   },
   {
     "key": "perfekt",
-    "name": "Perfekt — die Satzklammer",
+    "name": "Perfect tense — the verb bracket",
     "rule": "Perfekt uses two verbs. 'haben' or 'sein' sits in position 2; the past participle (ge-…-t / ge-…-en) is thrown to the very end. Everything else is trapped inside that bracket.",
     "skeleton": [
       {
@@ -306,7 +306,7 @@
   },
   {
     "key": "modal",
-    "name": "Modalverb — die Satzklammer",
+    "name": "Modal verb — the verb bracket",
     "rule": "The modal verb (möchten, müssen, können, dürfen …) takes position 2. The real verb goes to the end as a plain infinitive — a separable verb even stays whole there.",
     "skeleton": [
       {
@@ -474,7 +474,7 @@
   },
   {
     "key": "trennbar",
-    "name": "Trennbare Verben",
+    "name": "Separable verbs",
     "rule": "In a main clause the separable prefix (auf-, an-, ab-, mit-, vor- …) snaps off the front of the verb and moves to the very end.",
     "skeleton": [
       {
@@ -628,7 +628,7 @@
   },
   {
     "key": "weil",
-    "name": "Nebensatz: weil / dass / obwohl",
+    "name": "Subclause: weil / dass / obwohl",
     "rule": "A word like weil, dass or obwohl opens a subordinate clause and kicks the conjugated verb all the way to the END. With two verbs, BOTH go to the end — participle first, then the finite one.",
     "skeleton": [
       {
@@ -790,7 +790,7 @@
   },
   {
     "key": "neb-vorne",
-    "name": "Nebensatz zuerst (wenn / als / weil)",
+    "name": "Subclause first (wenn / als / weil)",
     "rule": "When the subordinate clause comes FIRST, the whole clause counts as position 1. So the main clause starts straight away with its verb: '…, VERB ich …'. Verb bumps into verb across the comma.",
     "skeleton": [
       {
@@ -938,7 +938,7 @@
   },
   {
     "key": "umzu",
-    "name": "um … zu (Absicht / Zweck)",
+    "name": "um … zu (purpose)",
     "rule": "To say WHY someone does something: 'um' + … + 'zu' + infinitive at the end. The um-part has no subject of its own — it's the same person as the main clause.",
     "skeleton": [
       {

@@ -40,6 +40,7 @@ class PhaseDrill implements Drill {
     private final String set;      // "words" | "verbs"
     private final String idx;      // where progress is saved, e.g. "2" or "2-verbs"
     private final boolean refresh;
+    private final String retake;   // null for a normal round, else "short" | "all": nothing is saved but the score
     private final List<PhaseWord> words;
     private final List<PhaseWord> optionPool;
     private final PhaseTestService tests;
@@ -54,16 +55,35 @@ class PhaseDrill implements Drill {
     private int right;
     private Map<String, Object> finished;
 
-    PhaseDrill(Ctx ctx, String phase, String set, boolean refresh, PhaseTestService tests) {
+    PhaseDrill(Ctx ctx, String phase, String set, boolean refresh, String retake, PhaseTestService tests) {
         this.phase = phase;
         this.set = set;
         this.idx = PhaseTestService.storageKey(phase, set);
         this.refresh = refresh;
+        this.retake = retake;
         this.tests = tests;
         this.words = tests.phaseWords(phase, set);
         this.optionPool = tests.optionPool(phase, set);
-        this.queue = buildRound(words, PhaseTestService.words(tests.state(ctx, idx)), refresh);
+        this.queue = retake != null ? buildRetake(words, retake)
+                : buildRound(words, PhaseTestService.words(tests.state(ctx, idx)), refresh);
         prepare();
+    }
+
+    /** A retake: random words (or all of them), each asked DE→EN and later EN→DE. */
+    static List<Item> buildRetake(List<PhaseWord> words, String size) {
+        List<PhaseWord> pick = Rand.shuffle(words);
+        if (PhaseTestService.RETAKE_SHORT.equals(size)) {
+            pick = pick.subList(0, Math.min(PhaseTestService.RETAKE_SHORT_WORDS, pick.size()));
+        }
+        List<Item> items = new ArrayList<>();
+        int id = 1;
+        for (PhaseWord w : pick) {
+            items.add(new Item(w, "de-en", id++, false));
+        }
+        for (PhaseWord w : Rand.shuffle(pick)) {
+            items.add(new Item(w, "en-de", id++, false));
+        }
+        return items;
     }
 
     static List<Item> buildRound(List<PhaseWord> words, Map<String, Map<String, Object>> ws, boolean refresh) {
@@ -144,6 +164,7 @@ class PhaseDrill implements Drill {
         v.put("phase", phase);
         v.put("set", set);
         v.put("refresh", refresh);
+        v.put("retake", retake);
         v.put("status", PhaseTestService.status(words, st));
         if (finished != null) {
             v.put("state", "finished");
@@ -208,6 +229,11 @@ class PhaseDrill implements Drill {
     }
 
     private void record(Ctx ctx, Item it, boolean correct) {
+        if (retake != null) { // a retake only keeps score: no progress, no re-asking
+            first++;
+            right += correct ? 1 : 0;
+            return;
+        }
         if (it.relearn) {
             if (!correct) {
                 requeue(it);
@@ -258,6 +284,11 @@ class PhaseDrill implements Drill {
 
     private void finishRound(Ctx ctx) {
         long now = System.currentTimeMillis();
+        if (retake != null) {
+            tests.saveAttempt(ctx, idx, new LinkedHashMap<>(Map.of("at", now, "right", (long) right, "total", (long) first, "size", retake)));
+            finished = new LinkedHashMap<>(Map.of("passedNow", false));
+            return;
+        }
         Map<String, Object> st = new LinkedHashMap<>(tests.state(ctx, idx));
         boolean passedNow = false;
         if (refresh) {

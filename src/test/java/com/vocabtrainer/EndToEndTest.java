@@ -339,6 +339,23 @@ class EndToEndTest {
         assertEquals("inProgress", ((Map<String, Object>) ((List<Map<String, Object>>) ok(get("/api/stories"), t, null)
                 .get("groups")).get(0).get("verbTest")).get("kind"));
 
+        // a retake at any time: only its score is kept, progress stays as it was
+        Map<String, Object> statusBefore = (Map<String, Object>) ok(get("/api/phase-tests/1?set=verbs"), t, null).get("status");
+        Round retake = start(t, "phase", Map.of("phase", "1", "set", "verbs", "retake", "short"));
+        assertEquals("short", retake.view().get("retake"));
+        v = retake.view();
+        for (int i = 0; i < 40 && !"finished".equals(v.get("state")); i++) {
+            act(t, retake, "choose", Map.of("key", options(v).get(0).get("key")));
+            v = act(t, retake, "next", Map.of());
+        }
+        assertEquals("finished", v.get("state"));
+        overview = ok(get("/api/phase-tests/1?set=verbs"), t, null);
+        assertEquals(statusBefore, overview.get("status"), "a retake changes no progress");
+        List<Map<String, Object>> attempts = (List<Map<String, Object>>) overview.get("attempts");
+        assertEquals(1, attempts.size());
+        assertEquals("short", attempts.get(0).get("size"));
+        assertEquals(400, status(post("/api/drills/phase"), t, Map.of("phase", "1", "retake", "huge")));
+
         overview = ok(post("/api/phase-tests/1/reset?set=verbs"), t, null);
         assertEquals("notStarted", ((Map<String, Object>) overview.get("status")).get("kind"));
         assertEquals(400, status(get("/api/phase-tests/1?set=nouns"), t, null));

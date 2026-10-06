@@ -369,7 +369,7 @@ const CATEGORY_META = {
   das: { label: "das", color: "#3F7A55" },
   adj: { label: "adj.", color: "#8A6A2B" },
   verb: { label: "verb", color: "#6B4A8A" },
-  sep: { label: "trenn.", color: "#2E7D74" },
+  sep: { label: "sep.", color: "#2E7D74" },
   func: { label: "func.", color: "#4A7A8C" },
   phrase: { label: "phrase", color: "#B0722E" },
 };
@@ -1235,16 +1235,17 @@ function WordTip({ tip }) {
 
 // Phase test status from the backend, in words.
 // What a phase test's two sets are called: the stories' target words, and the B1 verbs used in them.
-const SET_NAME = { words: "Wörter", verbs: "Verben" };
+const SET_NAME = { words: "Wörter", verbs: "Verben" };  // in the German texts
+const SET_LABEL = { words: "Words", verbs: "Verbs" };   // on buttons
 
-function testStatusText(s, unit = "Wörter") {
+function testStatusText(s, unit = "words") {
   if (!s) return { text: "", tone: "var(--ink-faint)" };
   switch (s.kind) {
-    case "refreshDue": return { text: "⏰ Auffrischung fällig", tone: "var(--accent)" };
-    case "practiceAgain": return { text: "↻ " + s.open + " " + unit + " wieder üben", tone: "var(--bad)" };
-    case "passed": return { text: "✓ bestanden · nächste Auffrischung " + new Date(s.due).toLocaleDateString(undefined, { day: "numeric", month: "short" }), tone: "var(--good)" };
-    case "inProgress": return { text: s.mastered + " / " + s.total + " gemeistert", tone: "var(--ink-faint)" };
-    default: return { text: s.total + " " + unit + " · noch nicht begonnen", tone: "var(--ink-faint)" };
+    case "refreshDue": return { text: "⏰ refresher due", tone: "var(--accent)" };
+    case "practiceAgain": return { text: "↻ practise " + s.open + " " + unit + " again", tone: "var(--bad)" };
+    case "passed": return { text: "✓ passed · next refresher " + new Date(s.due).toLocaleDateString(undefined, { day: "numeric", month: "short" }), tone: "var(--good)" };
+    case "inProgress": return { text: s.mastered + " / " + s.total + " mastered", tone: "var(--ink-faint)" };
+    default: return { text: s.total + " " + unit + " · not started yet", tone: "var(--ink-faint)" };
   }
 }
 
@@ -1263,8 +1264,8 @@ function StoriesList({ onSettings }) {
         <div style={{ ...monoLabel, color: "var(--ink-soft)", marginTop: "8px" }}>{data.readCount} / {data.total} gelesen</div>
       </div>
       {data.groups.map((g, gi) => {
-        const st = testStatusText(g.test);
-        const vt = testStatusText(g.verbTest, "Verben");
+        const st = testStatusText(g.test, "words");
+        const vt = testStatusText(g.verbTest, "verbs");
         const testDue = (g.test && g.test.dueNow) || (g.verbTest && g.verbTest.dueNow);
         return (
           <div key={gi} style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
@@ -1293,13 +1294,13 @@ function StoriesList({ onSettings }) {
               }}>
                 <span style={{ flexShrink: 0, width: "34px", fontSize: "18px", textAlign: "center" }}>🎯</span>
                 <span style={{ flex: 1, minWidth: 0 }}>
-                  <span style={{ display: "block", fontFamily: "var(--font-serif)", fontWeight: 600, fontSize: "16px" }}>Phasentest</span>
+                  <span style={{ display: "block", fontFamily: "var(--font-serif)", fontWeight: 600, fontSize: "16px" }}>Phase test</span>
                   <span style={{ display: "block", fontFamily: "var(--font-mono)", fontSize: "10px", letterSpacing: "0.04em", color: st.tone, marginTop: "3px" }}>
-                    Wörter: {st.text}{!g.test.passed && !g.allRead ? " · empfohlen nach allen Kapiteln" : ""}
+                    Words: {st.text}{!g.test.passed && !g.allRead ? " · recommended after all chapters" : ""}
                   </span>
                   {g.verbTest && (
                     <span style={{ display: "block", fontFamily: "var(--font-mono)", fontSize: "10px", letterSpacing: "0.04em", color: vt.tone, marginTop: "2px" }}>
-                      Verben: {vt.text}
+                      Verbs: {vt.text}
                     </span>
                   )}
                 </span>
@@ -1344,7 +1345,7 @@ function StoryReader({ id, onSettings }) {
   return (
     <div ref={topRef} style={{ ...srsCol, width: "100%", maxWidth: "620px", margin: "0 auto", gap: "18px", alignItems: "stretch", scrollMarginTop: "12px" }}>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "10px" }}>
-        <button onClick={() => onSettings("openStory", null)} style={miniBtn}>‹ alle Geschichten</button>
+        <button onClick={() => onSettings("openStory", null)} style={miniBtn}>‹ all stories</button>
         <span style={{ ...monoLabel, fontSize: "9px", textAlign: "right" }}>Kapitel {story.chapter}{story.phaseName ? " · " + story.phaseName : ""}</span>
       </div>
       <div style={{ textAlign: "center" }}>
@@ -1386,7 +1387,7 @@ function StoryReader({ id, onSettings }) {
       {story.glossary.length > 0 && (
         <div style={{ borderTop: "1px solid var(--line)", paddingTop: "14px" }}>
           <button onClick={() => setGlossOpen((o) => !o)} style={{ ...counterStyle, fontSize: "11px", color: "var(--ink-soft)", background: "transparent", border: "none", padding: 0, cursor: "pointer" }}>
-            {glossOpen ? "▾" : "▸"} WORTLISTE ({story.glossary.length})
+            {glossOpen ? "▾" : "▸"} WORD LIST ({story.glossary.length})
           </button>
           {glossOpen && (
             <div style={{ display: "flex", flexDirection: "column", gap: "6px", marginTop: "10px" }}>
@@ -1402,12 +1403,12 @@ function StoryReader({ id, onSettings }) {
       )}
       <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "12px", paddingTop: "4px" }}>
         <button onClick={toggleRead} style={{ ...navBtnStyle, background: story.read ? "var(--good)" : "transparent", border: "1px solid " + (story.read ? "var(--good)" : "var(--ink-muted)"), color: story.read ? "#F6F1E5" : "var(--ink-muted)", boxShadow: "none" }}>
-          {story.read ? "✓ gelesen" : "als gelesen markieren"}
+          {story.read ? "✓ read" : "mark as read"}
         </button>
         <div style={{ display: "flex", gap: "10px", flexWrap: "wrap", justifyContent: "center" }}>
-          {story.endsPhase && <button onClick={() => onSettings("openPhaseTest", story.endsPhase)} style={{ ...navBtnStyle, background: "var(--good)", borderColor: "var(--good)" }}>🎯 Phasentest</button>}
-          {story.prev && <button onClick={() => onSettings("openStory", story.prev.id)} style={navBtnStyle}>‹ Kapitel {story.prev.chapter}</button>}
-          {story.next && <button onClick={() => onSettings("openStory", story.next.id)} style={navBtnStyle}>Kapitel {story.next.chapter} ›</button>}
+          {story.endsPhase && <button onClick={() => onSettings("openPhaseTest", story.endsPhase)} style={{ ...navBtnStyle, background: "var(--good)", borderColor: "var(--good)" }}>🎯 Phase test</button>}
+          {story.prev && <button onClick={() => onSettings("openStory", story.prev.id)} style={navBtnStyle}>‹ Chapter {story.prev.chapter}</button>}
+          {story.next && <button onClick={() => onSettings("openStory", story.next.id)} style={navBtnStyle}>Chapter {story.next.chapter} ›</button>}
         </div>
       </div>
       {tip && <WordTip tip={tip} />}
@@ -1428,7 +1429,7 @@ function PhaseTestPage({ idx, onSettings, onChange }) {
   const [set, setSet] = useState("words"); // "words" | "verbs" — the two tabs
   const [overview, setOverview] = useState(null);
   const [error, setError] = useState(null);
-  const [round, setRound] = useState(null); // { refresh, n } while a round is running
+  const [round, setRound] = useState(null); // { refresh, retake, n } while a round is running
   const [howOpen, setHowOpen] = useState(false);
   const load = useCallback(() => {
     api.get("/api/phase-tests/" + idx + "?set=" + set).then(setOverview).catch((e) => setError(e.message));
@@ -1436,8 +1437,8 @@ function PhaseTestPage({ idx, onSettings, onChange }) {
   useEffect(() => { load(); }, [load]);
 
   if (round) {
-    return <PhaseRound key={round.n} idx={idx} set={set} refresh={round.refresh} onChange={onChange}
-      onExit={() => { setRound(null); load(); }} onNext={() => setRound({ refresh: false, n: round.n + 1 })} />;
+    return <PhaseRound key={round.n} idx={idx} set={set} refresh={round.refresh} retake={round.retake} onChange={onChange}
+      onExit={() => { setRound(null); load(); }} onNext={() => setRound({ refresh: false, retake: round.retake, n: round.n + 1 })} />;
   }
   if (error) return <DrillError message={error} />;
   const tabs = (
@@ -1446,7 +1447,7 @@ function PhaseTestPage({ idx, onSettings, onChange }) {
         <button key={k} role="tab" aria-selected={set === k} onClick={() => setSet(k)} style={{
           fontFamily: "var(--font-mono)", fontSize: "10px", fontWeight: 500, letterSpacing: "0.1em", textTransform: "uppercase", padding: "8px 18px",
           border: "none", borderRadius: "999px", background: set === k ? "var(--btn-grad)" : "transparent", color: set === k ? "#FCF8EE" : "var(--ink-soft)", cursor: "pointer",
-        }}>{SET_NAME[k]}</button>
+        }}>{SET_LABEL[k]}</button>
       ))}
     </div>
   );
@@ -1456,12 +1457,13 @@ function PhaseTestPage({ idx, onSettings, onChange }) {
   const o = overview;
   const s = o.status;
   const unit = SET_NAME[set];
-  const st = testStatusText(s, unit);
-  const start = (refresh) => setRound({ refresh, n: Date.now() });
+  const unitEn = SET_LABEL[set].toLowerCase();
+  const st = testStatusText(s, unitEn);
+  const start = (refresh, retake) => setRound({ refresh, retake: retake || null, n: Date.now() });
   return (
     <div style={{ ...srsCol, width: "100%", maxWidth: "560px", margin: "0 auto", alignItems: "stretch", gap: "18px" }}>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "10px" }}>
-        <button onClick={() => onSettings("openPhaseTest", null)} style={miniBtn}>‹ alle Geschichten</button>
+        <button onClick={() => onSettings("openPhaseTest", null)} style={miniBtn}>‹ all stories</button>
         <span style={{ ...monoLabel, fontSize: "9px", textAlign: "right" }}>🎯 Phasentest · {o.phase.name}</span>
       </div>
       <div style={{ textAlign: "center" }}>
@@ -1482,13 +1484,31 @@ function PhaseTestPage({ idx, onSettings, onChange }) {
       </div>
       <div style={{ textAlign: "center", fontFamily: "var(--font-mono)", fontSize: "11px", letterSpacing: "0.06em", color: st.tone }}>{st.text}</div>
       <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "10px" }}>
-        {s.dueNow && <button onClick={() => start(true)} style={navBtnStyle}>⏰ Auffrischung starten · {o.refreshWords} {unit}</button>}
+        {s.dueNow && <button onClick={() => start(true)} style={navBtnStyle}>⏰ Start refresher · {o.refreshWords} {unitEn}</button>}
         {s.open > 0 && (
           <button onClick={() => start(false)} style={s.dueNow ? ghostBtn : navBtnStyle}>
-            {s.started ? "▶ nächste Runde" : "▶ Test starten"} · {o.roundWords} {unit}
+            {s.started ? "▶ Next round" : "▶ Start test"} · {o.roundWords} {unitEn}
           </button>
         )}
         {s.open === 0 && !s.dueNow && <div style={{ ...srsNote, fontSize: "14px" }}>Alle {unit} sitzen. Die nächste Auffrischung erscheint hier, wenn sie fällig ist — genau dann, wenn du sonst anfangen würdest zu vergessen.</div>}
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "8px", borderTop: "1px solid var(--line)", paddingTop: "14px" }}>
+        <div style={{ ...monoLabel }}>↻ Test wiederholen — jederzeit, dein Fortschritt bleibt</div>
+        <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", justifyContent: "center" }}>
+          <button onClick={() => start(false, "short")} style={ghostBtn}>short · {2 * o.retakeShortWords} questions</button>
+          <button onClick={() => start(false, "all")} style={ghostBtn}>full · {2 * s.total} questions</button>
+        </div>
+        {o.attempts.length > 0 && (
+          <div style={{ width: "100%", marginTop: "6px" }}>
+            <div style={{ ...monoLabel, marginBottom: "6px" }}>deine Ergebnisse</div>
+            {o.attempts.map((t, i) => (
+              <div key={i} style={{ display: "flex", justifyContent: "space-between", gap: "10px", padding: "6px 2px", borderBottom: "1px dashed var(--line)", fontFamily: "var(--font-mono)", fontSize: "11px", color: "var(--ink-soft)" }}>
+                <span>{new Date(t.at).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" })} · {t.size === "all" ? "komplett" : "kurz"}</span>
+                <span style={{ color: t.right === t.total ? "var(--good)" : "var(--ink)" }}>{t.right} / {t.total} · {t.total ? Math.round((t.right / t.total) * 100) : 0}%</span>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
       {o.missed.length > 0 && (
         <div>
@@ -1504,7 +1524,7 @@ function PhaseTestPage({ idx, onSettings, onChange }) {
       )}
       <div style={{ borderTop: "1px solid var(--line)", paddingTop: "12px" }}>
         <button onClick={() => setHowOpen((x) => !x)} style={{ ...monoLabel, fontSize: "11px", background: "transparent", border: "none", padding: 0, cursor: "pointer", color: "var(--ink-soft)" }}>
-          {howOpen ? "▾" : "▸"} so funktioniert's
+          {howOpen ? "▾" : "▸"} how it works
         </button>
         {howOpen && (
           <ol style={{ fontFamily: "var(--font-serif)", fontSize: "14px", color: "var(--ink-soft)", lineHeight: 1.6, paddingLeft: "20px", margin: "10px 0 0" }}>
@@ -1515,12 +1535,13 @@ function PhaseTestPage({ idx, onSettings, onChange }) {
             <li>Nach dem Bestehen: <strong>Auffrischungen nach {o.refreshDays.join(", ").replace(/, (\d+)$/, " und $1")} Tagen</strong> — schwächste Wörter zuerst. Wer dort patzt, übt das Wort erneut.</li>
             <li><strong>Wörter</strong> sind die markierten Zielwörter der Geschichten, <strong>Verben</strong> die B1-Verben, die in den Geschichten vorkommen — jeweils mit eigenem Fortschritt. Bei den Verben steht der Satz aus der Geschichte als Beispiel.</li>
             <li>Jede Antwort fließt auch in deinen Lernplan (Study-Tab, Stufe B1).</li>
+            <li><strong>Test wiederholen</strong> geht jederzeit — kurz (10 zufällige {unit}) oder komplett. Es zählt nur das Ergebnis; Fortschritt, Auffrischungen und Lernplan bleiben unverändert.</li>
           </ol>
         )}
         {s.started && (
           <button onClick={() => { if (window.confirm("Fortschritt dieses Phasentests (" + unit + ") zurücksetzen? Das kann nicht rückgängig gemacht werden.")) api.post("/api/phase-tests/" + idx + "/reset?set=" + set).then(setOverview).catch(api.report); }}
             style={{ ...smallOutline("var(--bad)"), fontSize: "9px", display: "block", marginTop: "14px", padding: "3px 9px" }}>
-            Fortschritt zurücksetzen
+            Reset progress
           </button>
         )}
       </div>
@@ -1528,8 +1549,8 @@ function PhaseTestPage({ idx, onSettings, onChange }) {
   );
 }
 
-function PhaseRound({ idx, set, refresh, onExit, onNext, onChange }) {
-  const drill = useDrill("phase", { phase: idx, set, refresh }, 0, onChange);
+function PhaseRound({ idx, set, refresh, retake, onExit, onNext, onChange }) {
+  const drill = useDrill("phase", retake ? { phase: idx, set, retake } : { phase: idx, set, refresh }, 0, onChange);
   const v = drill.view;
   const nextRef = useRef(null);
   const answered = !!(v && v.answer);
@@ -1556,10 +1577,10 @@ function PhaseRound({ idx, set, refresh, onExit, onNext, onChange }) {
 
   const head = (
     <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "10px" }}>
-      <button onClick={v && v.state === "finished" ? onExit : () => { if (window.confirm("Runde abbrechen? Bisherige Antworten bleiben gespeichert.")) onExit(); }} style={miniBtn}>
-        {v && v.state === "finished" ? "‹ Übersicht" : "× Runde abbrechen"}
+      <button onClick={v && v.state === "finished" ? onExit : () => { if (window.confirm(retake ? "Wiederholung abbrechen? Es wird kein Ergebnis gespeichert." : "Runde abbrechen? Bisherige Antworten bleiben gespeichert.")) onExit(); }} style={miniBtn}>
+        {v && v.state === "finished" ? "‹ Overview" : "× Cancel round"}
       </button>
-      <span style={{ ...monoLabel, fontSize: "9px", textAlign: "right" }}>🎯 Phasentest · {SET_NAME[set]}</span>
+      <span style={{ ...monoLabel, fontSize: "9px", textAlign: "right" }}>🎯 Phasentest · {SET_NAME[set]}{retake ? " · Wiederholung" : ""}</span>
     </div>
   );
   const wrap = (children) => <div style={{ ...srsCol, width: "100%", maxWidth: "560px", margin: "0 auto", alignItems: "stretch", gap: "18px" }}>{head}{children}</div>;
@@ -1573,15 +1594,17 @@ function PhaseRound({ idx, set, refresh, onExit, onNext, onChange }) {
     return wrap(
       <React.Fragment>
         <div style={{ textAlign: "center", padding: "20px 0 6px" }}>
-          <div style={{ fontFamily: "var(--font-serif)", fontWeight: 600, fontSize: "24px", color: "var(--ink)" }}>{v.passedNow ? "Phase bestanden 🎉" : v.refresh ? "Auffrischung fertig" : "Runde fertig"}</div>
-          <div style={{ fontFamily: "var(--font-mono)", fontSize: "11px", letterSpacing: "0.08em", color: "var(--ink-soft)", marginTop: "10px" }}>{v.right} / {v.first} beim ersten Versuch richtig ({pct}%)</div>
+          <div style={{ fontFamily: "var(--font-serif)", fontWeight: 600, fontSize: "24px", color: "var(--ink)" }}>{retake ? "Wiederholung fertig" : v.passedNow ? "Phase bestanden 🎉" : v.refresh ? "Auffrischung fertig" : "Runde fertig"}</div>
+          <div style={{ fontFamily: "var(--font-mono)", fontSize: "11px", letterSpacing: "0.08em", color: "var(--ink-soft)", marginTop: "10px" }}>{v.right} / {v.first} {retake ? "richtig" : "beim ersten Versuch richtig"} ({pct}%)</div>
         </div>
         <MasteryBar status={v.status} />
         <div style={{ textAlign: "center", fontFamily: "var(--font-mono)", fontSize: "11px", color: st.tone }}>{st.text}</div>
+        {retake && <p style={{ ...srsNote, fontSize: "14px" }}>Dein Fortschritt bleibt, wie er war — das Ergebnis steht in der Übersicht.</p>}
         {v.passedNow && <p style={{ ...srsNote, fontSize: "14px" }}>{set === "verbs" ? "Jedes Verb" : "Jedes Wort"} sitzt in beide Richtungen. Die erste Auffrischung ist morgen fällig — danach nach 7, 30, 90 und 180 Tagen.</p>}
         <div style={{ display: "flex", gap: "10px", flexWrap: "wrap", justifyContent: "center" }}>
-          {v.status.open > 0 && <button onClick={onNext} style={navBtnStyle}>▶ nächste Runde</button>}
-          <button onClick={onExit} style={ghostBtn}>Übersicht</button>
+          {retake ? <button onClick={onNext} style={navBtnStyle}>↻ Retake again</button>
+            : v.status.open > 0 && <button onClick={onNext} style={navBtnStyle}>▶ Next round</button>}
+          <button onClick={onExit} style={ghostBtn}>Overview</button>
         </div>
       </React.Fragment>
     );
@@ -1590,7 +1613,7 @@ function PhaseRound({ idx, set, refresh, onExit, onNext, onChange }) {
   const deEn = v.dir === "de-en";
   const a = v.answer;
   const tone = a ? (a.correct ? "var(--good)" : "var(--bad)") : "var(--line)";
-  const verdictText = !a ? "" : a.correct ? "✓ RICHTIG" : "✗ NOCH NICHT — kommt gleich nochmal";
+  const verdictText = !a ? "" : a.correct ? "✓ RICHTIG" : retake ? "✗ FALSCH" : "✗ NOCH NICHT — kommt gleich nochmal";
   return wrap(
     <React.Fragment>
       <MasteryBar status={v.status} />
@@ -1634,7 +1657,7 @@ function PhaseRound({ idx, set, refresh, onExit, onNext, onChange }) {
             </div>
           )}
           <div style={{ display: "flex", gap: "10px", alignItems: "center", flexWrap: "wrap", justifyContent: "center" }}>
-            <button ref={nextRef} onClick={() => drill.act("next")} style={navBtnStyle}>weiter › <span style={{ opacity: 0.6 }}>⏎</span></button>
+            <button ref={nextRef} onClick={() => drill.act("next")} style={navBtnStyle}>next › <span style={{ opacity: 0.6 }}>⏎</span></button>
           </div>
           <div style={{ ...monoLabel, fontSize: "8px" }}>aus Kapitel {v.chapter}</div>
         </div>
@@ -1724,7 +1747,7 @@ function SettingsPanel({ summary, onSettings, geminiKey, setGeminiKey, ghToken, 
       <FilterBar cats={summary.cats} active={s.cats} onToggle={(c) => onSettings("toggleCat", c)} />
       <div style={{ display: "flex", justifyContent: "center", gap: "10px", flexWrap: "wrap" }}>
         <button onClick={() => onSettings("toggleDirection")} style={{ ...ghostBtn, fontSize: "11px", padding: "8px 16px", borderRadius: "999px", border: "1px solid var(--ink)" }}>
-          {s.direction === "de-en" ? "Deutsch → English" : "English → Deutsch"}   ⇄
+          {s.direction === "de-en" ? "German → English" : "English → German"}   ⇄
         </button>
         <PillButton on={s.noRepeat} onClick={() => onSettings("toggleNoRepeat")}>{s.noRepeat ? "✓ no repeats" : "no repeats: off"}</PillButton>
       </div>
@@ -1823,11 +1846,11 @@ function AddWord({ summary, ghToken, onToken, onAdded }) {
 const TABS = [
   { id: "study", label: "Study" },
   { id: "write", label: "Write" },
-  { id: "build", label: "Muster" },
+  { id: "build", label: "Patterns" },
   { id: "flash", label: "Cards" },
   { id: "quiz", label: "Quiz" },
   { id: "articles", label: "Articles" },
-  { id: "sep", label: "Trennbare Verben" },
+  { id: "sep", label: "Separable verbs" },
   { id: "cloze", label: "Fill-in" },
   { id: "mistakes", label: "Review" },
   { id: "add", label: "+ Add word" },
@@ -1915,8 +1938,8 @@ function TopBar({ storyMode, onStoryMode, theme, onTheme, user, onLogout }) {
   return (
     <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "10px", position: "relative", minHeight: "40px" }}>
       <div role="group" aria-label="mode" style={{ display: "flex", gap: "3px", padding: "3px", background: "var(--tint)", border: "1px solid var(--line)", borderRadius: "999px" }}>
-        <button onClick={() => onStoryMode(false)} aria-pressed={!storyMode} style={seg(!storyMode)}>✎ Üben</button>
-        <button onClick={() => onStoryMode(true)} aria-pressed={storyMode} style={seg(storyMode)}>📖 Geschichten</button>
+        <button onClick={() => onStoryMode(false)} aria-pressed={!storyMode} style={seg(!storyMode)}>✎ Practice</button>
+        <button onClick={() => onStoryMode(true)} aria-pressed={storyMode} style={seg(storyMode)}>📖 Stories</button>
       </div>
       {user && <UserMenu user={user} onLogout={onLogout} />}
       <button onClick={() => onTheme(dark ? "light" : "dark")} aria-label={dark ? "switch to light mode" : "switch to dark mode"} title={dark ? "Light mode" : "Dark mode"}

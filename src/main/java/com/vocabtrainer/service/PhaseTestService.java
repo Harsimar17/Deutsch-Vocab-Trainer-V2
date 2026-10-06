@@ -1,6 +1,7 @@
 package com.vocabtrainer.service;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -21,6 +22,10 @@ import org.springframework.web.server.ResponseStatusException;
  *
  * Each phase has two tests with their own progress: "words" (the stories'
  * target words) and "verbs" (the B1 verbs used in the stories).
+ *
+ * A test can be retaken at any time ("short": a few random words, "all":
+ * every word). A retake changes no progress — only its score is kept, in
+ * "attempts".
  */
 @Service
 public class PhaseTestService {
@@ -35,6 +40,10 @@ public class PhaseTestService {
 
     public static final String WORDS = "words";
     public static final String VERBS = "verbs";
+    public static final String RETAKE_SHORT = "short";
+    public static final String RETAKE_ALL = "all";
+    public static final int RETAKE_SHORT_WORDS = 10;
+    private static final int KEEP_ATTEMPTS = 20;
 
     private final ProgressService progress;
     private final StoryService stories;
@@ -53,6 +62,14 @@ public class PhaseTestService {
             return VERBS;
         }
         throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "set must be words or verbs");
+    }
+
+    /** A retake's size: "short", "all", or null for a normal round; anything else is a 400. */
+    public static String retake(Object value) {
+        if (value == null || RETAKE_SHORT.equals(value) || RETAKE_ALL.equals(value)) {
+            return (String) value;
+        }
+        throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "retake must be short or all");
     }
 
     /** Where a phase test's progress is saved: "2" for the words, "2-verbs" for the verbs. */
@@ -77,6 +94,29 @@ public class PhaseTestService {
             });
         }
         return out;
+    }
+
+    /** Saved retake results ({at, right, total, size}), oldest first. */
+    @SuppressWarnings("unchecked")
+    public static List<Map<String, Object>> attempts(Map<String, Object> st) {
+        List<Map<String, Object>> out = new ArrayList<>();
+        if (st.get("attempts") instanceof List<?> l) {
+            l.forEach(a -> {
+                if (a instanceof Map<?, ?> m) {
+                    out.add((Map<String, Object>) m);
+                }
+            });
+        }
+        return out;
+    }
+
+    /** Adds one retake result (the last {@value #KEEP_ATTEMPTS} are kept); nothing else changes. */
+    public void saveAttempt(Ctx ctx, String key, Map<String, Object> attempt) {
+        Map<String, Object> st = new LinkedHashMap<>(state(ctx, key));
+        List<Map<String, Object>> all = attempts(st);
+        all.add(attempt);
+        st.put("attempts", all.subList(Math.max(0, all.size() - KEEP_ATTEMPTS), all.size()));
+        save(ctx, key, st);
     }
 
     public static boolean mastered(Map<String, Object> ws) {
@@ -138,6 +178,10 @@ public class PhaseTestService {
         v.put("refreshWords", Math.min(REFRESH_WORDS, words.size()));
         v.put("missed", missed);
         v.put("refreshDays", REFRESH_DAYS);
+        v.put("retakeShortWords", Math.min(RETAKE_SHORT_WORDS, words.size()));
+        List<Map<String, Object>> attempts = new ArrayList<>(attempts(st));
+        Collections.reverse(attempts); // newest first
+        v.put("attempts", attempts);
         return v;
     }
 

@@ -48,7 +48,7 @@ public class DrillFactory {
                     throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "phase must be a number");
                 }
                 yield new PhaseDrill(ctx, idx, PhaseTestService.set(params.get("set")),
-                        Boolean.TRUE.equals(params.get("refresh")), phaseTests);
+                        Boolean.TRUE.equals(params.get("refresh")), PhaseTestService.retake(params.get("retake")), phaseTests);
             }
             default -> throw new ResponseStatusException(HttpStatus.NOT_FOUND, "unknown mode: " + mode);
         };
