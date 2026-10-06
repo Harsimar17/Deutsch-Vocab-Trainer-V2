@@ -36,9 +36,12 @@ class PhaseDrill implements Drill {
         }
     }
 
-    private final String idx;
+    private final String phase;    // the phase, e.g. "2"
+    private final String set;      // "words" | "verbs"
+    private final String idx;      // where progress is saved, e.g. "2" or "2-verbs"
     private final boolean refresh;
     private final List<PhaseWord> words;
+    private final List<PhaseWord> optionPool;
     private final PhaseTestService tests;
     private final List<Item> queue;
     private int pos;
@@ -51,11 +54,14 @@ class PhaseDrill implements Drill {
     private int right;
     private Map<String, Object> finished;
 
-    PhaseDrill(Ctx ctx, String idx, boolean refresh, PhaseTestService tests) {
-        this.idx = idx;
+    PhaseDrill(Ctx ctx, String phase, String set, boolean refresh, PhaseTestService tests) {
+        this.phase = phase;
+        this.set = set;
+        this.idx = PhaseTestService.storageKey(phase, set);
         this.refresh = refresh;
         this.tests = tests;
-        this.words = tests.phaseWords(idx);
+        this.words = tests.phaseWords(phase, set);
+        this.optionPool = tests.optionPool(phase, set);
         this.queue = buildRound(words, PhaseTestService.words(tests.state(ctx, idx)), refresh);
         prepare();
     }
@@ -104,7 +110,7 @@ class PhaseDrill implements Drill {
         return s == null ? 0 : Srs.num(s.get("miss"), 0);
     }
 
-    /** Distractors of the same kind (nouns with nouns, verbs with verbs …) from this phase. */
+    /** Distractors of the same kind (nouns with nouns, verbs with verbs …) from the given pool. */
     static List<PhaseWord> options(PhaseWord word, List<PhaseWord> words) {
         Card c = word.card();
         List<PhaseWord> others = words.stream()
@@ -128,17 +134,17 @@ class PhaseDrill implements Drill {
         if (it == null) {
             return;
         }
-        options = options(it.w, words);
+        options = options(it.w, optionPool);
     }
 
     @Override
     public Map<String, Object> view(Ctx ctx) {
-        List<PhaseWord> all = words;
         Map<String, Object> st = tests.state(ctx, idx);
         Map<String, Object> v = new LinkedHashMap<>();
-        v.put("phase", idx);
+        v.put("phase", phase);
+        v.put("set", set);
         v.put("refresh", refresh);
-        v.put("status", PhaseTestService.status(all, st));
+        v.put("status", PhaseTestService.status(words, st));
         if (finished != null) {
             v.put("state", "finished");
             v.putAll(finished);

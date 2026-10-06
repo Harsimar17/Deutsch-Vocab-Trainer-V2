@@ -102,7 +102,7 @@ class DrillsTest {
         words.forEach(w -> byEn.computeIfAbsent(w.card().en(), k -> new java.util.ArrayList<>()).add(w.card()));
 
         // first round: miss the first question on purpose
-        PhaseDrill d = new PhaseDrill(ctx, idx, false, tests);
+        PhaseDrill d = new PhaseDrill(ctx, idx, PhaseTestService.WORDS, false, tests);
         Map<String, Object> v = d.view(ctx);
         int total = (int) v.get("total");
         d.act(ctx, "choose", Map.of("key", options(v).stream()
@@ -125,7 +125,7 @@ class DrillsTest {
         // keep playing clean rounds until every word is mastered in both directions
         int rounds = 1;
         while (!Boolean.TRUE.equals(cur.get("passedNow")) && rounds++ < 30) {
-            d = new PhaseDrill(ctx, idx, false, tests);
+            d = new PhaseDrill(ctx, idx, PhaseTestService.WORDS, false, tests);
             cur = d.view(ctx);
             while (!"finished".equals(cur.get("state"))) {
                 answerCorrectly(d, cur, byEn);
@@ -156,6 +156,54 @@ class DrillsTest {
     }
 
     @Test
+    @SuppressWarnings("unchecked")
+    void verbTestIsSeparateAndPassesAfterCleanRounds() {
+        ProgressService p = TestVocab.progress();
+        StoryService stories = TestVocab.stories();
+        PhaseTestService tests = new PhaseTestService(p, stories);
+        String idx = "1";
+        List<StoryService.PhaseWord> verbs = stories.phaseVerbs(idx);
+        Map<String, String> enOf = new LinkedHashMap<>();
+        tests.optionPool(idx, PhaseTestService.VERBS).forEach(w -> enOf.put(w.card().de(), w.card().en()));
+        List<String> b1Verbs = stories.b1Verbs().stream().map(w -> w.card().de()).toList();
+
+        Map<String, Object> cur = null;
+        int rounds = 0;
+        while ((cur == null || !Boolean.TRUE.equals(cur.get("passedNow"))) && rounds++ < 10) {
+            PhaseDrill d = new PhaseDrill(ctx, idx, PhaseTestService.VERBS, false, tests);
+            cur = d.view(ctx);
+            assertEquals(PhaseTestService.VERBS, cur.get("set"));
+            while (!"finished".equals(cur.get("state"))) {
+                List<Map<String, Object>> opts = options(cur);
+                assertEquals(4, opts.size());
+                assertEquals(4, opts.stream().map(o -> o.get("key")).distinct().count(), "no option twice");
+                for (Map<String, Object> o : opts) {
+                    String key = (String) o.get("key");
+                    assertTrue(b1Verbs.contains(key) || verbs.stream().anyMatch(w -> w.card().de().equals(key)),
+                            "only verbs as choices: " + key);
+                }
+                String pick;
+                if ("de-en".equals(cur.get("dir"))) {
+                    pick = (String) cur.get("prompt");
+                } else {
+                    String prompt = (String) cur.get("prompt");
+                    List<String> right = opts.stream().map(o -> (String) o.get("key")).filter(k -> prompt.equals(enOf.get(k))).toList();
+                    assertEquals(1, right.size(), "exactly one option means " + prompt);
+                    pick = right.get(0);
+                }
+                d.act(ctx, "choose", Map.of("key", pick));
+                assertTrue((Boolean) ((Map<String, Object>) d.view(ctx).get("answer")).get("correct"), pick);
+                d.act(ctx, "next", Map.of());
+                cur = d.view(ctx);
+            }
+        }
+        assertTrue((Boolean) cur.get("passedNow"), "passed after " + rounds + " rounds");
+        assertEquals((long) verbs.size(), ((Map<String, Object>) cur.get("status")).get("mastered"));
+        assertNotNull(tests.state(ctx, "1-verbs").get("passed"), "saved as the verb test");
+        assertTrue(PhaseTestService.words(tests.state(ctx, "1")).isEmpty(), "the word test is untouched");
+    }
+
+    @Test
     void phaseTestProductionIsMultipleChoiceInGerman() {
         ProgressService p = TestVocab.progress();
         StoryService stories = TestVocab.stories();
@@ -163,7 +211,7 @@ class DrillsTest {
         String idx = stories.groups().get(0).index();
         Map<String, String> enOf = new LinkedHashMap<>();
         stories.phaseWords(idx).forEach(w -> enOf.put(w.card().de(), w.card().en()));
-        PhaseDrill d = new PhaseDrill(ctx, idx, false, tests);
+        PhaseDrill d = new PhaseDrill(ctx, idx, PhaseTestService.WORDS, false, tests);
         Map<String, Object> v = d.view(ctx);
         while ("de-en".equals(v.get("dir"))) { // skip to the EN→DE part
             d.act(ctx, "choose", Map.of("key", v.get("prompt")));

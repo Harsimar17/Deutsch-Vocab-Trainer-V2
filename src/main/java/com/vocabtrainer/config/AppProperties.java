@@ -30,8 +30,8 @@ public record AppProperties(Firebase firebase, String legacyProgressDocId, Cors 
 
     /**
      * User sessions: the HS256 key for the app's JWT (blank → random per start),
-     * how long a session survives without a request, and the key POST /api/users needs.
+     * and how long a session survives without a request.
      */
-    public record Auth(String jwtSecret, Duration sessionIdleTimeout, String adminKey) {
+    public record Auth(String jwtSecret, Duration sessionIdleTimeout) {
     }
 }

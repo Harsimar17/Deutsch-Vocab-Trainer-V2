@@ -25,7 +25,7 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 import tools.jackson.databind.json.JsonMapper;
 
-@WebMvcTest(controllers = {AuthController.class, UserController.class}, properties = "app.auth.admin-key=admin-secret")
+@WebMvcTest(controllers = {AuthController.class, UserController.class})
 @Import({JwtService.class, IdTokenCache.class, AuthService.class, UserService.class})
 class AuthControllerTest {
 
@@ -77,25 +77,11 @@ class AuthControllerTest {
     }
 
     @Test
-    void creatingUsersNeedsTheAdminKey() throws Exception {
-        String user = "{\"email\":\"ben@example.de\",\"password\":\"secret12\"}";
-        mvc.perform(post("/api/users").contentType(MediaType.APPLICATION_JSON).content(user))
-                .andExpect(status().isUnauthorized());
-        mvc.perform(post("/api/users").header("X-Admin-Key", "wrong").contentType(MediaType.APPLICATION_JSON).content(user))
-                .andExpect(status().isUnauthorized());
-        // A session token is not an admin key.
-        mvc.perform(post("/api/users").header("Authorization", "Bearer " + jwt.issue("u", "a@b.de", "r"))
-                        .contentType(MediaType.APPLICATION_JSON).content(user))
-                .andExpect(status().isUnauthorized());
-        verifyNoInteractions(firebase);
-    }
-
-    @Test
     void createsAUserAndOptionallyCopiesTheOldProgress() throws Exception {
         when(firebase.signUp("ben@example.de", "secret12"))
                 .thenReturn(new FirebaseAuthClient.FirebaseSession("uid-ben", "ben@example.de", "id", "refresh", 3600));
         when(progress.copyLegacyProgress(any())).thenReturn(true);
-        mvc.perform(post("/api/users").header("X-Admin-Key", "admin-secret").contentType(MediaType.APPLICATION_JSON)
+        mvc.perform(post("/api/users").contentType(MediaType.APPLICATION_JSON)
                         .content("{\"email\":\"ben@example.de\",\"password\":\"secret12\",\"importLegacyProgress\":true}"))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.uid").value("uid-ben"))

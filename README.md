@@ -70,7 +70,7 @@ it was issued, so a session ends after 24 h without a request. Send
 
 | Call | |
 |---|---|
-| `POST /api/users` (+ `X-Admin-Key`) `{email, password, importLegacyProgress?}` | create a user (admin only, e.g. from Postman) → `201 {uid, email}` |
+| `POST /api/users` `{email, password, importLegacyProgress?}` | create a user (from Postman or curl; open to any caller) → `201 {uid, email}` |
 | `POST /api/auth/login` `{email, password}` | → `{token, expiresIn, user: {uid, email}}` |
 | `GET /api/auth/me` | who the token belongs to |
 | `GET /api/summary?ai=` | header numbers, settings, settings label, level title, card count, Review count |
@@ -90,11 +90,11 @@ so losing a round only means starting a new one.
 
 ## Users
 
-Create a user from Postman (or curl). The admin key is whatever you set as
-`ADMIN_API_KEY`; without it, creating users is switched off.
+Create a user from Postman (or curl). The call needs no key, so anyone who
+can reach the backend can create an account (each only ever sees its own data).
 
 ```bash
-curl -X POST http://localhost:8080/api/users -H "X-Admin-Key: $ADMIN_API_KEY" -H "Content-Type: application/json" -d '{"email":"anna@example.com","password":"at-least-6-chars"}'
+curl -X POST http://localhost:8080/api/users -H "Content-Type: application/json" -d '{"email":"anna@example.com","password":"at-least-6-chars"}'
 ```
 
 Add `"importLegacyProgress": true` to copy the old shared record
@@ -181,6 +181,5 @@ The app listens on `$PORT` (default 8080). Set these environment variables in pr
 
 - `JWT_SECRET`: 32+ random characters. Without it, a random key is made at
   each start and everyone is logged out on restart.
-- `ADMIN_API_KEY`: the key for `POST /api/users`. Without it, creating users is off.
 
 Also overridable: `FIRESTORE_BASE_URL`, `VOCAB_URL`, `CORS_ALLOWED_ORIGINS`.

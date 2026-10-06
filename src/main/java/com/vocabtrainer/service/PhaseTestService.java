@@ -2,18 +2,25 @@ package com.vocabtrainer.service;
 
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import com.vocabtrainer.model.Ctx;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
+import org.springframework.web.server.ResponseStatusException;
 
 /**
  * The end-of-phase vocabulary test's rules and bookkeeping (the rounds
  * themselves are {@code PhaseDrill}). Built on successive relearning:
  * a word is mastered after a correct first try in two separate rounds, in
  * both directions; after passing, refreshers come due at 1/7/30/90/180 days.
+ *
+ * Each phase has two tests with their own progress: "words" (the stories'
+ * target words) and "verbs" (the B1 verbs used in the stories).
  */
 @Service
 public class PhaseTestService {
@@ -26,6 +33,9 @@ public class PhaseTestService {
             "noun", "Nomen · mit Artikel", "verbs", "Verb", "adjectives", "Adjektiv",
             "separable_verbs", "trennbares Verb", "function_words", "Konnektor", "phrases", "Redemittel");
 
+    public static final String WORDS = "words";
+    public static final String VERBS = "verbs";
+
     private final ProgressService progress;
     private final StoryService stories;
 
@@ -34,6 +44,23 @@ public class PhaseTestService {
         this.stories = stories;
     }
 
+    /** The test set asked for: "words" (default) or "verbs"; anything else is a 400. */
+    public static String set(Object value) {
+        if (value == null || WORDS.equals(value)) {
+            return WORDS;
+        }
+        if (VERBS.equals(value)) {
+            return VERBS;
+        }
+        throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "set must be words or verbs");
+    }
+
+    /** Where a phase test's progress is saved: "2" for the words, "2-verbs" for the verbs. */
+    public static String storageKey(String idx, String set) {
+        return VERBS.equals(set) ? idx + "-verbs" : idx;
+    }
+
+    /** The state saved under a storage key (see {@link #storageKey}). */
     public Map<String, Object> state(Ctx ctx, String idx) {
         Map<String, Object> st = progress.phaseTests(ctx).get(idx);
         return st == null ? new LinkedHashMap<>(Map.of("words", new LinkedHashMap<>())) : st;
@@ -88,10 +115,10 @@ public class PhaseTestService {
         return s;
     }
 
-    public Map<String, Object> overview(Ctx ctx, String idx) {
+    public Map<String, Object> overview(Ctx ctx, String idx, String set) {
         StoryService.Group g = stories.group(idx);
-        List<StoryService.PhaseWord> words = stories.phaseWords(idx);
-        Map<String, Object> st = state(ctx, idx);
+        List<StoryService.PhaseWord> words = phaseWords(idx, set);
+        Map<String, Object> st = state(ctx, storageKey(idx, set));
         Map<String, Map<String, Object>> ws = words(st);
         Map<String, Object> status = status(words, st);
         List<Map<String, Object>> missed = words.stream()
@@ -101,6 +128,7 @@ public class PhaseTestService {
                 .map(w -> Map.<String, Object>of("de", w.card().de(), "miss", Srs.num(ws.get(w.card().de()).get("miss"), 0)))
                 .toList();
         Map<String, Object> v = new LinkedHashMap<>();
+        v.put("set", set);
         v.put("phase", Map.of("index", idx, "name", g.phase().getOrDefault("name", ""),
                 "chapters", g.phase().get("chapter_ids") instanceof List<?> l ? l.size() : g.stories().size()));
         v.put("status", status);
@@ -114,10 +142,10 @@ public class PhaseTestService {
     }
 
     /** Starts a phase's test over (404 for an unknown phase) and returns the fresh overview. */
-    public Map<String, Object> resetAndOverview(Ctx ctx, String idx) {
+    public Map<String, Object> resetAndOverview(Ctx ctx, String idx, String set) {
         stories.group(idx);
-        reset(ctx, idx);
-        return overview(ctx, idx);
+        reset(ctx, storageKey(idx, set));
+        return overview(ctx, idx, set);
     }
 
     public void reset(Ctx ctx, String idx) {
@@ -130,8 +158,23 @@ public class PhaseTestService {
         progress.savePhaseTest(ctx, idx, st);
     }
 
-    public List<StoryService.PhaseWord> phaseWords(String idx) {
-        return stories.phaseWords(idx);
+    /** What a phase's test asks: its target words, or the B1 verbs used in its stories. */
+    public List<StoryService.PhaseWord> phaseWords(String idx, String set) {
+        return VERBS.equals(set) ? stories.phaseVerbs(idx) : stories.phaseWords(idx);
+    }
+
+    /**
+     * Where wrong options come from: the test's own words — and for the verbs,
+     * also every B1 verb, since a phase may use only a handful.
+     */
+    public List<StoryService.PhaseWord> optionPool(String idx, String set) {
+        List<StoryService.PhaseWord> pool = new ArrayList<>(phaseWords(idx, set));
+        if (VERBS.equals(set)) {
+            Set<String> have = new HashSet<>();
+            pool.forEach(w -> have.add(w.card().de()));
+            stories.b1Verbs().stream().filter(w -> have.add(w.card().de())).forEach(pool::add); // each verb once
+        }
+        return pool;
     }
 
     public ProgressService progress() {

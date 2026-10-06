@@ -142,7 +142,7 @@ class EndToEndTest {
     void aTokenPastItsExpiryIsRefused() throws Exception {
         AppProperties.Auth a = props.auth();
         JwtService expiring = new JwtService(new AppProperties(props.firebase(), props.legacyProgressDocId(), props.cors(),
-                props.vocab(), props.github(), new AppProperties.Auth(a.jwtSecret(), Duration.ZERO, a.adminKey())), json);
+                props.vocab(), props.github(), new AppProperties.Auth(a.jwtSecret(), Duration.ZERO)), json);
         String expired = expiring.issue("uid1", ANNA, "rt-whatever");
         assertEquals(401, status(get("/api/summary"), expired, null));
         assertEquals(Duration.ofHours(24), a.sessionIdleTimeout());
@@ -307,6 +307,42 @@ class EndToEndTest {
         overview = ok(post("/api/phase-tests/" + phase + "/reset"), t, null);
         assertEquals("notStarted", ((Map<String, Object>) overview.get("status")).get("kind"));
         assertEquals(400, status(post("/api/drills/phase"), t, Map.of("phase", "abc")));
+    }
+
+    @Test
+    void theVerbTestOfAPhase() throws Exception {
+        String t = anna();
+        List<Map<String, Object>> groups = (List<Map<String, Object>>) ok(get("/api/stories"), t, null).get("groups");
+        Map<String, Object> verbCard = (Map<String, Object>) groups.get(0).get("verbTest");
+        assertNotNull(verbCard, "the story list shows each phase's verb test");
+        assertEquals("notStarted", verbCard.get("kind"));
+
+        Map<String, Object> overview = ok(get("/api/phase-tests/1?set=verbs"), t, null);
+        assertEquals("verbs", overview.get("set"));
+        assertEquals("notStarted", ((Map<String, Object>) overview.get("status")).get("kind"));
+        long verbCount = ((Number) ((Map<String, Object>) overview.get("status")).get("total")).longValue();
+        assertTrue(verbCount >= 4);
+
+        Round round = start(t, "phase", Map.of("phase", "1", "set", "verbs", "refresh", false));
+        Map<String, Object> v = round.view();
+        assertEquals("verbs", v.get("set"));
+        for (int i = 0; i < 60 && !"finished".equals(v.get("state")); i++) {
+            assertTrue(List.of("Verb", "trennbares Verb").contains(v.get("typeLabel")), "only verbs: " + v.get("typeLabel"));
+            String pick = "de-en".equals(v.get("dir")) ? (String) v.get("prompt") : (String) options(v).get(0).get("key");
+            act(t, round, "choose", Map.of("key", pick));
+            v = act(t, round, "next", Map.of());
+        }
+        assertEquals("finished", v.get("state"));
+        assertEquals("inProgress", ((Map<String, Object>) ok(get("/api/phase-tests/1?set=verbs"), t, null).get("status")).get("kind"));
+        assertEquals("notStarted", ((Map<String, Object>) ok(get("/api/phase-tests/1"), t, null).get("status")).get("kind"),
+                "the word test keeps its own progress");
+        assertEquals("inProgress", ((Map<String, Object>) ((List<Map<String, Object>>) ok(get("/api/stories"), t, null)
+                .get("groups")).get(0).get("verbTest")).get("kind"));
+
+        overview = ok(post("/api/phase-tests/1/reset?set=verbs"), t, null);
+        assertEquals("notStarted", ((Map<String, Object>) overview.get("status")).get("kind"));
+        assertEquals(400, status(get("/api/phase-tests/1?set=nouns"), t, null));
+        assertEquals(400, status(post("/api/drills/phase"), t, Map.of("phase", "1", "set", "nouns")));
     }
 
     // ---- separate users ----

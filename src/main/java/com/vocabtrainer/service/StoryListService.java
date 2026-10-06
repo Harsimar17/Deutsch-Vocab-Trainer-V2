@@ -64,6 +64,9 @@ public class StoryListService {
             if (g.index() != null) {
                 List<StoryService.PhaseWord> words = stories.phaseWords(g.index());
                 group.put("test", words.isEmpty() ? null : PhaseTestService.status(words, tests.state(ctx, g.index())));
+                List<StoryService.PhaseWord> verbs = stories.phaseVerbs(g.index());
+                group.put("verbTest", verbs.isEmpty() ? null : PhaseTestService.status(verbs,
+                        tests.state(ctx, PhaseTestService.storageKey(g.index(), PhaseTestService.VERBS))));
             }
             groups.add(group);
         }

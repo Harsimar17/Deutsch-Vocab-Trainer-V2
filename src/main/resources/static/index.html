@@ -1234,14 +1234,17 @@ function WordTip({ tip }) {
 }
 
 // Phase test status from the backend, in words.
-function testStatusText(s) {
+// What a phase test's two sets are called: the stories' target words, and the B1 verbs used in them.
+const SET_NAME = { words: "Wörter", verbs: "Verben" };
+
+function testStatusText(s, unit = "Wörter") {
   if (!s) return { text: "", tone: "var(--ink-faint)" };
   switch (s.kind) {
     case "refreshDue": return { text: "⏰ Auffrischung fällig", tone: "var(--accent)" };
-    case "practiceAgain": return { text: "↻ " + s.open + " Wörter wieder üben", tone: "var(--bad)" };
+    case "practiceAgain": return { text: "↻ " + s.open + " " + unit + " wieder üben", tone: "var(--bad)" };
     case "passed": return { text: "✓ bestanden · nächste Auffrischung " + new Date(s.due).toLocaleDateString(undefined, { day: "numeric", month: "short" }), tone: "var(--good)" };
     case "inProgress": return { text: s.mastered + " / " + s.total + " gemeistert", tone: "var(--ink-faint)" };
-    default: return { text: s.total + " Wörter · noch nicht begonnen", tone: "var(--ink-faint)" };
+    default: return { text: s.total + " " + unit + " · noch nicht begonnen", tone: "var(--ink-faint)" };
   }
 }
 
@@ -1261,6 +1264,8 @@ function StoriesList({ onSettings }) {
       </div>
       {data.groups.map((g, gi) => {
         const st = testStatusText(g.test);
+        const vt = testStatusText(g.verbTest, "Verben");
+        const testDue = (g.test && g.test.dueNow) || (g.verbTest && g.verbTest.dueNow);
         return (
           <div key={gi} style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
             <div>
@@ -1284,14 +1289,19 @@ function StoriesList({ onSettings }) {
             {g.test && (
               <button onClick={() => onSettings("openPhaseTest", g.phase.index)} style={{
                 display: "flex", alignItems: "center", gap: "12px", textAlign: "left", width: "100%", padding: "12px 14px", borderRadius: "12px", cursor: "pointer", color: "var(--ink)",
-                border: "1px dashed " + (g.test.dueNow ? "var(--accent)" : "var(--line)"), background: g.test.dueNow ? "var(--word-hover)" : "var(--tint)",
+                border: "1px dashed " + (testDue ? "var(--accent)" : "var(--line)"), background: testDue ? "var(--word-hover)" : "var(--tint)",
               }}>
                 <span style={{ flexShrink: 0, width: "34px", fontSize: "18px", textAlign: "center" }}>🎯</span>
                 <span style={{ flex: 1, minWidth: 0 }}>
                   <span style={{ display: "block", fontFamily: "var(--font-serif)", fontWeight: 600, fontSize: "16px" }}>Phasentest</span>
                   <span style={{ display: "block", fontFamily: "var(--font-mono)", fontSize: "10px", letterSpacing: "0.04em", color: st.tone, marginTop: "3px" }}>
-                    {st.text}{!g.test.passed && !g.allRead ? " · empfohlen nach allen Kapiteln" : ""}
+                    Wörter: {st.text}{!g.test.passed && !g.allRead ? " · empfohlen nach allen Kapiteln" : ""}
                   </span>
+                  {g.verbTest && (
+                    <span style={{ display: "block", fontFamily: "var(--font-mono)", fontSize: "10px", letterSpacing: "0.04em", color: vt.tone, marginTop: "2px" }}>
+                      Verben: {vt.text}
+                    </span>
+                  )}
                 </span>
                 <span style={{ flexShrink: 0, fontFamily: "var(--font-mono)", fontSize: "10px", color: "var(--ink-faint)" }}>DE⇄EN</span>
               </button>
@@ -1415,22 +1425,38 @@ function MasteryBar({ status }) {
 }
 
 function PhaseTestPage({ idx, onSettings, onChange }) {
+  const [set, setSet] = useState("words"); // "words" | "verbs" — the two tabs
   const [overview, setOverview] = useState(null);
   const [error, setError] = useState(null);
   const [round, setRound] = useState(null); // { refresh, n } while a round is running
   const [howOpen, setHowOpen] = useState(false);
-  const load = useCallback(() => { api.get("/api/phase-tests/" + idx).then(setOverview).catch((e) => setError(e.message)); }, [idx]);
+  const load = useCallback(() => {
+    api.get("/api/phase-tests/" + idx + "?set=" + set).then(setOverview).catch((e) => setError(e.message));
+  }, [idx, set]);
   useEffect(() => { load(); }, [load]);
 
   if (round) {
-    return <PhaseRound key={round.n} idx={idx} refresh={round.refresh} onChange={onChange}
+    return <PhaseRound key={round.n} idx={idx} set={set} refresh={round.refresh} onChange={onChange}
       onExit={() => { setRound(null); load(); }} onNext={() => setRound({ refresh: false, n: round.n + 1 })} />;
   }
   if (error) return <DrillError message={error} />;
-  if (!overview) return <Loading />;
+  const tabs = (
+    <div role="tablist" aria-label="Phasentest" style={{ display: "flex", gap: "3px", padding: "3px", background: "var(--tint)", border: "1px solid var(--line)", borderRadius: "999px", alignSelf: "center" }}>
+      {["words", "verbs"].map((k) => (
+        <button key={k} role="tab" aria-selected={set === k} onClick={() => setSet(k)} style={{
+          fontFamily: "var(--font-mono)", fontSize: "10px", fontWeight: 500, letterSpacing: "0.1em", textTransform: "uppercase", padding: "8px 18px",
+          border: "none", borderRadius: "999px", background: set === k ? "var(--btn-grad)" : "transparent", color: set === k ? "#FCF8EE" : "var(--ink-soft)", cursor: "pointer",
+        }}>{SET_NAME[k]}</button>
+      ))}
+    </div>
+  );
+  if (!overview || overview.set !== set) {
+    return <div style={{ ...srsCol, width: "100%", maxWidth: "560px", margin: "0 auto", alignItems: "stretch", gap: "18px" }}>{tabs}<Loading /></div>;
+  }
   const o = overview;
   const s = o.status;
-  const st = testStatusText(s);
+  const unit = SET_NAME[set];
+  const st = testStatusText(s, unit);
   const start = (refresh) => setRound({ refresh, n: Date.now() });
   return (
     <div style={{ ...srsCol, width: "100%", maxWidth: "560px", margin: "0 auto", alignItems: "stretch", gap: "18px" }}>
@@ -1440,8 +1466,11 @@ function PhaseTestPage({ idx, onSettings, onChange }) {
       </div>
       <div style={{ textAlign: "center" }}>
         <div style={{ fontFamily: "var(--font-serif)", fontWeight: 600, fontSize: "26px", color: "var(--ink)" }}>Phasentest</div>
-        <div style={{ fontFamily: "var(--font-serif)", fontStyle: "italic", fontSize: "14px", color: "var(--ink-soft)", marginTop: "4px" }}>{o.phase.name} · {s.total} Wörter aus {o.phase.chapters} Kapiteln</div>
+        <div style={{ fontFamily: "var(--font-serif)", fontStyle: "italic", fontSize: "14px", color: "var(--ink-soft)", marginTop: "4px" }}>
+          {o.phase.name} · {set === "verbs" ? s.total + " B1-Verben aus den " + o.phase.chapters + " Kapiteln" : s.total + " Wörter aus " + o.phase.chapters + " Kapiteln"}
+        </div>
       </div>
+      {tabs}
       <MasteryBar status={s} />
       <div style={{ display: "flex", justifyContent: "space-around", gap: "10px", flexWrap: "wrap", textAlign: "center" }}>
         {[["gemeistert", s.mastered], ["DE → EN sicher", o.recDone], ["EN → DE sicher", o.prodDone]].map(([l, n]) => (
@@ -1453,13 +1482,13 @@ function PhaseTestPage({ idx, onSettings, onChange }) {
       </div>
       <div style={{ textAlign: "center", fontFamily: "var(--font-mono)", fontSize: "11px", letterSpacing: "0.06em", color: st.tone }}>{st.text}</div>
       <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "10px" }}>
-        {s.dueNow && <button onClick={() => start(true)} style={navBtnStyle}>⏰ Auffrischung starten · {o.refreshWords} Wörter</button>}
+        {s.dueNow && <button onClick={() => start(true)} style={navBtnStyle}>⏰ Auffrischung starten · {o.refreshWords} {unit}</button>}
         {s.open > 0 && (
           <button onClick={() => start(false)} style={s.dueNow ? ghostBtn : navBtnStyle}>
-            {s.started ? "▶ nächste Runde" : "▶ Test starten"} · {o.roundWords} Wörter
+            {s.started ? "▶ nächste Runde" : "▶ Test starten"} · {o.roundWords} {unit}
           </button>
         )}
-        {s.open === 0 && !s.dueNow && <div style={{ ...srsNote, fontSize: "14px" }}>Alle Wörter sitzen. Die nächste Auffrischung erscheint hier, wenn sie fällig ist — genau dann, wenn du sonst anfangen würdest zu vergessen.</div>}
+        {s.open === 0 && !s.dueNow && <div style={{ ...srsNote, fontSize: "14px" }}>Alle {unit} sitzen. Die nächste Auffrischung erscheint hier, wenn sie fällig ist — genau dann, wenn du sonst anfangen würdest zu vergessen.</div>}
       </div>
       {o.missed.length > 0 && (
         <div>
@@ -1484,11 +1513,12 @@ function PhaseTestPage({ idx, onSettings, onChange }) {
             <li>Ein Wort sitzt erst, wenn du es in <strong>zwei verschiedenen Runden</strong> beim ersten Versuch richtig hast — in beide Richtungen.</li>
             <li>Fehler kommen in derselben Runde ein paar Fragen später wieder, bis sie sitzen.</li>
             <li>Nach dem Bestehen: <strong>Auffrischungen nach {o.refreshDays.join(", ").replace(/, (\d+)$/, " und $1")} Tagen</strong> — schwächste Wörter zuerst. Wer dort patzt, übt das Wort erneut.</li>
+            <li><strong>Wörter</strong> sind die markierten Zielwörter der Geschichten, <strong>Verben</strong> die B1-Verben, die in den Geschichten vorkommen — jeweils mit eigenem Fortschritt. Bei den Verben steht der Satz aus der Geschichte als Beispiel.</li>
             <li>Jede Antwort fließt auch in deinen Lernplan (Study-Tab, Stufe B1).</li>
           </ol>
         )}
         {s.started && (
-          <button onClick={() => { if (window.confirm("Fortschritt dieses Phasentests zurücksetzen? Das kann nicht rückgängig gemacht werden.")) api.post("/api/phase-tests/" + idx + "/reset").then(setOverview).catch(api.report); }}
+          <button onClick={() => { if (window.confirm("Fortschritt dieses Phasentests (" + unit + ") zurücksetzen? Das kann nicht rückgängig gemacht werden.")) api.post("/api/phase-tests/" + idx + "/reset?set=" + set).then(setOverview).catch(api.report); }}
             style={{ ...smallOutline("var(--bad)"), fontSize: "9px", display: "block", marginTop: "14px", padding: "3px 9px" }}>
             Fortschritt zurücksetzen
           </button>
@@ -1498,8 +1528,8 @@ function PhaseTestPage({ idx, onSettings, onChange }) {
   );
 }
 
-function PhaseRound({ idx, refresh, onExit, onNext, onChange }) {
-  const drill = useDrill("phase", { phase: idx, refresh }, 0, onChange);
+function PhaseRound({ idx, set, refresh, onExit, onNext, onChange }) {
+  const drill = useDrill("phase", { phase: idx, set, refresh }, 0, onChange);
   const v = drill.view;
   const nextRef = useRef(null);
   const answered = !!(v && v.answer);
@@ -1529,7 +1559,7 @@ function PhaseRound({ idx, refresh, onExit, onNext, onChange }) {
       <button onClick={v && v.state === "finished" ? onExit : () => { if (window.confirm("Runde abbrechen? Bisherige Antworten bleiben gespeichert.")) onExit(); }} style={miniBtn}>
         {v && v.state === "finished" ? "‹ Übersicht" : "× Runde abbrechen"}
       </button>
-      <span style={{ ...monoLabel, fontSize: "9px", textAlign: "right" }}>🎯 Phasentest</span>
+      <span style={{ ...monoLabel, fontSize: "9px", textAlign: "right" }}>🎯 Phasentest · {SET_NAME[set]}</span>
     </div>
   );
   const wrap = (children) => <div style={{ ...srsCol, width: "100%", maxWidth: "560px", margin: "0 auto", alignItems: "stretch", gap: "18px" }}>{head}{children}</div>;
@@ -1548,7 +1578,7 @@ function PhaseRound({ idx, refresh, onExit, onNext, onChange }) {
         </div>
         <MasteryBar status={v.status} />
         <div style={{ textAlign: "center", fontFamily: "var(--font-mono)", fontSize: "11px", color: st.tone }}>{st.text}</div>
-        {v.passedNow && <p style={{ ...srsNote, fontSize: "14px" }}>Jedes Wort sitzt in beide Richtungen. Die erste Auffrischung ist morgen fällig — danach nach 7, 30, 90 und 180 Tagen.</p>}
+        {v.passedNow && <p style={{ ...srsNote, fontSize: "14px" }}>{set === "verbs" ? "Jedes Verb" : "Jedes Wort"} sitzt in beide Richtungen. Die erste Auffrischung ist morgen fällig — danach nach 7, 30, 90 und 180 Tagen.</p>}
         <div style={{ display: "flex", gap: "10px", flexWrap: "wrap", justifyContent: "center" }}>
           {v.status.open > 0 && <button onClick={onNext} style={navBtnStyle}>▶ nächste Runde</button>}
           <button onClick={onExit} style={ghostBtn}>Übersicht</button>

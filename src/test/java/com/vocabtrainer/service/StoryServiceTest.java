@@ -37,6 +37,38 @@ class StoryServiceTest {
     }
 
     @Test
+    void eachPhaseGetsTheB1VerbsItsStoriesUse() {
+        for (StoryService.Group g : stories.groups()) {
+            if (g.index() == null) {
+                continue;
+            }
+            List<StoryService.PhaseWord> verbs = stories.phaseVerbs(g.index());
+            assertTrue(verbs.size() >= 4, "phase " + g.index() + " has enough verbs for four choices");
+            java.util.Set<String> seen = new java.util.HashSet<>();
+            for (StoryService.PhaseWord w : verbs) {
+                assertEquals("B1", w.card().lvl(), w.card().de());
+                assertTrue(List.of("verb", "sep").contains(w.card().cat()), w.card().de());
+                assertTrue(seen.add(w.card().de()), "listed once: " + w.card().de());
+                assertNotNull(w.card().example(), "the story sentence for " + w.card().de());
+            }
+        }
+    }
+
+    @Test
+    void verbsAreReadAsTheSentenceUsesThem() {
+        Map<String, String> phase1 = new java.util.LinkedHashMap<>();
+        stories.phaseVerbs("1").forEach(w -> phase1.put(w.card().de(), w.card().example()));
+        // separable verb split over the clause: "hängt … ab" is abhängen, not hängen
+        assertEquals("Sie hängt von der Gesundheit ab.", phase1.get("abhängen von"));
+        assertTrue(phase1.containsKey("verharmlosen"));
+        assertTrue(!phase1.containsKey("zählen zu"), "\"Ich zähle die Kalorien\" is not zählen zu");
+        Map<String, String> phase3 = new java.util.LinkedHashMap<>();
+        stories.phaseVerbs("3").forEach(w -> phase3.put(w.card().de(), w.card().example()));
+        assertEquals("Auch die Automatisierung nimmt zu.", phase3.get("zunehmen"));
+        assertTrue(phase3.containsKey("sich einsetzen für"));
+    }
+
+    @Test
     void everyMarkedTargetWordHasAMeaning() {
         List<Map<String, Object>> targets = allSegments().stream().filter(s -> Boolean.TRUE.equals(s.get("target"))).toList();
         List<Object> missing = targets.stream().filter(s -> s.get("entry") == null).map(s -> s.get("w")).toList();

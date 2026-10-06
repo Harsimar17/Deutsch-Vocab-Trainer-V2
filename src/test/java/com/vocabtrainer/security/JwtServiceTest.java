@@ -19,7 +19,7 @@ class JwtServiceTest {
     private static final String SECRET = "0123456789abcdef0123456789abcdef";
 
     private static JwtService jwt(String secret, Duration idle) {
-        AppProperties props = new AppProperties(null, null, null, null, null, new AppProperties.Auth(secret, idle, null));
+        AppProperties props = new AppProperties(null, null, null, null, null, new AppProperties.Auth(secret, idle));
         return new JwtService(props, JsonMapper.builder().build());
     }
 

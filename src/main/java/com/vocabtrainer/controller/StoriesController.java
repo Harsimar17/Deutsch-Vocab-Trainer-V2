@@ -9,6 +9,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 /** Story mode (see {@link StoryListService}) and each phase test's overview (see {@link PhaseTestService}). */
@@ -39,13 +40,14 @@ public class StoriesController {
         return stories.toggleRead(ctx, id);
     }
 
+    /** A phase test's overview; {@code set}: "words" (default) or "verbs". */
     @GetMapping("/phase-tests/{idx}")
-    public Map<String, Object> phaseTest(Ctx ctx, @PathVariable String idx) {
-        return tests.overview(ctx, idx);
+    public Map<String, Object> phaseTest(Ctx ctx, @PathVariable String idx, @RequestParam(required = false) String set) {
+        return tests.overview(ctx, idx, PhaseTestService.set(set));
     }
 
     @PostMapping("/phase-tests/{idx}/reset")
-    public Map<String, Object> reset(Ctx ctx, @PathVariable String idx) {
-        return tests.resetAndOverview(ctx, idx);
+    public Map<String, Object> reset(Ctx ctx, @PathVariable String idx, @RequestParam(required = false) String set) {
+        return tests.resetAndOverview(ctx, idx, PhaseTestService.set(set));
     }
 }
