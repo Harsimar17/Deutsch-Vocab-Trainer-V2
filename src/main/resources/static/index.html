@@ -164,6 +164,22 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .sw { cursor: pointer; border-radius: 4px; transition: background-color .12s ease; }
 .sw:hover, .sw.on { background: var(--word-hover); }
 .st { font-weight: 600; box-shadow: inset 0 -2px 0 var(--target-line); }
+/* Formulas page: a table of three columns; on phones each rule with its parts indented below */
+.formulas { display: grid; grid-template-columns: auto auto auto; column-gap: 24px; row-gap: 12px; align-items: baseline; }
+.formulas .frow { display: contents; }
+.formulas .wide { grid-column: 2 / span 2; }
+.formulas .all { grid-column: 1 / -1; }
+@media (max-width: 600px) {
+  .formulas { display: block; }
+  .formulas .frow { display: block; margin-top: 12px; }
+  .formulas .frow:first-child { margin-top: 0; }
+  .formulas .frow > div + div { margin-left: 22px; color: var(--ink-soft); }
+}
+/* Practice / Stories / Formulas switch: no icons and tighter on phones, so it fits between avatar and theme button */
+@media (max-width: 480px) {
+  .modeseg .ic { display: none; }
+  .modeseg button { padding: 8px 11px !important; letter-spacing: 0.05em !important; }
+}
 </style>
 </head>
 <body>
@@ -1928,7 +1944,40 @@ function UserMenu({ user, onLogout }) {
   );
 }
 
-function TopBar({ storyMode, onStoryMode, theme, onTheme, user, onLogout }) {
+// Word-order formulas, one row each, columns as written: the rule, then what it does.
+const FORMULAS = [
+  ["🟢 V2 - und, aber, oder, denn", "2nd"],
+  ["🟢 V2 - dann, deshalb, danach, Manchmal, trotzdem", "2nd"],
+  ["🟢 V2 - heute, gestern, morgen", "2nd"],
+  ["🔴 Verb - END", "weil, dass, wenn, als, obwohl, ob, wann, bevor, Nach, Nachdem"],
+  ["🔵 Modal - können, müssen, wollen, dürfen, sollen, möchten", "Modal V2 + main verb END"],
+  ["🟣 Perfekt - haben / sein + Partizip II", "Auxiliary V2 + Partizip II END"],
+  ["🟠 Futur - I", "werden + Infinitiv", "werden V2 + Infinitiv END"],
+  ["🟢 WANN = question"],
+  ["🔵 ALS = one time in the past"],
+  ["🟠 WENN = every time / if"],
+];
+
+function FormulasPage() {
+  return (
+    <div style={{ ...srsCol, width: "100%", maxWidth: "760px", margin: "0 auto", alignItems: "stretch", gap: "18px" }}>
+      <div style={{ textAlign: "center" }}>
+        <div style={{ fontFamily: "var(--font-serif)", fontWeight: 600, fontSize: "26px", color: "var(--ink)" }}>Formulas</div>
+        <div style={{ ...monoLabel, marginTop: "6px" }}>where the verb goes</div>
+      </div>
+      <div className="formulas" style={{ fontFamily: "var(--font-mono)", fontSize: "13px", lineHeight: 1.5, color: "var(--ink)",
+        padding: "18px 20px", borderRadius: "14px", border: "1px solid var(--line-card)", background: "var(--paper-raised)", boxShadow: "var(--shadow-soft)" }}>
+        {FORMULAS.map((row, i) => (
+          <div key={i} className="frow">
+            {row.map((c, j) => <div key={j} className={row.length === 1 ? "all" : row.length === 2 && j === 1 ? "wide" : undefined}>{c}</div>)}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function TopBar({ storyMode, onStoryMode, formulas, onFormulas, theme, onTheme, user, onLogout }) {
   const seg = (on) => ({
     fontFamily: "var(--font-mono)", fontSize: "10px", fontWeight: 500, letterSpacing: "0.1em", textTransform: "uppercase", padding: "8px 16px",
     border: "none", borderRadius: "999px", background: on ? "var(--btn-grad)" : "transparent", color: on ? "#FCF8EE" : "var(--ink-soft)",
@@ -1937,9 +1986,10 @@ function TopBar({ storyMode, onStoryMode, theme, onTheme, user, onLogout }) {
   const dark = theme === "dark";
   return (
     <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "10px", position: "relative", minHeight: "40px" }}>
-      <div role="group" aria-label="mode" style={{ display: "flex", gap: "3px", padding: "3px", background: "var(--tint)", border: "1px solid var(--line)", borderRadius: "999px" }}>
-        <button onClick={() => onStoryMode(false)} aria-pressed={!storyMode} style={seg(!storyMode)}>✎ Practice</button>
-        <button onClick={() => onStoryMode(true)} aria-pressed={storyMode} style={seg(storyMode)}>📖 Stories</button>
+      <div role="group" aria-label="mode" className="modeseg" style={{ display: "flex", gap: "3px", padding: "3px", background: "var(--tint)", border: "1px solid var(--line)", borderRadius: "999px" }}>
+        <button onClick={() => { onFormulas(false); if (storyMode) onStoryMode(false); }} aria-pressed={!formulas && !storyMode} style={seg(!formulas && !storyMode)}><span className="ic">✎ </span>Practice</button>
+        <button onClick={() => { onFormulas(false); if (!storyMode) onStoryMode(true); }} aria-pressed={!formulas && storyMode} style={seg(!formulas && storyMode)}><span className="ic">📖 </span>Stories</button>
+        <button onClick={() => onFormulas(true)} aria-pressed={formulas} style={seg(formulas)}><span className="ic">📐 </span>Formulas</button>
       </div>
       {user && <UserMenu user={user} onLogout={onLogout} />}
       <button onClick={() => onTheme(dark ? "light" : "dark")} aria-label={dark ? "switch to light mode" : "switch to dark mode"} title={dark ? "Light mode" : "Dark mode"}
@@ -2003,6 +2053,7 @@ function App() {
   const [saveError, setSaveError] = useState(null);
   const [mode, setMode] = useState("study");
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [formulas, setFormulas] = useState(false); // the Formulas page is open
   const [version, setVersion] = useState(0); // bump → practice rounds restart
   // memory only, for this visit — never saved
   const [geminiKey, setGeminiKey] = useState("");
@@ -2024,7 +2075,7 @@ function App() {
     if (!API_CONFIGURED) { setStatus({ error: "No backend configured — set PROD_API_BASE in index.html to the Spring Boot URL." }); return; }
     if (!user) {
       // someone else may log in next: drop everything of the last user
-      setSummary(null); setSaveError(null); setGeminiKey(""); setGhToken(""); setMode("study"); setSettingsOpen(false);
+      setSummary(null); setSaveError(null); setGeminiKey(""); setGhToken(""); setMode("study"); setSettingsOpen(false); setFormulas(false);
       setStatus("login");
       return;
     }
@@ -2082,10 +2133,22 @@ function App() {
   ) : null;
   const topBar = (
     <React.Fragment>
-      <TopBar storyMode={s.storyMode} onStoryMode={(v) => onSettings("setStoryMode", v)} theme={theme} onTheme={(t) => onSettings("setTheme", t)} user={user} onLogout={logout} />
+      <TopBar storyMode={s.storyMode} onStoryMode={(v) => onSettings("setStoryMode", v)} formulas={formulas} onFormulas={setFormulas}
+        theme={theme} onTheme={(t) => onSettings("setTheme", t)} user={user} onLogout={logout} />
       {notice}
     </React.Fragment>
   );
+
+  if (formulas) {
+    return (
+      <div style={{ minHeight: "100%", padding: "20px 20px 56px", fontFamily: "var(--font-serif)" }}>
+        <div style={{ maxWidth: "760px", margin: "0 auto", display: "flex", flexDirection: "column", gap: "22px" }}>
+          {topBar}
+          <div style={{ animation: "cardIn .35s ease both" }}><FormulasPage /></div>
+        </div>
+      </div>
+    );
+  }
 
   if (s.storyMode) {
     return (
