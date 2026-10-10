@@ -55,6 +55,24 @@ class DrillsTest {
     }
 
     @Test
+    @SuppressWarnings("unchecked")
+    void cardsSendTheWholeDeckAndRecordMarksInOneAction() {
+        ProgressService p = TestVocab.progress();
+        List<Card> pool = catalog.pool(List.of("A1"), List.of("verb")).subList(0, 5);
+        FlashDrill f = new FlashDrill(pool, "de-en", true, p);
+        List<Map<String, Object>> deck = (List<Map<String, Object>>) f.view(ctx).get("cards");
+        assertEquals(5, deck.size());
+        String hit = (String) deck.get(0).get("key");
+        String miss = (String) deck.get(1).get("key");
+        f.act(ctx, "results", Map.of("results", List.of(
+                Map.of("key", hit, "knew", true), Map.of("key", miss, "knew", false), Map.of("key", "no|such|card", "knew", true))));
+        assertEquals(2L, p.srs(ctx).get(hit).get("box"));
+        assertEquals(1L, p.srs(ctx).get(miss).get("box"));
+        assertNotNull(p.mistakes(ctx).get(miss), "a miss lands on the Review list");
+        assertNull(p.srs(ctx).get("no|such|card"));
+    }
+
+    @Test
     void studyBringsAgainCardsBackAndPausesEveryFifthCard() {
         ProgressService p = TestVocab.progress();
         List<Card> pool = catalog.pool(List.of("A1"), List.of("verb"));

@@ -209,10 +209,10 @@ class EndToEndTest {
         act(t, write, "next", Map.of());
 
         Round flash = start(t, "flash", Map.of());
-        assertNotNull(flash.view().get("front"));
-        act(t, flash, "knew", Map.of());
-        act(t, flash, "next", Map.of());
-        act(t, flash, "prev", Map.of());
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> deck = (List<Map<String, Object>>) flash.view().get("cards");
+        assertFalse(deck.isEmpty(), "the whole deck comes with the first view");
+        act(t, flash, "results", Map.of("results", List.of(Map.of("key", deck.get(0).get("key"), "knew", true))));
 
         // a few quiz questions, at least one answered wrong → the word lands on the Review list
         Round quiz = start(t, "quiz", Map.of());

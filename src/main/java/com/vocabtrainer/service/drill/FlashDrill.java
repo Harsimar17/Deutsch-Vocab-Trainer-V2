@@ -3,88 +3,62 @@ package com.vocabtrainer.service.drill;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 
 import com.vocabtrainer.model.Card;
 import com.vocabtrainer.model.Ctx;
 import com.vocabtrainer.service.ProgressService;
 import com.vocabtrainer.util.Rand;
+import org.springframework.http.HttpStatus;
+import org.springframework.web.server.ResponseStatusException;
 
-/** Cards: flip cards in a shuffled order; "✗ review this" / "✓ knew it" record the result. */
+/**
+ * Cards: the whole shuffled deck is handed to the page in one view, so flipping,
+ * moving and shuffling happen in the browser without a call. The "✗ review this"
+ * / "✓ knew it" marks are collected there and sent back in one "results" action.
+ */
 class FlashDrill implements Drill {
 
-    private final List<Card> pool;
+    static final int MAX_RESULTS = 500;
+
+    private final List<Card> deck;
+    private final Map<String, Card> byKey;
     private final String direction;
     private final boolean noRepeat;
     private final ProgressService progress;
-    private List<Card> order;
-    private int idx;
-    private boolean done;
 
     FlashDrill(List<Card> pool, String direction, boolean noRepeat, ProgressService progress) {
-        this.pool = pool;
+        this.deck = Rand.shuffle(pool);
+        this.byKey = pool.stream().collect(Collectors.toMap(Card::key, Function.identity(), (a, b) -> a));
         this.direction = direction;
         this.noRepeat = noRepeat;
         this.progress = progress;
-        this.order = Rand.shuffle(pool);
     }
 
     @Override
     public Map<String, Object> view(Ctx ctx) {
         Map<String, Object> v = new LinkedHashMap<>();
-        v.put("empty", pool.isEmpty());
-        v.put("done", done);
+        v.put("empty", deck.isEmpty());
         v.put("noRepeat", noRepeat);
-        v.put("position", idx + 1);
-        v.put("total", order.size());
-        if (!pool.isEmpty() && !done) {
-            Card c = order.get(idx);
-            v.put("card", c.view());
-            v.put("front", c.prompt(direction));
-            v.put("back", c.answer(direction));
-            v.put("direction", direction);
-        }
+        v.put("direction", direction);
+        v.put("cards", deck.stream().map(Card::view).toList());
         return v;
     }
 
+    /** "results" {results: [{key, knew}, …]}: records each mark in the order it was given. */
     @Override
     public void act(Ctx ctx, String action, Map<String, Object> payload) {
-        if (pool.isEmpty()) {
-            return;
+        if (!"results".equals(action)) {
+            throw Drill.unknown(action);
         }
-        switch (action) {
-            case "next" -> next();
-            case "prev" -> idx = (idx - 1 + order.size()) % order.size();
-            case "shuffle" -> {
-                order = Rand.shuffle(pool);
-                idx = 0;
-            }
-            case "restart" -> {
-                order = Rand.shuffle(pool);
-                idx = 0;
-                done = false;
-            }
-            case "knew", "review" -> {
-                if (!done) {
-                    progress.recordResult(ctx, order.get(idx), "knew".equals(action), false);
-                    next();
-                }
-            }
-            default -> throw Drill.unknown(action);
+        if (!(payload.get("results") instanceof List<?> results) || results.size() > MAX_RESULTS) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "results must be a list of at most " + MAX_RESULTS);
         }
-    }
-
-    private void next() {
-        if (done) {
-            return;
-        }
-        if (idx + 1 >= order.size()) {
-            if (noRepeat) {
-                done = true;
-            } else {
-                idx = 0;
+        for (Object r : results) {
+            if (r instanceof Map<?, ?> m && byKey.get(String.valueOf(m.get("key"))) instanceof Card card) {
+                progress.recordResult(ctx, card, Boolean.TRUE.equals(m.get("knew")), false);
             }
-        } else {
-            idx++;
         }
     }
 }

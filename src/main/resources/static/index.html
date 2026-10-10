@@ -310,15 +310,15 @@ function trackLoading(quiet) {
 const api = (() => {
   let onError = null;
   let onLoggedOut = null;
-  async function call(method, path, body, extraHeaders, quiet) {
+  async function call(method, path, body, extraHeaders, quiet, keepalive) {
     const done = trackLoading(quiet); // runs synchronously, while the click is still being handled
     try {
-      return await send(method, path, body, extraHeaders);
+      return await send(method, path, body, extraHeaders, keepalive);
     } finally {
       done();
     }
   }
-  async function send(method, path, body, extraHeaders) {
+  async function send(method, path, body, extraHeaders, keepalive) {
     if (!API_CONFIGURED) throw new Error("no backend configured (PROD_API_BASE is empty)");
     const headers = Object.assign({ "X-Time-Zone": TIME_ZONE }, extraHeaders);
     const token = session.token(); // null once expired — checked before anything is sent
@@ -330,7 +330,7 @@ const api = (() => {
     }
     headers.Authorization = "Bearer " + token;
     if (body !== undefined) headers["Content-Type"] = "application/json";
-    const res = await fetch(API_BASE + path, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) });
+    const res = await fetch(API_BASE + path, { method, headers, keepalive: !!keepalive, body: body === undefined ? undefined : JSON.stringify(body) });
     session.renew(res.headers.get("X-Auth-Token"));
     if (res.status === 401) {
       session.logout();
@@ -349,7 +349,8 @@ const api = (() => {
     setErrorHandler(fn) { onError = fn; },
     setLoggedOutHandler(fn) { onLoggedOut = fn; },
     get: (path, opts) => call("GET", path, undefined, undefined, opts && opts.quiet),
-    post: (path, body, headers, opts) => call("POST", path, body === undefined ? {} : body, headers, opts && opts.quiet),
+    // opts.keepalive: the request outlives the page (for saving on pagehide)
+    post: (path, body, headers, opts) => call("POST", path, body === undefined ? {} : body, headers, opts && opts.quiet, opts && opts.keepalive),
     report(e) { if (onError) onError((e && e.message) || String(e)); },
   };
 })();
@@ -622,74 +623,160 @@ function DrillGate({ drill, children }) {
   return children(drill.view, drill.act);
 }
 
-function Flashcards({ version, onChange, geminiKey }) {
-  const drill = useDrill("flash", null, version, onChange);
-  const v = drill.view;
+function shuffled(list) {
+  const a = list.slice();
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+
+// Cards run in the browser: the round's first view carries the whole shuffled
+// deck, so flipping, moving and shuffling make no call. The ✗ / ✓ marks are kept
+// here and saved in one "results" action when the deck is done, the tab is left
+// or the page is hidden.
+const FLASH_RESULTS_PER_CALL = 200;
+function saveFlashResults(id, results, keepalive) {
+  const chunks = [];
+  for (let i = 0; i < results.length; i += FLASH_RESULTS_PER_CALL) chunks.push(results.slice(i, i + FLASH_RESULTS_PER_CALL));
+  const post = (roundId) => Promise.all(chunks.map((chunk) =>
+    api.post("/api/drills/" + roundId + "/results", { results: chunk }, undefined, { quiet: true, keepalive })));
+  // 410: the round was dropped on the server (6 h without a call) — save into a fresh one
+  return post(id).catch((e) => e.status === 410
+    ? api.post("/api/drills/flash", {}, undefined, { quiet: true }).then((r) => post(r.id))
+    : Promise.reject(e));
+}
+
+function Flashcards({ version, onChange }) {
+  const [round, setRound] = useState({ id: null, view: null, error: null });
+  const [order, setOrder] = useState([]);
+  const [idx, setIdx] = useState(0);
+  const [done, setDone] = useState(false);
   const [flipped, setFlipped] = useState(false);
-  const cardId = v && v.card ? v.card.key + "#" + v.position : null;
-  useEffect(() => { setFlipped(false); }, [cardId]);
+  const pending = useRef([]);
+  const onChangeRef = useRef(onChange);
+  onChangeRef.current = onChange;
+
+  const flush = useCallback((id, keepalive) => {
+    const results = pending.current;
+    if (!id || !results.length) return;
+    pending.current = [];
+    saveFlashResults(id, results, keepalive)
+      .then(() => { if (onChangeRef.current) onChangeRef.current(); })
+      .catch((e) => { if (e.status !== 401) api.report(e); });
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    setRound({ id: null, view: null, error: null });
+    api.post("/api/drills/flash", {})
+      .then((r) => {
+        if (cancelled) return;
+        setRound({ id: r.id, view: r.view, error: null });
+        setOrder(r.view.cards);
+        setIdx(0);
+        setDone(false);
+        setFlipped(false);
+      })
+      .catch((e) => { if (!cancelled) setRound({ id: null, view: null, error: e.message }); });
+    return () => { cancelled = true; };
+  }, [version]);
+
+  // save on leaving the tab or starting a new round (cleanup), and when the page is hidden or closed
+  useEffect(() => {
+    const id = round.id;
+    const onHide = () => { if (document.visibilityState === "hidden") flush(id, true); };
+    const onPageHide = () => flush(id, true);
+    document.addEventListener("visibilitychange", onHide);
+    window.addEventListener("pagehide", onPageHide);
+    return () => {
+      document.removeEventListener("visibilitychange", onHide);
+      window.removeEventListener("pagehide", onPageHide);
+      flush(id);
+    };
+  }, [round.id, flush]);
+
+  const v = round.view;
+  const total = order.length;
+  const move = (to) => { setFlipped(false); setIdx(to); };
+  const next = () => {
+    if (idx + 1 < total) return move(idx + 1);
+    if (v.noRepeat) { setDone(true); flush(round.id); } else move(0);
+  };
+  const prev = () => move((idx - 1 + total) % total);
+  const reshuffle = () => { setOrder(shuffled(v.cards)); setDone(false); move(0); };
+  const mark = (knew) => { pending.current.push({ key: order[idx].key, knew }); next(); };
+
   // Enter: first reveals the card, then moves on (like "next ›").
+  const nextRef = useRef(next);
+  nextRef.current = next;
   useEffect(() => {
     const onKey = (e) => {
       if (e.key !== "Enter" || e.isComposing) return;
       if (e.target && /^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName)) return;
-      if (!v || v.done || v.empty) return;
+      if (!v || done || v.empty) return;
       e.preventDefault();
-      if (!flipped) setFlipped(true); else drill.act("next");
+      if (!flipped) setFlipped(true); else nextRef.current();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [v, flipped, drill.act]);
+  }, [v, done, flipped]);
 
+  if (round.error) return <DrillError message={round.error} />;
+  if (!v) return <Loading />;
+  if (v.empty) return <p style={srsNote}>No cards match this filter — pick at least one category in settings ▸.</p>;
+  if (done) {
+    return (
+      <div style={{ ...srsCol, padding: "40px 0" }}>
+        <div style={{ fontFamily: "var(--font-serif)", fontSize: "22px", color: "var(--ink)", textAlign: "center" }}>All {total} / {total} cards done 🎉</div>
+        <button onClick={reshuffle} style={navBtnStyle}>⟲ start over</button>
+      </div>
+    );
+  }
+  const c = order[idx];
+  const front = v.direction === "en-de" ? c.en : c.de;
+  const back = v.direction === "en-de" ? c.de : c.en;
+  const meta = CATEGORY_META[c.cat] || { color: "var(--accent)" };
   return (
-    <DrillGate drill={drill}>{(v, act) => {
-      if (v.empty) return <p style={srsNote}>No cards match this filter — pick at least one category in settings ▸.</p>;
-      if (v.done) {
-        return (
-          <div style={{ ...srsCol, padding: "40px 0" }}>
-            <div style={{ fontFamily: "var(--font-serif)", fontSize: "22px", color: "var(--ink)", textAlign: "center" }}>All {v.total} / {v.total} cards done 🎉</div>
-            <button onClick={() => act("restart")} style={navBtnStyle}>⟲ start over</button>
+    <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "18px" }}>
+      <div style={counterStyle}>{v.noRepeat ? `${idx + 1} / ${total} attempted` : `CARD ${idx + 1} / ${total}`}</div>
+      <div onClick={() => setFlipped((f) => !f)} style={{ width: "min(440px, 92vw)", height: "280px", cursor: "pointer", perspective: "1400px" }}>
+        <div style={{ position: "relative", width: "100%", height: "100%", transition: "transform 0.55s cubic-bezier(.2,.7,.2,1)", transformStyle: "preserve-3d", transform: flipped ? "rotateY(180deg)" : "rotateY(0deg)" }}>
+          <div style={{ ...cardFace, position: "absolute", inset: 0, width: "auto", backfaceVisibility: "hidden", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: "18px", padding: "28px" }}>
+            <CatChip cat={c.cat} />
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "14px" }}>
+              {v.direction === "de-en" && <SpeakButton text={c.de} />}
+              <div style={{ fontFamily: "var(--font-serif)", fontWeight: 600, fontSize: front.length > 28 ? "20px" : front.length > 16 ? "26px" : "34px", lineHeight: 1.25, letterSpacing: "-0.01em", color: "var(--ink)" }}>{front}</div>
+            </div>
+            <div style={{ ...monoLabel, letterSpacing: "0.16em" }}>tap or ⏎ to reveal</div>
           </div>
-        );
-      }
-      const c = v.card;
-      const meta = CATEGORY_META[c.cat] || { color: "var(--accent)" };
-      return (
-        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "18px" }}>
-          <div style={counterStyle}>{v.noRepeat ? `${v.position} / ${v.total} attempted` : `CARD ${v.position} / ${v.total}`}</div>
-          <div onClick={() => setFlipped((f) => !f)} style={{ width: "min(440px, 92vw)", height: "280px", cursor: "pointer", perspective: "1400px" }}>
-            <div style={{ position: "relative", width: "100%", height: "100%", transition: "transform 0.55s cubic-bezier(.2,.7,.2,1)", transformStyle: "preserve-3d", transform: flipped ? "rotateY(180deg)" : "rotateY(0deg)" }}>
-              <div style={{ ...cardFace, position: "absolute", inset: 0, width: "auto", backfaceVisibility: "hidden", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: "18px", padding: "28px" }}>
-                <CatChip cat={c.cat} />
-                <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "14px" }}>
-                  {v.direction === "de-en" && <SpeakButton text={c.de} />}
-                  <div style={{ fontFamily: "var(--font-serif)", fontWeight: 600, fontSize: v.front.length > 28 ? "20px" : v.front.length > 16 ? "26px" : "34px", lineHeight: 1.25, letterSpacing: "-0.01em", color: "var(--ink)" }}>{v.front}</div>
-                </div>
-                <div style={{ ...monoLabel, letterSpacing: "0.16em" }}>tap or ⏎ to reveal</div>
-              </div>
-              <div style={{ position: "absolute", inset: 0, backfaceVisibility: "hidden", transform: "rotateY(180deg)", background: `linear-gradient(165deg, ${meta.color} 0%, ${meta.color}e0 100%)`, borderRadius: "16px", boxShadow: "var(--shadow-card)", display: "flex", alignItems: "center", justifyContent: "center", padding: "28px" }}>
-                <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "14px" }}>
-                  {v.direction === "en-de" && <SpeakButton text={c.de} />}
-                  <div style={{ fontFamily: "var(--font-serif)", fontWeight: 600, fontSize: v.back.length > 28 ? "19px" : "25px", lineHeight: 1.3, color: "#FCF8EE", textAlign: "center", textShadow: "0 1px 8px rgba(0,0,0,.18)" }}>{v.back}</div>
-                </div>
-              </div>
+          <div style={{ position: "absolute", inset: 0, backfaceVisibility: "hidden", transform: "rotateY(180deg)", background: `linear-gradient(165deg, ${meta.color} 0%, ${meta.color}e0 100%)`, borderRadius: "16px", boxShadow: "var(--shadow-card)", display: "flex", alignItems: "center", justifyContent: "center", padding: "28px" }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "14px" }}>
+              {v.direction === "en-de" && <SpeakButton text={c.de} />}
+              <div style={{ fontFamily: "var(--font-serif)", fontWeight: 600, fontSize: back.length > 28 ? "19px" : "25px", lineHeight: 1.3, color: "#FCF8EE", textAlign: "center", textShadow: "0 1px 8px rgba(0,0,0,.18)" }}>{back}</div>
             </div>
           </div>
-          <div style={{ display: "flex", gap: "10px" }}>
-            <button onClick={() => act("prev")} style={navBtnStyle}>‹ prev</button>
-            <button onClick={() => act("shuffle")} style={navBtnStyle}>⟲ shuffle</button>
-            <button onClick={() => act("next")} style={navBtnStyle}>next › <span style={{ opacity: 0.6 }}>⏎</span></button>
-          </div>
-          {flipped && (
-            <div style={{ display: "flex", gap: "10px" }}>
-              <button onClick={() => act("review")} style={{ ...ghostBtn, color: "var(--bad)", border: "1px solid var(--bad)" }}>✗ review this</button>
-              <button onClick={() => act("knew")} style={{ ...ghostBtn, color: "var(--good)", border: "1px solid var(--good)" }}>✓ knew it</button>
-            </div>
-          )}
-          {flipped && <AiSentence card={c} apiKey={geminiKey} />}
         </div>
-      );
-    }}</DrillGate>
+      </div>
+      <div style={{ display: "flex", gap: "10px" }}>
+        <button onClick={prev} style={navBtnStyle}>‹ prev</button>
+        <button onClick={reshuffle} style={navBtnStyle}>⟲ shuffle</button>
+        <button onClick={next} style={navBtnStyle}>next › <span style={{ opacity: 0.6 }}>⏎</span></button>
+      </div>
+      {flipped && (
+        <div style={{ display: "flex", gap: "10px" }}>
+          <button onClick={() => mark(false)} style={{ ...ghostBtn, color: "var(--bad)", border: "1px solid var(--bad)" }}>✗ review this</button>
+          <button onClick={() => mark(true)} style={{ ...ghostBtn, color: "var(--good)", border: "1px solid var(--good)" }}>✓ knew it</button>
+        </div>
+      )}
+      {flipped && c.example && (
+        <div style={{ display: "flex", alignItems: "center", gap: "10px", maxWidth: "min(440px, 92vw)", padding: "10px 14px", background: "var(--paper-raised)", border: "1px solid var(--line)", borderRadius: "12px", boxShadow: "var(--shadow-soft)" }}>
+          <SpeakButton text={c.example} size={30} />
+          <div style={{ fontFamily: "var(--font-serif)", fontSize: "15px", color: "var(--ink)", lineHeight: 1.45 }}>{c.example}</div>
+        </div>
+      )}
+    </div>
   );
 }
 
