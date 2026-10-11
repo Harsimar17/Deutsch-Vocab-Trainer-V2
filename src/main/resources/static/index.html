@@ -805,6 +805,108 @@ function Flashcards({ version, onChange }) {
   );
 }
 
+// The Phasentest's Sentences tab, like Duolingo: the English on top, German
+// tiles to tap into order, for the phase's words and verbs; after checking,
+// how the word is used. Picking tiles is local; "check" sends the order.
+const tileStyle = (used) => ({
+  fontFamily: "var(--font-serif)", fontSize: "17px", padding: "8px 13px", borderRadius: "10px", cursor: used ? "default" : "pointer",
+  border: "1px solid var(--line)", borderBottomWidth: "3px", background: used ? "var(--line)" : "var(--paper-raised)",
+  color: used ? "transparent" : "var(--ink)", pointerEvents: used ? "none" : "auto",
+});
+
+function PhaseSentences({ idx, onChange }) {
+  const drill = useDrill("sentences", { phase: idx }, 0, onChange);
+  const v = drill.view;
+  const [picked, setPicked] = useState([]);
+  const itemId = v && v.item ? v.position + "|" + v.item.tiles.join(" ") : null;
+  useEffect(() => { setPicked([]); }, [itemId]);
+  useEffect(() => { if (v && v.verdict && v.answer) speakGerman(v.answer.de); }, [v && v.verdict]);
+
+  return (
+    <DrillGate drill={drill}>{(v, act) => {
+      const stat = (
+        <div style={{ ...counterStyle, textAlign: "center" }}>
+          {v.words} WORDS & VERBS · {v.sentences} SENTENCES
+        </div>
+      );
+      if (v.empty) {
+        return (
+          <div style={srsCol}>
+            {stat}
+            <p style={srsNote}>No sentences for this phase yet.</p>
+          </div>
+        );
+      }
+      if (v.done) {
+        return (
+          <div style={{ ...srsCol, padding: "30px 0" }}>
+            {stat}
+            <div style={{ fontFamily: "var(--font-serif)", fontSize: "22px", color: "var(--ink)", textAlign: "center" }}>{v.right} / {v.total} sentences right 🎉</div>
+            <button onClick={() => act("restart")} style={navBtnStyle}>⟲ another round</button>
+          </div>
+        );
+      }
+      const it = v.item;
+      const checked = !!v.verdict;
+      const used = new Set(picked);
+      const pick = (i) => { if (!checked) setPicked((p) => [...p, i]); };
+      const unpick = (i) => { if (!checked) setPicked((p) => p.filter((x) => x !== i)); };
+      const ok = v.verdict === "correct";
+      return (
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "16px", width: "100%" }}>
+          {stat}
+          <div style={{ width: "min(520px, 94vw)", height: "6px", borderRadius: "3px", background: "var(--line)", overflow: "hidden" }}>
+            <div style={{ height: "100%", width: `${((v.position - 1) / v.total) * 100}%`, background: "var(--good)", transition: "width .3s" }} />
+          </div>
+          <div style={monoLabel}>Write this in German · {v.position} / {v.total}</div>
+          <div style={{ ...cardFace, width: "min(520px, 94vw)", display: "flex", flexDirection: "column", gap: "14px", padding: "20px" }}>
+            <div style={{ fontFamily: "var(--font-serif)", fontWeight: 600, fontSize: "21px", color: "var(--ink)", textAlign: "center", lineHeight: 1.35 }}>
+              {it.en}
+            </div>
+            <div style={{ fontFamily: "var(--font-serif)", fontSize: "15px", color: "var(--ink-soft)", textAlign: "center" }}>
+              <strong style={{ color: "var(--accent)" }}>{it.word}</strong> = {it.meaning}
+            </div>
+            <div style={{ minHeight: "108px", borderBottom: "2px solid var(--line)", display: "flex", flexWrap: "wrap", gap: "8px", padding: "8px 0", alignContent: "flex-start" }}>
+              {picked.map((i) => <button key={i} onClick={() => unpick(i)} style={tileStyle(false)}>{it.tiles[i]}</button>)}
+            </div>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: "8px", justifyContent: "center" }}>
+              {it.tiles.map((w, i) => <button key={i} onClick={() => pick(i)} style={tileStyle(used.has(i))}>{w}</button>)}
+            </div>
+          </div>
+          {checked && (
+            <div style={{ width: "min(520px, 94vw)", borderRadius: "12px", padding: "14px 16px", display: "flex", flexDirection: "column", gap: "6px",
+              background: "var(--tint)", border: `1px solid ${ok ? "var(--good)" : "var(--bad)"}` }}>
+              <div style={{ ...monoLabel, color: ok ? "var(--good)" : "var(--bad)" }}>{ok ? "✓ correct" : v.verdict === "skipped" ? "skipped — the sentence" : "✗ correct answer"}</div>
+              <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                <SpeakButton text={v.answer.de} size={30} />
+                <div>
+                  <div style={{ fontFamily: "var(--font-serif)", fontSize: "17px", color: "var(--ink)" }}>{v.answer.de}</div>
+                  {v.answer.en && <div style={{ fontFamily: "var(--font-serif)", fontStyle: "italic", fontSize: "14px", color: "var(--ink-soft)" }}>{v.answer.en}</div>}
+                </div>
+              </div>
+              {v.answer.use && (
+                <div style={{ marginTop: "6px", paddingTop: "8px", borderTop: "1px solid var(--line)" }}>
+                  <div style={{ ...monoLabel, fontSize: "9px" }}>How to use {it.word}</div>
+                  <div style={{ fontFamily: "var(--font-mono)", fontSize: "13px", color: "var(--accent)", marginTop: "4px" }}>{v.answer.use}</div>
+                </div>
+              )}
+            </div>
+          )}
+          <div style={{ display: "flex", gap: "10px" }}>
+            {checked
+              ? <button onClick={() => act("next")} style={navBtnStyle}>{v.position < v.total ? "continue ›" : "finish"}</button>
+              : <>
+                  <button onClick={() => act("skip")} style={ghostBtn}>skip</button>
+                  <button onClick={() => act("check", { words: picked.map((i) => it.tiles[i]) })} disabled={!picked.length}
+                    style={{ ...navBtnStyle, opacity: picked.length ? 1 : 0.4 }}>check</button>
+                </>}
+          </div>
+        </div>
+      );
+    }}</DrillGate>
+  );
+}
+
 function GradeBar({ onGrade }) {
   const btns = [["again", "Again", "var(--bad)", "forgot"], ["good", "Good", "var(--good)", "got it"], ["easy", "Easy", "#3A5A8C", "too easy"]];
   return (
@@ -1364,7 +1466,7 @@ function WordTip({ tip }) {
 // Phase test status from the backend, in words.
 // What a phase test's two sets are called: the stories' target words, and the B1 verbs used in them.
 const SET_NAME = { words: "Wörter", verbs: "Verben" };  // in the German texts
-const SET_LABEL = { words: "Words", verbs: "Verbs" };   // on buttons
+const SET_LABEL = { words: "Words", verbs: "Verbs", sentences: "Sentences" };   // on buttons
 
 function testStatusText(s, unit = "words") {
   if (!s) return { text: "", tone: "var(--ink-faint)" };
@@ -1554,12 +1656,13 @@ function MasteryBar({ status }) {
 }
 
 function PhaseTestPage({ idx, onSettings, onChange }) {
-  const [set, setSet] = useState("words"); // "words" | "verbs" — the two tabs
+  const [set, setSet] = useState("words"); // "words" | "verbs" | "sentences" — the three tabs
   const [overview, setOverview] = useState(null);
   const [error, setError] = useState(null);
   const [round, setRound] = useState(null); // { refresh, retake, n } while a round is running
   const [howOpen, setHowOpen] = useState(false);
   const load = useCallback(() => {
+    if (set === "sentences") return; // a round of its own, no overview
     api.get("/api/phase-tests/" + idx + "?set=" + set).then(setOverview).catch((e) => setError(e.message));
   }, [idx, set]);
   useEffect(() => { load(); }, [load]);
@@ -1571,7 +1674,7 @@ function PhaseTestPage({ idx, onSettings, onChange }) {
   if (error) return <DrillError message={error} />;
   const tabs = (
     <div role="tablist" aria-label="Phasentest" style={{ display: "flex", gap: "3px", padding: "3px", background: "var(--tint)", border: "1px solid var(--line)", borderRadius: "999px", alignSelf: "center" }}>
-      {["words", "verbs"].map((k) => (
+      {["words", "verbs", "sentences"].map((k) => (
         <button key={k} role="tab" aria-selected={set === k} onClick={() => setSet(k)} style={{
           fontFamily: "var(--font-mono)", fontSize: "10px", fontWeight: 500, letterSpacing: "0.1em", textTransform: "uppercase", padding: "8px 18px",
           border: "none", borderRadius: "999px", background: set === k ? "var(--btn-grad)" : "transparent", color: set === k ? "#FCF8EE" : "var(--ink-soft)", cursor: "pointer",
@@ -1579,6 +1682,24 @@ function PhaseTestPage({ idx, onSettings, onChange }) {
       ))}
     </div>
   );
+  if (set === "sentences") {
+    return (
+      <div style={{ ...srsCol, width: "100%", maxWidth: "560px", margin: "0 auto", alignItems: "stretch", gap: "18px" }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "10px" }}>
+          <button onClick={() => onSettings("openPhaseTest", null)} style={miniBtn}>‹ all stories</button>
+          <span style={{ ...monoLabel, fontSize: "9px", textAlign: "right" }}>🎯 Phasentest · {overview ? overview.phase.name : ""}</span>
+        </div>
+        <div style={{ textAlign: "center" }}>
+          <div style={{ fontFamily: "var(--font-serif)", fontWeight: 600, fontSize: "26px", color: "var(--ink)" }}>Phasentest</div>
+          <div style={{ fontFamily: "var(--font-serif)", fontStyle: "italic", fontSize: "14px", color: "var(--ink-soft)", marginTop: "4px" }}>
+            Use this phase's words and verbs in sentences
+          </div>
+        </div>
+        {tabs}
+        <PhaseSentences idx={idx} onChange={onChange} />
+      </div>
+    );
+  }
   if (!overview || overview.set !== set) {
     return <div style={{ ...srsCol, width: "100%", maxWidth: "560px", margin: "0 auto", alignItems: "stretch", gap: "18px" }}>{tabs}<Loading /></div>;
   }

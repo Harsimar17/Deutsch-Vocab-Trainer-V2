@@ -24,7 +24,7 @@ public class DrillController {
         this.drills = drills;
     }
 
-    /** Starts a round: study, write, flash, quiz, articles, sep, cloze, review, phase. */
+    /** Starts a round: study, write, flash, quiz, articles, sep, cloze, review, phase, sentences (the last two take {phase}). */
     @PostMapping("/{mode}")
     public Map<String, Object> start(Ctx ctx, @PathVariable String mode, @RequestBody(required = false) Map<String, Object> params) {
         return drills.start(ctx, mode, params);

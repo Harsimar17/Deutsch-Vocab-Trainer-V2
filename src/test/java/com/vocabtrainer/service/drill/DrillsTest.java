@@ -17,7 +17,9 @@ import com.vocabtrainer.service.CardCatalog;
 import com.vocabtrainer.service.PhaseTestService;
 import com.vocabtrainer.service.ProgressService;
 import com.vocabtrainer.service.StoryService;
+import com.vocabtrainer.service.SentencePracticeService;
 import org.junit.jupiter.api.Test;
+import tools.jackson.databind.json.JsonMapper;
 
 class DrillsTest {
 
@@ -70,6 +72,47 @@ class DrillsTest {
         assertEquals(1L, p.srs(ctx).get(miss).get("box"));
         assertNotNull(p.mistakes(ctx).get(miss), "a miss lands on the Review list");
         assertNull(p.srs(ctx).get("no|such|card"));
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void phaseSentencesAskEachWordOnceAndCheckTheOrder() {
+        ProgressService p = TestVocab.progress();
+        SentencePracticeService service = new SentencePracticeService(TestVocab.stories(), JsonMapper.builder().build());
+        List<SentencePracticeService.Sentence> pool = service.forPhase("1");
+        assertFalse(pool.isEmpty(), "phase 1 has sentences");
+        SentenceDrill d = new SentenceDrill("1", pool, p);
+        Map<String, Object> v = d.view(ctx);
+        assertEquals(SentenceDrill.ROUND, v.get("total"));
+
+        Map<String, Object> item = (Map<String, Object>) v.get("item");
+        assertNotNull(item.get("en"), "the English sentence is shown");
+        SentencePracticeService.Sentence s = pool.stream()
+                .filter(x -> x.card().de().equals(item.get("word")) && x.en().equals(item.get("en"))).findFirst().orElseThrow();
+        assertEquals(s.words().size() + SentenceDrill.EXTRA_TILES, ((List<String>) item.get("tiles")).size());
+        d.act(ctx, "check", Map.of("words", s.words()));
+        assertEquals("correct", d.view(ctx).get("verdict"));
+        assertNotNull(((Map<String, Object>) d.view(ctx).get("answer")).get("use"), "how the word is used");
+        assertEquals(2L, p.srs(ctx).get(s.card().key()).get("box"), "a right sentence counts for its word");
+
+        java.util.Set<Object> words = new java.util.HashSet<>(List.of(item.get("word")));
+        for (int i = 1; i < SentenceDrill.ROUND; i++) {
+            d.act(ctx, "next", Map.of());
+            words.add(((Map<String, Object>) d.view(ctx).get("item")).get("word"));
+            d.act(ctx, "check", Map.of("words", List.of("falsch")));
+            assertEquals("wrong", d.view(ctx).get("verdict"));
+        }
+        assertEquals(SentenceDrill.ROUND, words.size(), "each word once per round");
+        d.act(ctx, "next", Map.of());
+        assertEquals(true, d.view(ctx).get("done"));
+    }
+
+    @Test
+    void sentenceTilesDropPunctuation() {
+        assertEquals(List.of("Ohne", "Arbeit", "bekommt", "sie", "Sozialleistungen", "vom", "Staat"),
+                SentencePracticeService.words("Ohne Arbeit bekommt sie Sozialleistungen vom Staat."));
+        assertEquals(List.of("Mein", "Kollege", "ist", "ein", "Pessimist", "er", "erwartet", "das", "Schlimmste"),
+                SentencePracticeService.words("Mein Kollege ist ein Pessimist – er erwartet das Schlimmste."));
     }
 
     @Test

@@ -9,6 +9,7 @@ import com.vocabtrainer.model.Settings;
 import com.vocabtrainer.service.CardCatalog;
 import com.vocabtrainer.service.PhaseTestService;
 import com.vocabtrainer.service.ProgressService;
+import com.vocabtrainer.service.SentencePracticeService;
 import com.vocabtrainer.service.SettingsService;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Component;
@@ -22,12 +23,15 @@ public class DrillFactory {
     private final ProgressService progress;
     private final SettingsService settings;
     private final PhaseTestService phaseTests;
+    private final SentencePracticeService sentences;
 
-    public DrillFactory(CardCatalog catalog, ProgressService progress, SettingsService settings, PhaseTestService phaseTests) {
+    public DrillFactory(CardCatalog catalog, ProgressService progress, SettingsService settings, PhaseTestService phaseTests,
+                        SentencePracticeService sentences) {
         this.catalog = catalog;
         this.progress = progress;
         this.settings = settings;
         this.phaseTests = phaseTests;
+        this.sentences = sentences;
     }
 
     public Drill create(Ctx ctx, String mode, Map<String, Object> params) {
@@ -41,6 +45,13 @@ public class DrillFactory {
             case "articles" -> new ArticlesDrill(pool, s.noRepeat(), progress);
             case "sep" -> new SepDrill(pool, progress);
             case "cloze" -> new ClozeDrill(pool, s.noRepeat(), progress);
+            case "sentences" -> {
+                String idx = Drill.str(params, "phase");
+                if (idx == null || !idx.matches("\\d{1,3}")) {
+                    throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "phase must be a number");
+                }
+                yield new SentenceDrill(idx, sentences.forPhase(idx), progress);
+            }
             case "review" -> new ReviewDrill(ctx, catalog, s.direction(), progress);
             case "phase" -> {
                 String idx = Drill.str(params, "phase");
