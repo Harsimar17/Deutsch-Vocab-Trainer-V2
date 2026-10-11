@@ -2193,6 +2193,48 @@ const RULES = [
     ],
   },
   {
+    id: "time", title: "Time words", sub: "days, weeks, years, Wochenende — their article and preposition",
+    rules: [
+      { title: "Which article", table: {
+        head: ["Article", "Time words", "When?"],
+        rows: [
+          ["der", "Tag, Morgen, Vormittag, Mittag, Nachmittag, Abend · Montag … Sonntag", "am Montag, am Abend"],
+          ["der", "Januar … Dezember · Frühling, Sommer, Herbst, Winter · Monat", "im Januar, im Sommer"],
+          ["der", "Geburtstag, Feiertag, Urlaub", "am Geburtstag, im Urlaub"],
+          ["die", "Woche, Nacht, Stunde, Minute, Mitternacht", "in der Woche, in der Nacht"],
+          ["die", "Ferien (plural only)", "in den Ferien"],
+          ["das", "Jahr, Wochenende, Jahrhundert, Datum", "im Jahr 2026, am Wochenende"],
+        ],
+      }, note: "All days, months and seasons are der. Weihnachten and Ostern go without article: an / zu Weihnachten." },
+      { title: "When? — the preposition", formulas: [
+        ["🟢 am", "days, parts of the day, dates, Wochenende", "am Montag, am Abend, am 3. Mai, am Wochenende"],
+        ["🔵 im", "months, seasons", "im Januar, im Sommer"],
+        ["🟣 in der", "Woche, Nacht", "in der Woche, in der Nacht"],
+        ["🟠 um", "clock time", "um 8 Uhr, um Mitternacht"],
+        ["🔴 years", "no preposition, or im Jahr", "2026 / im Jahr 2026 — never \"in 2026\""],
+      ] },
+      { title: "How long ago / since / until — Dative", formulas: [
+        ["🔵 seit", "since, for (still going on)", "seit einem Jahr, seit zwei Wochen"],
+        ["🟣 vor", "ago", "vor einem Monat, vor drei Tagen"],
+        ["🟢 in", "in (future)", "in einer Woche, in zwei Jahren"],
+        ["🟠 von … bis / ab", "from … to / from … on", "von Montag bis Freitag, ab nächster Woche"],
+      ] },
+      { title: "Without preposition — Akkusative", table: {
+        head: ["Akkusative", "M", "F", "N"],
+        rows: [
+          ["jeder", "jeden Tag", "jede Woche", "jedes Jahr"],
+          ["letzter", "letzten Montag", "letzte Woche", "letztes Jahr"],
+          ["nächster", "nächsten Monat", "nächste Woche", "nächstes Wochenende"],
+          ["dieser", "diesen Sommer", "diese Woche", "dieses Jahr"],
+        ],
+      }, note: "Ich gehe jeden Tag spazieren. Nächste Woche habe ich Urlaub." },
+      { title: "Every … — words with -s", formulas: [
+        ["🟢 days", "montags, dienstags, … sonntags", "Montags gehe ich schwimmen. (every Monday)"],
+        ["🔵 parts of the day", "morgens, mittags, nachmittags, abends, nachts", "Abends lese ich. (every evening)"],
+      ], note: "Written small — they are adverbs, not nouns." },
+    ],
+  },
+  {
     id: "adjectives", title: "Adjective declension", sub: "the ending depends on the article in front",
     rules: [
       { title: "Without article", cases: casesOf(
