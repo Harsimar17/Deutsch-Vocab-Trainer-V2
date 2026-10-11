@@ -59,6 +59,9 @@
   --glow-2-fade: rgba(239,231,211,0);
   --word-hover: rgba(138,106,43,.16);
   --target-line: rgba(138,106,43,.5);
+  --rule-case: #DCEBD3;
+  --rule-sing: #F3D9DE;
+  --rule-pl: #D3E0F2;
   color-scheme: light;
 }
 /* Dark mode: warm, low-glare — dark brown-grey paper (not pure black) and
@@ -90,6 +93,9 @@
   --shadow-card: 0 1px 2px rgba(0,0,0,.35), 0 18px 44px -14px rgba(0,0,0,.7);
   --word-hover: rgba(205,168,100,.18);
   --target-line: rgba(205,168,100,.55);
+  --rule-case: rgba(94,158,117,.26);
+  --rule-sing: rgba(201,100,119,.24);
+  --rule-pl: rgba(111,143,196,.28);
   color-scheme: dark;
 }
 html,body,#root {
@@ -174,6 +180,25 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   .formulas .frow { display: block; margin-top: 12px; }
   .formulas .frow:first-child { margin-top: 0; }
   .formulas .frow > div + div { margin-left: 22px; color: var(--ink-soft); }
+}
+/* Rules page: one card per group, a headline per rule, charts like a grammar book */
+.rgroup { display: flex; flex-direction: column; gap: 18px; padding: 20px; border-radius: 14px; border: 1px solid var(--line-card);
+  background: var(--paper-raised); box-shadow: var(--shadow-soft); scroll-margin-top: 16px; }
+.rhead { margin: 0; font-family: var(--font-mono); font-size: 11px; font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase;
+  color: var(--accent); padding-bottom: 6px; border-bottom: 1px solid var(--line); }
+.rwrap { overflow-x: auto; }
+.rtable { width: 100%; border-collapse: collapse; font-family: var(--font-mono); font-size: 13px; color: var(--ink); }
+.rtable th, .rtable td { border: 1px solid var(--line); padding: 8px 10px; text-align: center; }
+.rtable thead th { font-weight: 600; }
+.rtable tbody th { font-weight: 600; white-space: nowrap; }
+.rtable .h-case { background: var(--rule-case); }
+.rtable .h-sing { background: var(--rule-sing); }
+.rtable .h-pl { background: var(--rule-pl); }
+@media (max-width: 480px) {
+  .rgroup { padding: 16px 12px; }
+  .rtable { font-size: 12px; }
+  .rtable th, .rtable td { padding: 6px 5px; }
+  .rtable tbody th { white-space: normal; }
 }
 /* Practice / Stories / Formulas switch: no icons and tighter on phones, so it fits between avatar and theme button */
 @media (max-width: 480px) {
@@ -2031,35 +2056,321 @@ function UserMenu({ user, onLogout }) {
   );
 }
 
-// Word-order formulas, one row each, columns as written: the rule, then what it does.
-const FORMULAS = [
-  ["🟢 V2 - und, aber, oder, denn", "2nd"],
-  ["🟢 V2 - dann, deshalb, danach, Manchmal, trotzdem", "2nd"],
-  ["🟢 V2 - heute, gestern, morgen", "2nd"],
-  ["🔴 Verb - END", "weil, dass, wenn, als, obwohl, ob, wann, bevor, Nach, Nachdem"],
-  ["🔵 Modal - können, müssen, wollen, dürfen, sollen, möchten", "Modal V2 + main verb END"],
-  ["🟣 Perfekt - haben / sein + Partizip II", "Auxiliary V2 + Partizip II END"],
-  ["🟠 Futur - I", "werden + Infinitiv", "werden V2 + Infinitiv END"],
-  ["🟢 WANN = question"],
-  ["🔵 ALS = one time in the past"],
-  ["🟠 WENN = every time / if"],
+// The Rules page: fixed content, no call. Each group has headlines; under each
+// headline come its blocks — `formulas` (rows: the rule, then what it does),
+// `cases` (Cases × M / F / N / Plural, like a grammar-book chart) or `table`.
+const CASES = ["Nominative", "Akkusative", "Dative", "Genitive"];
+const casesOf = (...rows) => rows.map((r, i) => [CASES[i], ...r]);
+const PERSONS = ["ich", "du", "er / sie / es", "wir", "ihr", "sie / Sie"];
+const personsOf = (...cols) => PERSONS.map((p, i) => [p, ...cols.map((c) => c[i])]);
+
+const RULES = [
+  {
+    id: "order", title: "Word order", sub: "where the verb goes",
+    rules: [
+      { title: "Verb in 2nd position (V2)", formulas: [
+        ["🟢 V2 - und, aber, oder, denn", "2nd"],
+        ["🟢 V2 - dann, deshalb, danach, Manchmal, trotzdem", "2nd"],
+        ["🟢 V2 - heute, gestern, morgen", "2nd"],
+      ] },
+      { title: "Verb at the end", formulas: [
+        ["🔴 Verb - END", "weil, dass, wenn, als, obwohl, ob, wann, bevor, Nach, Nachdem"],
+      ] },
+      { title: "Modal verbs", formulas: [
+        ["🔵 Modal - können, müssen, wollen, dürfen, sollen, möchten", "Modal V2 + main verb END"],
+      ] },
+      { title: "Perfekt", formulas: [
+        ["🟣 Perfekt - haben / sein + Partizip II", "Auxiliary V2 + Partizip II END"],
+      ] },
+      { title: "Futur I", formulas: [
+        ["🟠 Futur - I", "werden + Infinitiv", "werden V2 + Infinitiv END"],
+      ] },
+      { title: "wann / als / wenn", formulas: [
+        ["🟢 WANN = question"],
+        ["🔵 ALS = one time in the past"],
+        ["🟠 WENN = every time / if"],
+      ] },
+      { title: "Questions", formulas: [
+        ["🟢 W-question", "W-word + Verb + subject", "Wann kommst du?"],
+        ["🔵 Yes / no question", "Verb 1st + subject", "Kommst du morgen?"],
+        ["🔴 Indirect question", "ob / W-word … Verb END", "Ich weiß nicht, ob er kommt."],
+      ] },
+      { title: "zu + Infinitiv", formulas: [
+        ["🟢 zu + Infinitiv", "… zu + Infinitiv END", "Ich habe keine Lust, ins Kino zu gehen."],
+        ["🔵 um … zu (purpose)", "um … zu + Infinitiv END", "Ich lerne Deutsch, um in Berlin zu arbeiten."],
+        ["🟠 separable verb", "zu goes in the middle", "anzurufen, aufzustehen"],
+      ] },
+    ],
+  },
+  {
+    id: "articles", title: "Articles", sub: "der / die / das and ein / kein / mein in every case",
+    rules: [
+      { title: "Definite article (der, die, das)", cases: casesOf(
+        ["der", "die", "das", "die"],
+        ["den", "die", "das", "die"],
+        ["dem", "der", "dem", "den"],
+        ["des", "der", "des", "der"],
+      ), note: "Dative plural: the noun gets -n (mit den Kindern). Genitive M / N: the noun gets -s / -es (des Mannes)." },
+      { title: "Indefinite article (ein, kein)", cases: casesOf(
+        ["ein", "eine", "ein", "keine"],
+        ["einen", "eine", "ein", "keine"],
+        ["einem", "einer", "einem", "keinen"],
+        ["eines", "einer", "eines", "keiner"],
+      ), note: "\"ein\" has no plural — the plural column shows kein. Possessives (mein, dein, …) take the same endings." },
+      { title: "Possessive articles (mein, dein, …)", cases: casesOf(
+        ["mein", "meine", "mein", "meine"],
+        ["meinen", "meine", "mein", "meine"],
+        ["meinem", "meiner", "meinem", "meinen"],
+        ["meines", "meiner", "meines", "meiner"],
+      ), formulas: [
+        ["ich → mein", "du → dein", "er / es → sein"],
+        ["sie → ihr", "wir → unser", "ihr → euer (eure)"],
+        ["sie → ihr", "Sie → Ihr"],
+      ] },
+    ],
+  },
+  {
+    id: "adjectives", title: "Adjective declension", sub: "the ending depends on the article in front",
+    rules: [
+      { title: "Without article", cases: casesOf(
+        ["-er", "-e", "-es", "-e"],
+        ["-en", "-e", "-es", "-e"],
+        ["-em", "-er", "-em", "-en"],
+        ["-en", "-er", "-en", "-er"],
+      ), note: "guter Kaffee · kalte Milch · frisches Brot · nette Leute — the adjective shows the case itself." },
+      { title: "With der, die, das", cases: casesOf(
+        ["-e", "-e", "-e", "-en"],
+        ["-en", "-e", "-e", "-en"],
+        ["-en", "-en", "-en", "-en"],
+        ["-en", "-en", "-en", "-en"],
+      ), note: "der gute Kaffee · die kalte Milch · das frische Brot · die netten Leute. Same after dieser, jeder, welcher, alle." },
+      { title: "With ein, kein, mein", cases: casesOf(
+        ["-er", "-e", "-es", "-en"],
+        ["-en", "-e", "-es", "-en"],
+        ["-en", "-en", "-en", "-en"],
+        ["-en", "-en", "-en", "-en"],
+      ), note: "ein guter Kaffee · eine kalte Milch · ein frisches Brot · keine netten Leute." },
+    ],
+  },
+  {
+    id: "pronouns", title: "Pronouns", sub: "ich, mich, mir …",
+    rules: [
+      { title: "Personal pronouns", table: {
+        head: ["Person", "Nominative", "Akkusative", "Dative"],
+        rows: [
+          ["1st sg.", "ich", "mich", "mir"],
+          ["2nd sg.", "du", "dich", "dir"],
+          ["3rd sg. M", "er", "ihn", "ihm"],
+          ["3rd sg. F", "sie", "sie", "ihr"],
+          ["3rd sg. N", "es", "es", "ihm"],
+          ["1st pl.", "wir", "uns", "uns"],
+          ["2nd pl.", "ihr", "euch", "euch"],
+          ["3rd pl.", "sie", "sie", "ihnen"],
+          ["formal", "Sie", "Sie", "Ihnen"],
+        ],
+      } },
+      { title: "Reflexive pronouns", table: {
+        head: ["Person", "Akkusative", "Dative"],
+        rows: [
+          ["ich", "mich", "mir"],
+          ["du", "dich", "dir"],
+          ["er / sie / es", "sich", "sich"],
+          ["wir", "uns", "uns"],
+          ["ihr", "euch", "euch"],
+          ["sie / Sie", "sich", "sich"],
+        ],
+      }, note: "Ich wasche mich. — Ich wasche mir die Hände (Dative when there is another object)." },
+      { title: "Relative pronouns", cases: casesOf(
+        ["der", "die", "das", "die"],
+        ["den", "die", "das", "die"],
+        ["dem", "der", "dem", "denen"],
+        ["dessen", "deren", "dessen", "deren"],
+      ), formulas: [
+        ["🔴 Relativsatz", "der / die / das … Verb END", "Der Mann, der dort steht, ist mein Vater."],
+      ] },
+    ],
+  },
+  {
+    id: "prepositions", title: "Prepositions", sub: "each one decides the case",
+    rules: [
+      { title: "Prepositions and their case", table: {
+        head: ["Case", "Prepositions", "Example"],
+        rows: [
+          ["Akkusative", "durch, für, gegen, ohne, um, bis, entlang", "für dich"],
+          ["Dative", "aus, bei, mit, nach, seit, von, zu, gegenüber, ab", "mit dem Bus"],
+          ["Genitive", "wegen, trotz, während, statt, innerhalb, außerhalb", "wegen des Wetters"],
+        ],
+      } },
+      { title: "Two-way prepositions", formulas: [
+        ["an, auf, hinter, in, neben, über, unter, vor, zwischen"],
+        ["🔵 Wo? (position)", "→ Dative", "Ich bin in der Stadt."],
+        ["🟠 Wohin? (direction)", "→ Akkusative", "Ich gehe in die Stadt."],
+      ] },
+      { title: "Short forms", formulas: [
+        ["an dem → am", "in dem → im", "zu dem → zum"],
+        ["an das → ans", "in das → ins", "zu der → zur"],
+        ["bei dem → beim", "von dem → vom"],
+      ] },
+    ],
+  },
+  {
+    id: "verbs", title: "Verbs", sub: "present, past, Konjunktiv II, Passiv",
+    rules: [
+      { title: "Present tense", table: {
+        head: ["Person", "machen", "sein", "haben", "werden"],
+        rows: personsOf(
+          ["mache", "machst", "macht", "machen", "macht", "machen"],
+          ["bin", "bist", "ist", "sind", "seid", "sind"],
+          ["habe", "hast", "hat", "haben", "habt", "haben"],
+          ["werde", "wirst", "wird", "werden", "werdet", "werden"],
+        ),
+      }, note: "Regular endings: -e, -st, -t, -en, -t, -en." },
+      { title: "Modal verbs — present", table: {
+        head: ["Person", "können", "müssen", "wollen"],
+        rows: personsOf(
+          ["kann", "kannst", "kann", "können", "könnt", "können"],
+          ["muss", "musst", "muss", "müssen", "müsst", "müssen"],
+          ["will", "willst", "will", "wollen", "wollt", "wollen"],
+        ),
+      } },
+      { table: {
+        head: ["Person", "dürfen", "sollen", "möchten"],
+        rows: personsOf(
+          ["darf", "darfst", "darf", "dürfen", "dürft", "dürfen"],
+          ["soll", "sollst", "soll", "sollen", "sollt", "sollen"],
+          ["möchte", "möchtest", "möchte", "möchten", "möchtet", "möchten"],
+        ),
+      }, note: "ich and er / sie / es have the same form — no -t." },
+      { title: "Präteritum", table: {
+        head: ["Person", "sein", "haben", "können", "müssen"],
+        rows: personsOf(
+          ["war", "warst", "war", "waren", "wart", "waren"],
+          ["hatte", "hattest", "hatte", "hatten", "hattet", "hatten"],
+          ["konnte", "konntest", "konnte", "konnten", "konntet", "konnten"],
+          ["musste", "musstest", "musste", "mussten", "musstet", "mussten"],
+        ),
+      }, formulas: [
+        ["🟢 regular verbs", "stem + -te + ending", "machen → ich machte, wir machten"],
+      ] },
+      { title: "Perfekt: haben or sein, Partizip II", formulas: [
+        ["🟣 sein", "movement or change of state", "gehen, fahren, kommen, aufstehen, werden, bleiben, sein"],
+        ["🟣 haben", "all other verbs", "machen, essen, lernen, sehen"],
+        ["🟢 regular", "ge- … -t", "gemacht, gelernt"],
+        ["🔵 irregular", "ge- … -en", "gesehen, gefahren"],
+        ["🟠 separable", "prefix + ge + verb", "aufgestanden, eingekauft"],
+        ["🔴 no ge-", "-ieren, be-, ver-, er-, ent-, zer-, emp-", "studiert, besucht, verstanden"],
+      ] },
+      { title: "Konjunktiv II", table: {
+        head: ["Person", "würde", "hätte", "wäre", "könnte"],
+        rows: personsOf(
+          ["würde", "würdest", "würde", "würden", "würdet", "würden"],
+          ["hätte", "hättest", "hätte", "hätten", "hättet", "hätten"],
+          ["wäre", "wärst", "wäre", "wären", "wärt", "wären"],
+          ["könnte", "könntest", "könnte", "könnten", "könntet", "könnten"],
+        ),
+      }, formulas: [
+        ["🔵 wish / polite / unreal", "würde V2 + Infinitiv END", "Ich würde gern kommen."],
+        ["🟠 wenn …, würde …", "Wenn ich Zeit hätte, würde ich kommen."],
+      ] },
+      { title: "Passiv", formulas: [
+        ["🟢 Präsens", "werden V2 + Partizip II END", "Das Haus wird gebaut."],
+        ["🔵 Präteritum", "wurde V2 + Partizip II END", "Das Haus wurde gebaut."],
+        ["🟣 Perfekt", "sein V2 + Partizip II + worden END", "Das Haus ist gebaut worden."],
+        ["🟠 by whom", "von + Dative", "Das Haus wird von der Firma gebaut."],
+      ] },
+    ],
+  },
+  {
+    id: "comparison", title: "Comparison", sub: "groß, größer, am größten",
+    rules: [
+      { title: "Komparativ and Superlativ", table: {
+        head: ["Positiv", "Komparativ", "Superlativ"],
+        rows: [
+          ["klein", "kleiner", "am kleinsten"],
+          ["alt", "älter", "am ältesten"],
+          ["groß", "größer", "am größten"],
+          ["hoch", "höher", "am höchsten"],
+          ["gut", "besser", "am besten"],
+          ["viel", "mehr", "am meisten"],
+          ["gern", "lieber", "am liebsten"],
+        ],
+      }, formulas: [
+        ["🟢 equal", "so + Adjektiv + wie", "Er ist so groß wie ich."],
+        ["🔵 more", "Komparativ + als", "Er ist größer als ich."],
+      ] },
+    ],
+  },
 ];
 
+function FormulaRows({ rows }) {
+  return (
+    <div className="formulas" style={{ fontFamily: "var(--font-mono)", fontSize: "13px", lineHeight: 1.5, color: "var(--ink)" }}>
+      {rows.map((row, i) => (
+        <div key={i} className="frow">
+          {row.map((c, j) => <div key={j} className={row.length === 1 ? "all" : row.length === 2 && j === 1 ? "wide" : undefined}>{c}</div>)}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function CaseTable({ rows }) {
+  return (
+    <div className="rwrap">
+      <table className="rtable">
+        <thead>
+          <tr>
+            <th rowSpan={2} className="h-case">Cases</th>
+            <th colSpan={3} className="h-sing">Singular</th>
+            <th rowSpan={2} className="h-pl">Plural</th>
+          </tr>
+          <tr><th className="h-sing">M</th><th className="h-sing">F</th><th className="h-sing">N</th></tr>
+        </thead>
+        <tbody>{rows.map((r) => <tr key={r[0]}>{r.map((c, j) => j === 0 ? <th key={j} scope="row">{c}</th> : <td key={j}>{c}</td>)}</tr>)}</tbody>
+      </table>
+    </div>
+  );
+}
+
+function RuleTable({ head, rows }) {
+  return (
+    <div className="rwrap">
+      <table className="rtable">
+        <thead><tr>{head.map((h, j) => <th key={h} className={j === 0 ? "h-case" : "h-sing"}>{h}</th>)}</tr></thead>
+        <tbody>{rows.map((r, i) => <tr key={i}>{r.map((c, j) => j === 0 ? <th key={j} scope="row">{c}</th> : <td key={j}>{c}</td>)}</tr>)}</tbody>
+      </table>
+    </div>
+  );
+}
+
 function FormulasPage() {
+  const jump = (id) => { const el = document.getElementById("rules-" + id); if (el) el.scrollIntoView({ behavior: "smooth", block: "start" }); };
   return (
     <div style={{ ...srsCol, width: "100%", maxWidth: "760px", margin: "0 auto", alignItems: "stretch", gap: "18px" }}>
       <div style={{ textAlign: "center" }}>
-        <div style={{ fontFamily: "var(--font-serif)", fontWeight: 600, fontSize: "26px", color: "var(--ink)" }}>Formulas</div>
-        <div style={{ ...monoLabel, marginTop: "6px" }}>where the verb goes</div>
+        <div style={{ fontFamily: "var(--font-serif)", fontWeight: 600, fontSize: "26px", color: "var(--ink)" }}>Rules</div>
+        <div style={{ ...monoLabel, marginTop: "6px" }}>word order, cases, endings and verb charts</div>
       </div>
-      <div className="formulas" style={{ fontFamily: "var(--font-mono)", fontSize: "13px", lineHeight: 1.5, color: "var(--ink)",
-        padding: "18px 20px", borderRadius: "14px", border: "1px solid var(--line-card)", background: "var(--paper-raised)", boxShadow: "var(--shadow-soft)" }}>
-        {FORMULAS.map((row, i) => (
-          <div key={i} className="frow">
-            {row.map((c, j) => <div key={j} className={row.length === 1 ? "all" : row.length === 2 && j === 1 ? "wide" : undefined}>{c}</div>)}
+      <div style={{ display: "flex", flexWrap: "wrap", gap: "8px", justifyContent: "center" }}>
+        {RULES.map((g) => <button key={g.id} onClick={() => jump(g.id)} style={{ ...smallOutline("var(--ink-soft)"), borderColor: "var(--line)" }}>{g.title}</button>)}
+      </div>
+      {RULES.map((g) => (
+        <section key={g.id} id={"rules-" + g.id} className="rgroup">
+          <div style={{ marginBottom: "4px" }}>
+            <h2 style={{ margin: 0, fontFamily: "var(--font-serif)", fontWeight: 600, fontSize: "22px", color: "var(--ink)" }}>{g.title}</h2>
+            <div style={{ ...monoLabel, marginTop: "4px" }}>{g.sub}</div>
           </div>
-        ))}
-      </div>
+          {g.rules.map((r, i) => (
+            <div key={i} style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+              {r.title && <h3 className="rhead">{r.title}</h3>}
+              {r.cases && <CaseTable rows={r.cases} />}
+              {r.table && <RuleTable head={r.table.head} rows={r.table.rows} />}
+              {r.formulas && <FormulaRows rows={r.formulas} />}
+              {r.note && <div style={{ fontFamily: "var(--font-serif)", fontSize: "14px", fontStyle: "italic", color: "var(--ink-soft)", lineHeight: 1.5 }}>{r.note}</div>}
+            </div>
+          ))}
+        </section>
+      ))}
     </div>
   );
 }
@@ -2076,7 +2387,7 @@ function TopBar({ storyMode, onStoryMode, formulas, onFormulas, theme, onTheme, 
       <div role="group" aria-label="mode" className="modeseg" style={{ display: "flex", gap: "3px", padding: "3px", background: "var(--tint)", border: "1px solid var(--line)", borderRadius: "999px" }}>
         <button onClick={() => { onFormulas(false); if (storyMode) onStoryMode(false); }} aria-pressed={!formulas && !storyMode} style={seg(!formulas && !storyMode)}><span className="ic">✎ </span>Practice</button>
         <button onClick={() => { onFormulas(false); if (!storyMode) onStoryMode(true); }} aria-pressed={!formulas && storyMode} style={seg(!formulas && storyMode)}><span className="ic">📖 </span>Stories</button>
-        <button onClick={() => onFormulas(true)} aria-pressed={formulas} style={seg(formulas)}><span className="ic">📐 </span>Formulas</button>
+        <button onClick={() => onFormulas(true)} aria-pressed={formulas} style={seg(formulas)}><span className="ic">📐 </span>Rules</button>
       </div>
       {user && <UserMenu user={user} onLogout={onLogout} />}
       <button onClick={() => onTheme(dark ? "light" : "dark")} aria-label={dark ? "switch to light mode" : "switch to dark mode"} title={dark ? "Light mode" : "Dark mode"}
