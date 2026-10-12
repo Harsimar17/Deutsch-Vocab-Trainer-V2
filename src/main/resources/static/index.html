@@ -20,7 +20,7 @@
 
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,500;0,9..144,600;0,9..144,700;1,9..144,400;1,9..144,500&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,500;0,9..144,600;0,9..144,700;1,9..144,400;1,9..144,500&family=IBM+Plex+Mono:wght@400;500;600&family=Caveat:wght@500;700&family=Special+Elite&display=swap" rel="stylesheet">
 
 <!-- React runtime -->
 <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
@@ -166,6 +166,57 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   overscroll-behavior-x: contain;
 }
 .tabstrip::-webkit-scrollbar { display: none; width: 0; height: 0; }
+/* Geschichten reader as a notebook page on a desk, like a mission briefing: ruled
+   paper, red margin, punched holes, a paper clip, a typed header and a red stamp.
+   The page keeps the light palette in both themes — paper stays paper. */
+.notebook {
+  --ink: #2b2620; --ink-soft: #5d5446; --ink-faint: #8f8571; --ink-muted: #7a715f; --line: #d9ccb0; --line-card: #d9ccb0;
+  --paper-raised: #fbf6e9; --tint: #00000008; --word-hover: rgba(138,106,43,.2); --target-line: rgba(178,52,52,.55);
+  --btn-grad: linear-gradient(180deg, #35302a 0%, #2b2620 100%); --shadow-soft: 0 1px 2px rgba(60,50,20,.08);
+  --rule: 32px;
+  position: relative; color: var(--ink);
+  padding: 34px 26px 30px 76px; border-radius: 3px;
+  background-color: #f6efdc;
+  background-image:
+    linear-gradient(90deg, transparent 58px, rgba(196,62,62,.5) 58px, rgba(196,62,62,.5) 60px, transparent 60px),
+    repeating-linear-gradient(180deg, transparent 0, transparent calc(var(--rule) - 1px), rgba(84,118,170,.22) calc(var(--rule) - 1px), rgba(84,118,170,.22) var(--rule));
+  background-position: 0 0, 0 22px;
+  box-shadow: 0 1px 2px rgba(0,0,0,.18), 0 22px 46px -16px rgba(0,0,0,.55), inset 0 0 60px rgba(160,130,70,.12);
+  transform: rotate(-0.35deg);
+  animation: pageIn .75s cubic-bezier(.2,.8,.2,1) both;
+}
+.notebook .holes { position: absolute; left: 20px; top: 0; bottom: 0; width: 18px; pointer-events: none;
+  background: radial-gradient(circle at 9px 9px, rgba(0,0,0,.28) 0 6px, transparent 7px) 0 60px / 18px 180px repeat-y; opacity: .55; }
+.notebook .clip { position: absolute; top: -18px; right: 14px; width: 26px; height: 64px; transform: rotate(8deg); pointer-events: none; }
+.notebook .typed { font-family: 'Special Elite', 'Courier New', monospace; font-size: 12px; letter-spacing: .08em; color: #5d5446; text-transform: uppercase; min-height: 1.4em; }
+.notebook .typed .caret { display: inline-block; width: .55em; border-bottom: 2px solid currentColor; margin-left: 1px; animation: caretBlink .8s steps(1) infinite; }
+.notebook .stamp {
+  position: absolute; top: 30px; right: 54px; padding: 4px 10px; border: 3px double rgba(178,40,40,.75); border-radius: 4px;
+  font-family: 'Special Elite', 'Courier New', monospace; font-size: 15px; letter-spacing: .14em; color: rgba(178,40,40,.8);
+  transform: rotate(-9deg); animation: stampIn .35s cubic-bezier(.2,1.6,.4,1) .9s both; mix-blend-mode: multiply;
+}
+.notebook .hand { font-family: 'Caveat', 'Segoe Print', cursive; }
+.notebook .title { font-family: 'Caveat', 'Segoe Print', cursive; font-weight: 700; font-size: 38px; line-height: 1.05; color: #23324f; margin: 14px 90px 0 0; }
+.notebook .para { margin: 0; font-family: var(--font-serif); font-size: 18px; line-height: var(--rule); color: var(--ink); }
+.notebook .reveal { animation: lineIn .5s ease both; }
+.notebook .pencil { margin: 2px 0 0; font-family: 'Caveat', 'Segoe Print', cursive; font-size: 21px; line-height: var(--rule); color: #4a5f8a; }
+@keyframes pageIn { from { opacity: 0; transform: translateY(26px) rotate(-2.2deg) scale(.985); } to { opacity: 1; transform: translateY(0) rotate(-0.35deg) scale(1); } }
+@keyframes stampIn { from { opacity: 0; transform: rotate(-9deg) scale(1.9); } to { opacity: 1; transform: rotate(-9deg) scale(1); } }
+@keyframes lineIn { from { opacity: 0; transform: translateX(-6px); } to { opacity: 1; transform: translateX(0); } }
+@keyframes caretBlink { 50% { opacity: 0; } }
+@media (max-width: 520px) {
+  .notebook { padding: 30px 14px 24px 50px; background-image:
+    linear-gradient(90deg, transparent 38px, rgba(196,62,62,.5) 38px, rgba(196,62,62,.5) 40px, transparent 40px),
+    repeating-linear-gradient(180deg, transparent 0, transparent calc(var(--rule) - 1px), rgba(84,118,170,.22) calc(var(--rule) - 1px), rgba(84,118,170,.22) var(--rule)); }
+  .notebook .holes { left: 10px; }
+  .notebook .stamp { position: relative; top: 0; right: 0; display: inline-block; margin-top: 10px; font-size: 13px; }
+  .notebook .title { font-size: 32px; margin-right: 0; margin-top: 12px; }
+  .notebook .para { font-size: 17px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .notebook, .notebook .stamp, .notebook .reveal { animation: none; }
+  .notebook .typed .caret { animation: none; }
+}
 /* Geschichten reader: tappable words (.sw) and B1 target words (.st) */
 .sw { cursor: pointer; border-radius: 4px; transition: background-color .12s ease; }
 .sw:hover, .sw.on { background: var(--word-hover); }
@@ -1553,6 +1604,29 @@ function StoriesList({ onSettings }) {
   );
 }
 
+// A line typed out letter by letter, with a blinking caret while it types.
+function TypedLine({ text, speed = 26 }) {
+  const reduce = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const [n, setN] = useState(reduce ? text.length : 0);
+  useEffect(() => {
+    if (reduce) { setN(text.length); return undefined; }
+    setN(0);
+    let i = 0;
+    const t = setInterval(() => { i += 1; setN(i); if (i >= text.length) clearInterval(t); }, speed);
+    return () => clearInterval(t);
+  }, [text]);
+  return <div className="typed">{text.slice(0, n)}{n < text.length && <span className="caret" />}</div>;
+}
+
+const PaperClip = () => (
+  <svg className="clip" viewBox="0 0 26 64" aria-hidden="true">
+    <path d="M8 22 V48 a5 5 0 0 0 10 0 V12 a8 8 0 0 0 -16 0 V50 a11 11 0 0 0 22 0 V24" fill="none" stroke="#8b8e95" strokeWidth="2.4" strokeLinecap="round" />
+  </svg>
+);
+
+// The story as a notebook page on a desk, like a mission briefing: the page
+// slides in, the header types itself, the chapter is stamped, the paragraphs
+// appear one by one. Words stay tappable for their meaning.
 function StoryReader({ id, onSettings }) {
   const [story, setStory] = useState(null);
   const [error, setError] = useState(null);
@@ -1574,72 +1648,83 @@ function StoryReader({ id, onSettings }) {
     return () => { document.removeEventListener("pointerdown", onDown); window.removeEventListener("keydown", onKey); };
   }, [tip]);
 
+  const frame = { ...srsCol, width: "100%", maxWidth: "640px", margin: "0 auto", gap: "18px", alignItems: "stretch", scrollMarginTop: "12px" };
   if (error) return <DrillError message={error} />;
-  if (!story) return <div ref={topRef}><Loading /></div>;
+  if (!story) {
+    return (
+      <div ref={topRef} style={frame}>
+        <div className="notebook" style={{ minHeight: "220px" }}>
+          <div className="holes" />
+          <TypedLine text="Lade Kapitel …" />
+        </div>
+      </div>
+    );
+  }
   const show = (e, key, seg, pinned) => setTip({ key, el: e.currentTarget, entry: seg.entry, word: seg.w, pinned });
   const setShowEn = (v) => { setStory((s) => Object.assign({}, s, { showEn: v })); onSettings("setStoryShowEn", v); };
   const toggleRead = () => api.post("/api/stories/" + encodeURIComponent(story.id) + "/read").then((r) => setStory((s) => Object.assign({}, s, { read: r.read }))).catch(api.report);
   const hover = window.matchMedia && window.matchMedia("(hover: hover)").matches;
+  const chapter = String(story.chapter).padStart(2, "0");
 
   return (
-    <div ref={topRef} style={{ ...srsCol, width: "100%", maxWidth: "620px", margin: "0 auto", gap: "18px", alignItems: "stretch", scrollMarginTop: "12px" }}>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "10px" }}>
+    <div ref={topRef} style={frame}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "10px", flexWrap: "wrap" }}>
         <button onClick={() => onSettings("openStory", null)} style={miniBtn}>‹ all stories</button>
-        <span style={{ ...monoLabel, fontSize: "9px", textAlign: "right" }}>Kapitel {story.chapter}{story.phaseName ? " · " + story.phaseName : ""}</span>
+        <Switch on={!!story.showEn} onChange={setShowEn} label="English notes" />
       </div>
-      <div style={{ textAlign: "center" }}>
-        <div style={{ fontFamily: "var(--font-serif)", fontWeight: 600, fontSize: "24px", lineHeight: 1.25, color: "var(--ink)" }}>{story.titleDe}</div>
-        <div style={{ fontFamily: "var(--font-serif)", fontStyle: "italic", fontSize: "14px", color: "var(--ink-soft)", marginTop: "4px" }}>{story.titleEn}</div>
-      </div>
-      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "8px" }}>
-        <Switch on={!!story.showEn} onChange={setShowEn} label="English translation" />
-        <div style={{ fontFamily: "var(--font-mono)", fontSize: "9px", letterSpacing: "0.08em", color: "var(--ink-faint)", textAlign: "center", lineHeight: 1.6 }}>
-          <span className="st" style={{ fontFamily: "var(--font-serif)", fontSize: "12px", letterSpacing: 0 }}>underlined</span> = B1 target word · tap{hover ? " or hover" : ""} any word for its meaning
+      <div className="notebook" key={story.id}>
+        <div className="holes" />
+        <PaperClip />
+        <TypedLine text={"Leseauftrag" + (story.phaseName ? " · " + story.phaseName : "")} />
+        <div className="stamp">KAPITEL {chapter}</div>
+        <div className="title">{story.titleDe}</div>
+        <div className="hand" style={{ fontSize: "20px", color: "#6b6150", marginTop: "2px" }}>{story.titleEn}</div>
+        <div style={{ fontFamily: "'Special Elite', 'Courier New', monospace", fontSize: "11px", color: "var(--ink-faint)", margin: "10px 0 14px", lineHeight: 1.6 }}>
+          <span className="st" style={{ fontFamily: "var(--font-serif)", fontSize: "13px" }}>underlined</span> = B1 target word · tap{hover ? " or hover" : ""} a word for its meaning
         </div>
-      </div>
-      {story.paragraphs.map((p, pi) => (
-        <div key={story.id + "-" + pi} style={{ display: "flex", gap: "10px", alignItems: "flex-start" }}>
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <p style={{ margin: 0, fontFamily: "var(--font-serif)", fontSize: "18px", lineHeight: 1.75, color: "var(--ink)" }}>
-              {p.segments.map((seg, si) => {
-                if (seg.t != null) return <React.Fragment key={si}>{seg.t}</React.Fragment>;
-                const key = pi + "-" + si;
-                if (!seg.entry) return <span key={si} className="st">{seg.w}</span>;
-                const on = tip && tip.key === key;
-                return (
-                  <span key={si} data-sw="1" className={(seg.target ? "st sw" : "sw") + (on ? " on" : "")}
-                    onPointerEnter={(e) => { if (e.pointerType === "mouse" && !(tip && tip.pinned)) show(e, key, seg, false); }}
-                    onPointerLeave={(e) => { if (e.pointerType === "mouse") setTip((t) => (t && !t.pinned ? null : t)); }}
-                    onClick={(e) => { if (tip && tip.key === key && tip.pinned) setTip(null); else show(e, key, seg, true); }}>
-                    {seg.w}
-                  </span>
-                );
-              })}
-            </p>
-            {story.showEn && p.en && (
-              <p style={{ margin: "8px 0 0", padding: "2px 0 2px 12px", borderLeft: "2px solid var(--line)", fontFamily: "var(--font-serif)", fontStyle: "italic", fontSize: "15px", lineHeight: 1.6, color: "var(--ink-soft)" }}>{p.en}</p>
+        {story.paragraphs.map((p, pi) => (
+          <div key={story.id + "-" + pi} className="reveal" style={{ display: "flex", gap: "10px", alignItems: "flex-start", marginBottom: "var(--rule)", animationDelay: (1.1 + pi * 0.18) + "s" }}>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <p className="para">
+                {p.segments.map((seg, si) => {
+                  if (seg.t != null) return <React.Fragment key={si}>{seg.t}</React.Fragment>;
+                  const key = pi + "-" + si;
+                  if (!seg.entry) return <span key={si} className="st">{seg.w}</span>;
+                  const on = tip && tip.key === key;
+                  return (
+                    <span key={si} data-sw="1" className={(seg.target ? "st sw" : "sw") + (on ? " on" : "")}
+                      onPointerEnter={(e) => { if (e.pointerType === "mouse" && !(tip && tip.pinned)) show(e, key, seg, false); }}
+                      onPointerLeave={(e) => { if (e.pointerType === "mouse") setTip((t) => (t && !t.pinned ? null : t)); }}
+                      onClick={(e) => { if (tip && tip.key === key && tip.pinned) setTip(null); else show(e, key, seg, true); }}>
+                      {seg.w}
+                    </span>
+                  );
+                })}
+              </p>
+              {story.showEn && p.en && <p className="pencil">{p.en}</p>}
+            </div>
+            <SpeakButton text={p.speech} size={30} />
+          </div>
+        ))}
+        {story.glossary.length > 0 && (
+          <div className="reveal" style={{ borderTop: "1px dashed rgba(196,62,62,.45)", paddingTop: "12px", animationDelay: (1.2 + story.paragraphs.length * 0.18) + "s" }}>
+            <button onClick={() => setGlossOpen((o) => !o)} className="hand" style={{ fontSize: "22px", color: "#23324f", background: "transparent", border: "none", padding: 0, cursor: "pointer" }}>
+              {glossOpen ? "▾" : "▸"} Wortliste ({story.glossary.length})
+            </button>
+            {glossOpen && (
+              <div style={{ display: "flex", flexDirection: "column", marginTop: "4px" }}>
+                {story.glossary.map((g, i) => (
+                  <div key={i} style={{ display: "flex", alignItems: "baseline", gap: "8px", lineHeight: "var(--rule)" }}>
+                    <span style={{ fontFamily: "var(--font-serif)", fontWeight: 600, fontSize: "15px", color: catColor(g.cat), whiteSpace: "nowrap" }}>{g.de}</span>
+                    <span style={{ flex: 1, borderBottom: "1px dotted var(--ink-faint)", transform: "translateY(-4px)" }} />
+                    <span className="hand" style={{ fontSize: "19px", color: "#4a5f8a", textAlign: "right" }}>{g.en}</span>
+                  </div>
+                ))}
+              </div>
             )}
           </div>
-          <SpeakButton text={p.speech} size={30} />
-        </div>
-      ))}
-      {story.glossary.length > 0 && (
-        <div style={{ borderTop: "1px solid var(--line)", paddingTop: "14px" }}>
-          <button onClick={() => setGlossOpen((o) => !o)} style={{ ...counterStyle, fontSize: "11px", color: "var(--ink-soft)", background: "transparent", border: "none", padding: 0, cursor: "pointer" }}>
-            {glossOpen ? "▾" : "▸"} WORD LIST ({story.glossary.length})
-          </button>
-          {glossOpen && (
-            <div style={{ display: "flex", flexDirection: "column", gap: "6px", marginTop: "10px" }}>
-              {story.glossary.map((g, i) => (
-                <div key={i} style={{ display: "flex", justifyContent: "space-between", gap: "12px", padding: "7px 12px", background: "var(--paper-raised)", border: "1px solid var(--line)", borderRadius: "8px" }}>
-                  <span style={{ fontFamily: "var(--font-serif)", fontWeight: 600, fontSize: "15px", color: catColor(g.cat) }}>{g.de}</span>
-                  <span style={{ fontFamily: "var(--font-serif)", fontStyle: "italic", fontSize: "14px", color: "var(--ink-soft)", textAlign: "right" }}>{g.en}</span>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
+        )}
+      </div>
       <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "12px", paddingTop: "4px" }}>
         <button onClick={toggleRead} style={{ ...navBtnStyle, background: story.read ? "var(--good)" : "transparent", border: "1px solid " + (story.read ? "var(--good)" : "var(--ink-muted)"), color: story.read ? "#F6F1E5" : "var(--ink-muted)", boxShadow: "none" }}>
           {story.read ? "✓ read" : "mark as read"}
