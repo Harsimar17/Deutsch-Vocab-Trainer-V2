@@ -76,14 +76,15 @@ class DrillsTest {
 
     @Test
     @SuppressWarnings("unchecked")
-    void phaseSentencesAskEachWordOnceAndCheckTheOrder() {
+    void phaseSentencesAskEveryWordOnceThenTheMissedOnes() {
         ProgressService p = TestVocab.progress();
         SentencePracticeService service = new SentencePracticeService(TestVocab.stories(), JsonMapper.builder().build());
         List<SentencePracticeService.Sentence> pool = service.forPhase("1");
-        assertFalse(pool.isEmpty(), "phase 1 has sentences");
+        long words = pool.stream().map(x -> x.card().de()).distinct().count();
+        assertTrue(words > 10, "phase 1 has sentences");
         SentenceDrill d = new SentenceDrill("1", pool, p);
         Map<String, Object> v = d.view(ctx);
-        assertEquals(SentenceDrill.ROUND, v.get("total"));
+        assertEquals((int) words, v.get("total"), "a round covers every word of the phase");
 
         Map<String, Object> item = (Map<String, Object>) v.get("item");
         assertNotNull(item.get("en"), "the English sentence is shown");
@@ -95,16 +96,20 @@ class DrillsTest {
         assertNotNull(((Map<String, Object>) d.view(ctx).get("answer")).get("use"), "how the word is used");
         assertEquals(2L, p.srs(ctx).get(s.card().key()).get("box"), "a right sentence counts for its word");
 
-        java.util.Set<Object> words = new java.util.HashSet<>(List.of(item.get("word")));
-        for (int i = 1; i < SentenceDrill.ROUND; i++) {
+        java.util.Set<Object> seen = new java.util.HashSet<>(List.of(item.get("word")));
+        for (int i = 1; i < words; i++) {
             d.act(ctx, "next", Map.of());
-            words.add(((Map<String, Object>) d.view(ctx).get("item")).get("word"));
-            d.act(ctx, "check", Map.of("words", List.of("falsch")));
-            assertEquals("wrong", d.view(ctx).get("verdict"));
+            seen.add(((Map<String, Object>) d.view(ctx).get("item")).get("word"));
+            d.act(ctx, i < 3 ? "check" : "skip", Map.of("words", List.of("falsch")));
         }
-        assertEquals(SentenceDrill.ROUND, words.size(), "each word once per round");
         d.act(ctx, "next", Map.of());
+        assertEquals(words, seen.size(), "each word once");
         assertEquals(true, d.view(ctx).get("done"));
+        assertEquals((int) words - 1, d.view(ctx).get("missed"));
+
+        d.act(ctx, "retryMissed", Map.of());
+        assertEquals((int) words - 1, d.view(ctx).get("total"), "the retry asks only the missed words");
+        assertEquals(true, d.view(ctx).get("retry"));
     }
 
     @Test

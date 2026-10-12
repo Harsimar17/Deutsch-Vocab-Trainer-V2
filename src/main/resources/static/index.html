@@ -806,8 +806,9 @@ function Flashcards({ version, onChange }) {
 }
 
 // The Phasentest's Sentences tab, like Duolingo: the English on top, German
-// tiles to tap into order, for the phase's words and verbs; after checking,
-// how the word is used. Picking tiles is local; "check" sends the order.
+// tiles to tap into order — every word and verb of the phase once, then the
+// missed ones again; after checking, how the word is used. Picking tiles is
+// local; "check" sends the order.
 const tileStyle = (used) => ({
   fontFamily: "var(--font-serif)", fontSize: "17px", padding: "8px 13px", borderRadius: "10px", cursor: used ? "default" : "pointer",
   border: "1px solid var(--line)", borderBottomWidth: "3px", background: used ? "var(--line)" : "var(--paper-raised)",
@@ -826,7 +827,8 @@ function PhaseSentences({ idx, onChange }) {
     <DrillGate drill={drill}>{(v, act) => {
       const stat = (
         <div style={{ ...counterStyle, textAlign: "center" }}>
-          {v.words} WORDS & VERBS · {v.sentences} SENTENCES
+          {v.retry ? `RETRY · ${v.total} MISSED WORDS` : `ALL ${v.words} WORDS & VERBS · ONE SENTENCE EACH`}
+          <span style={{ marginLeft: "10px" }}><span style={{ color: "var(--good)" }}>✓ {v.right}</span> · <span style={{ color: "var(--bad)" }}>✗ {v.missed}</span></span>
         </div>
       );
       if (v.empty) {
@@ -841,8 +843,15 @@ function PhaseSentences({ idx, onChange }) {
         return (
           <div style={{ ...srsCol, padding: "30px 0" }}>
             {stat}
-            <div style={{ fontFamily: "var(--font-serif)", fontSize: "22px", color: "var(--ink)", textAlign: "center" }}>{v.right} / {v.total} sentences right 🎉</div>
-            <button onClick={() => act("restart")} style={navBtnStyle}>⟲ another round</button>
+            <div style={{ fontFamily: "var(--font-serif)", fontSize: "22px", color: "var(--ink)", textAlign: "center" }}>{v.right} / {v.total} sentences right {v.missed === 0 ? "🎉" : ""}</div>
+            <div style={{ ...srsNote, fontSize: "14px" }}>
+              {v.missed === 0 ? (v.retry ? "All the missed words are right now." : "Every word of this phase, right first time.")
+                : `${v.missed} ${v.missed === 1 ? "word" : "words"} to practise again — each comes back with another sentence where there is one.`}
+            </div>
+            <div style={{ display: "flex", gap: "10px", flexWrap: "wrap", justifyContent: "center" }}>
+              {v.missed > 0 && <button onClick={() => act("retryMissed")} style={navBtnStyle}>↻ retry {v.missed} missed</button>}
+              <button onClick={() => act("restart")} style={v.missed > 0 ? ghostBtn : navBtnStyle}>⟲ new round · all {v.words}</button>
+            </div>
           </div>
         );
       }
