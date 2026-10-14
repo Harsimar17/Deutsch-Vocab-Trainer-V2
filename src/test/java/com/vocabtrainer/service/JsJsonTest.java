@@ -39,7 +39,7 @@ class JsJsonTest {
     /** Parse + write the real file: it must come back byte-identical, so a commit only adds the new word. */
     @Test
     void roundTripsTheRealVocabularyFileUnchanged() throws IOException {
-        String original = Files.readString(Path.of("src/main/resources/data/german_vocab.json"), StandardCharsets.UTF_8)
+        String original = Files.readString(Path.of("src/main/resources/static/data/german_vocab.json"), StandardCharsets.UTF_8)
                 .replace("\r\n", "\n"); // the working copy may have CRLF on Windows; the repo has LF
         @SuppressWarnings("unchecked")
         Map<String, Object> doc = JsonMapper.builder().build().readValue(original, LinkedHashMap.class);

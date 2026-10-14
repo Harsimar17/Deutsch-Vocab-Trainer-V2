@@ -30,7 +30,7 @@ public final class TestVocab {
     public static synchronized byte[] bytes() {
         if (bytes == null) {
             try {
-                bytes = Files.readAllBytes(Path.of("src/main/resources/data/german_vocab.json"));
+                bytes = Files.readAllBytes(Path.of("src/main/resources/static/data/german_vocab.json"));
             } catch (IOException e) {
                 throw new UncheckedIOException(e);
             }

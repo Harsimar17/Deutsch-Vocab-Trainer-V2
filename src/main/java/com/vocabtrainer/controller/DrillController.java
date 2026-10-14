@@ -1,9 +1,11 @@
 package com.vocabtrainer.controller;
 
+import java.util.LinkedHashMap;
 import java.util.Map;
 
 import com.vocabtrainer.model.Ctx;
 import com.vocabtrainer.service.DrillService;
+import com.vocabtrainer.service.SummaryService;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -19,12 +21,14 @@ import org.springframework.web.bind.annotation.RestController;
 public class DrillController {
 
     private final DrillService drills;
+    private final SummaryService summary;
 
-    public DrillController(DrillService drills) {
+    public DrillController(DrillService drills, SummaryService summary) {
         this.drills = drills;
+        this.summary = summary;
     }
 
-    /** Starts a round: study, write, flash, quiz, articles, sep, cloze, review, phase, sentences (the last two take {phase}). */
+    /** Starts a round: study, write, review, phase, sentences (the last two take {phase}). Cards, Quiz, Articles, Separable verbs and Fill-in run in the page. */
     @PostMapping("/{mode}")
     public Map<String, Object> start(Ctx ctx, @PathVariable String mode, @RequestBody(required = false) Map<String, Object> params) {
         return drills.start(ctx, mode, params);
@@ -33,6 +37,8 @@ public class DrillController {
     @PostMapping("/{id}/{action}")
     public Map<String, Object> act(Ctx ctx, @PathVariable String id, @PathVariable String action,
                                    @RequestBody(required = false) Map<String, Object> payload) {
-        return drills.act(ctx, id, action, payload);
+        Map<String, Object> r = new LinkedHashMap<>(drills.act(ctx, id, action, payload));
+        r.put("summary", summary.afterAnswer(ctx)); // the header numbers, so the page needs no second call
+        return r;
     }
 }

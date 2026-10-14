@@ -40,11 +40,6 @@ public class DrillFactory {
         return switch (mode) {
             case "study" -> new StudyDrill(ctx, pool, s.focus(), s.direction(), progress);
             case "write" -> new WriteDrill(ctx, pool, s.focus(), progress);
-            case "flash" -> new FlashDrill(pool, s.direction(), s.noRepeat(), progress);
-            case "quiz" -> new QuizDrill(pool, s.cats(), s.direction(), s.noRepeat(), progress);
-            case "articles" -> new ArticlesDrill(pool, s.noRepeat(), progress);
-            case "sep" -> new SepDrill(pool, progress);
-            case "cloze" -> new ClozeDrill(pool, s.noRepeat(), progress);
             case "sentences" -> {
                 String idx = Drill.str(params, "phase");
                 if (idx == null || !idx.matches("\\d{1,3}")) {

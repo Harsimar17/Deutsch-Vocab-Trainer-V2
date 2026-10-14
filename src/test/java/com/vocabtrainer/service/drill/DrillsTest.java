@@ -37,44 +37,6 @@ class DrillsTest {
     }
 
     @Test
-    void quizWithoutRepeatsAsksEveryWordOnceThenFinishes() {
-        ProgressService p = TestVocab.progress();
-        List<Card> pool = catalog.pool(List.of("A1"), List.of("phrase")).subList(0, 6);
-        QuizDrill q = new QuizDrill(pool, List.of("phrase"), "de-en", true, p);
-        java.util.Set<String> seen = new java.util.HashSet<>();
-        for (int i = 0; i < 6; i++) {
-            Map<String, Object> v = q.view(ctx);
-            assertEquals(4, options(v).size());
-            assertNull(v.get("correctKey"), "the answer isn't marked before picking");
-            seen.add(cardKey(v));
-            q.act(ctx, "answer", Map.of("key", options(v).get(0).get("key")));
-            assertNotNull(q.view(ctx).get("correctKey"));
-            q.act(ctx, "next", Map.of());
-        }
-        assertEquals(6, seen.size());
-        assertEquals(true, q.view(ctx).get("done"));
-        assertEquals(Map.of("right", 0L, "total", 6L), Map.of("right", 0L, "total", p.allTime(ctx)[1]));
-    }
-
-    @Test
-    @SuppressWarnings("unchecked")
-    void cardsSendTheWholeDeckAndRecordMarksInOneAction() {
-        ProgressService p = TestVocab.progress();
-        List<Card> pool = catalog.pool(List.of("A1"), List.of("verb")).subList(0, 5);
-        FlashDrill f = new FlashDrill(pool, "de-en", true, p);
-        List<Map<String, Object>> deck = (List<Map<String, Object>>) f.view(ctx).get("cards");
-        assertEquals(5, deck.size());
-        String hit = (String) deck.get(0).get("key");
-        String miss = (String) deck.get(1).get("key");
-        f.act(ctx, "results", Map.of("results", List.of(
-                Map.of("key", hit, "knew", true), Map.of("key", miss, "knew", false), Map.of("key", "no|such|card", "knew", true))));
-        assertEquals(2L, p.srs(ctx).get(hit).get("box"));
-        assertEquals(1L, p.srs(ctx).get(miss).get("box"));
-        assertNotNull(p.mistakes(ctx).get(miss), "a miss lands on the Review list");
-        assertNull(p.srs(ctx).get("no|such|card"));
-    }
-
-    @Test
     @SuppressWarnings("unchecked")
     void phaseSentencesAskEveryWordOnceThenTheMissedOnes() {
         ProgressService p = TestVocab.progress();

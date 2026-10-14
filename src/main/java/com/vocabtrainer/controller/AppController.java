@@ -19,11 +19,9 @@ import org.springframework.web.bind.annotation.RestController;
 public class AppController {
 
     private final SummaryService summary;
-    private final SettingsService settings;
 
-    public AppController(SummaryService summary, SettingsService settings) {
+    public AppController(SummaryService summary) {
         this.summary = summary;
-        this.settings = settings;
     }
 
     /** Everything around the practice area. {@code ai}: whether the page holds a Gemini key (for the label). */
@@ -32,9 +30,10 @@ public class AppController {
         return summary.summary(ctx, ai);
     }
 
-    /** One named settings change (toggleLevel, toggleCat, toggleDirection, …); returns the new settings. */
+    /** One named settings change (toggleLevel, toggleCat, toggleDirection, …); returns the whole new summary. */
     @PostMapping("/settings/{action}")
-    public Map<String, Object> change(Ctx ctx, @PathVariable String action, @RequestBody(required = false) Map<String, Object> body) {
-        return settings.change(ctx, action, body == null ? null : body.get("value"));
+    public Map<String, Object> change(Ctx ctx, @PathVariable String action, @RequestParam(defaultValue = "false") boolean ai,
+                                      @RequestBody(required = false) Map<String, Object> body) {
+        return summary.change(ctx, action, body == null ? null : body.get("value"), ai);
     }
 }

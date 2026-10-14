@@ -7,6 +7,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 
@@ -19,7 +20,10 @@ import com.vocabtrainer.repository.FakeFirebaseAuth;
 import com.vocabtrainer.repository.InMemoryProgressRepository;
 import com.vocabtrainer.security.IdTokenCache;
 import com.vocabtrainer.security.JwtService;
+import com.vocabtrainer.model.Card;
+import com.vocabtrainer.service.CardCatalog;
 import com.vocabtrainer.service.German;
+import com.vocabtrainer.service.StoryService;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -57,6 +61,10 @@ class EndToEndTest {
     InMemoryProgressRepository firestore;
     @Autowired
     AppProperties props;
+    @Autowired
+    CardCatalog catalog;
+    @Autowired
+    StoryService stories;
 
     private final JsonMapper json = JsonMapper.builder().build();
 
@@ -172,14 +180,17 @@ class EndToEndTest {
         assertTrue(((Number) s.get("cardCount")).intValue() > 100);
         assertTrue(((String) s.get("settingsLabel")).contains("✨ AI"));
 
-        Map<String, Object> after = ok(post("/api/settings/setTheme"), t, Map.of("value", "dark"));
+        // a settings change answers with the whole new summary
+        Map<String, Object> changed = ok(post("/api/settings/setTheme"), t, Map.of("value", "dark"));
+        assertNotNull(changed.get("header"));
+        Map<String, Object> after = (Map<String, Object>) changed.get("settings");
         assertEquals("dark", after.get("theme"));
-        after = ok(post("/api/settings/toggleLevel"), t, Map.of("value", "B1"));
+        after = (Map<String, Object>) ok(post("/api/settings/toggleLevel"), t, Map.of("value", "B1")).get("settings");
         assertTrue(((List<String>) after.get("levels")).contains("B1"));
-        after = ok(post("/api/settings/toggleDirection"), t, Map.of());
+        after = (Map<String, Object>) ok(post("/api/settings/toggleDirection"), t, Map.of()).get("settings");
         assertEquals("en-de", after.get("direction"));
         ok(post("/api/settings/toggleDirection"), t, Map.of());
-        after = ok(post("/api/settings/setFocus"), t, Map.of("value", "all"));
+        after = (Map<String, Object>) ok(post("/api/settings/setFocus"), t, Map.of("value", "all")).get("settings");
         assertEquals("all", after.get("focus"));
         ok(post("/api/settings/toggleNoRepeat"), t, Map.of());
         ok(post("/api/settings/toggleCat"), t, Map.of("value", "verb"));
@@ -208,46 +219,40 @@ class EndToEndTest {
         assertNotNull(w.get("verdict"));
         act(t, write, "next", Map.of());
 
-        Round flash = start(t, "flash", Map.of());
-        @SuppressWarnings("unchecked")
-        List<Map<String, Object>> deck = (List<Map<String, Object>>) flash.view().get("cards");
-        assertFalse(deck.isEmpty(), "the whole deck comes with the first view");
-        act(t, flash, "results", Map.of("results", List.of(Map.of("key", deck.get(0).get("key"), "knew", true))));
-
-        // a few quiz questions, at least one answered wrong → the word lands on the Review list
-        Round quiz = start(t, "quiz", Map.of());
-        boolean missed = false;
-        Map<String, Object> q = quiz.view();
-        for (int i = 0; i < 12 && !missed; i++) {
-            Object pick = options(q).get(0).get("key");
-            Map<String, Object> answered = act(t, quiz, "answer", Map.of("key", pick));
-            assertEquals(pick, answered.get("picked"));
-            missed = !pick.equals(answered.get("correctKey"));
-            q = act(t, quiz, "next", Map.of());
-        }
-        assertTrue(missed, "got a wrong answer in");
-        act(t, quiz, "finish", Map.of());
-        long mistakes = ((Number) ok(get("/api/summary"), t, null).get("mistakeCount")).longValue();
+        // Cards, Quiz, Articles, Separable verbs, Fill-in run in the page; the backend checks and saves answers
+        Card noun = catalog.cards().stream().filter(Card::isNoun).findFirst().orElseThrow();
+        Card other = catalog.cards().stream().filter(c -> c.isNoun() && !c.key().equals(noun.key())).findFirst().orElseThrow();
+        Map<String, Object> r = ok(post("/api/answers"), t, Map.of("mode", "quiz", "key", noun.key(), "pick", noun.key()));
+        assertEquals(true, r.get("correct"));
+        assertNotNull(((Map<String, Object>) r.get("summary")).get("header"), "the header numbers come with the answer");
+        assertEquals(1L, ((Number) ((Map<String, Object>) r.get("allTime")).get("total")).longValue());
+        r = ok(post("/api/answers"), t, Map.of("mode", "quiz", "key", other.key(), "pick", noun.key()));
+        assertEquals(false, r.get("correct"));
+        long mistakes = ((Number) ((Map<String, Object>) r.get("summary")).get("mistakeCount")).longValue();
         assertTrue(mistakes >= 1, "missed word is on the Review list");
+        assertEquals(true, ok(post("/api/answers"), t, Map.of("mode", "articles", "key", noun.key(), "pick", noun.cat())).get("correct"));
+        String wrongArticle = "der".equals(noun.cat()) ? "das" : "der";
+        assertEquals(false, ok(post("/api/answers"), t, Map.of("mode", "articles", "key", noun.key(), "pick", wrongArticle)).get("correct"));
+        assertEquals(true, ok(post("/api/answers"), t, Map.of("mode", "cloze", "key", noun.key(), "pick", noun.key())).get("correct"));
+        Card sep = catalog.cards().stream().filter(c -> "sep".equals(c.cat()) && !German.sepParts(c).prefix().isEmpty()).findFirst().orElseThrow();
+        assertEquals(true, ok(post("/api/answers"), t, Map.of("mode", "sep", "key", sep.key(), "pick", German.sepParts(sep).prefix())).get("correct"));
+        assertEquals(400, status(post("/api/answers"), t, Map.of("mode", "nonsense", "key", noun.key(), "pick", "x")));
+        assertEquals(404, status(post("/api/answers"), t, Map.of("mode", "quiz", "key", "no|such|card", "pick", "x")));
+        Map<String, Object> batch = ok(post("/api/answers/batch"), t, Map.of("results", List.of(
+                Map.of("key", noun.key(), "knew", true), Map.of("key", "no|such|card", "knew", true))));
+        assertEquals(1, ((Number) batch.get("saved")).intValue());
+        Map<String, Object> history = ok(post("/api/quiz-sessions"), t, Map.of("right", 1, "total", 2, "cats", List.of("der")));
+        assertEquals(1, ((List<?>) history.get("sessions")).size());
+        assertEquals(1, ((List<?>) ok(get("/api/quiz-sessions"), t, null).get("sessions")).size());
+        assertEquals(400, status(post("/api/quiz-sessions"), t, Map.of("right", 3, "total", 2)));
+        assertEquals(0, ((List<?>) ok(delete("/api/quiz-sessions"), t, null).get("sessions")).size());
 
         Round review = start(t, "review", Map.of());
         assertFalse(options(review.view()).isEmpty());
         act(t, review, "answer", Map.of("key", options(review.view()).get(0).get("key")));
         act(t, review, "next", Map.of());
 
-        Round articles = start(t, "articles", Map.of());
-        act(t, articles, "answer", Map.of("article", "der"));
-        act(t, articles, "next", Map.of());
-
-        Round sep = start(t, "sep", Map.of());
-        List<Object> prefixes = (List<Object>) sep.view().get("options");
-        act(t, sep, "answer", Map.of("prefix", prefixes.get(0)));
-        act(t, sep, "next", Map.of());
-
-        Round cloze = start(t, "cloze", Map.of());
-        act(t, cloze, "answer", Map.of("key", options(cloze.view()).get(0).get("key")));
-        act(t, cloze, "next", Map.of());
-
+        assertEquals(404, status(post("/api/drills/quiz"), t, Map.of()), "the quiz runs in the page");
         assertEquals(404, status(post("/api/drills/nonsense"), t, Map.of()));
         assertEquals(410, status(post("/api/drills/no-such-round/next"), t, Map.of()));
     }
@@ -255,19 +260,16 @@ class EndToEndTest {
     @Test
     void storiesPatternsSentencesAndThePhasentest() throws Exception {
         String t = anna();
-        Map<String, Object> list = ok(get("/api/stories"), t, null);
-        List<Map<String, Object>> groups = (List<Map<String, Object>>) list.get("groups");
-        Map<String, Object> firstStory = ((List<Map<String, Object>>) groups.get(0).get("stories")).get(0);
-        String storyId = (String) firstStory.get("id");
-        Map<String, Object> reader = ok(get("/api/stories/" + storyId), t, null);
-        assertEquals(false, reader.get("read"));
+        String storyId = StoryService.id(stories.groups().get(0).stories().get(0).get("id"));
+        Map<String, Object> progress = ok(get("/api/stories/progress"), t, null);
+        assertFalse(((List<?>) progress.get("read")).contains(storyId));
         assertEquals(true, ok(post("/api/stories/" + storyId + "/read"), t, null).get("read"));
-        assertEquals(true, ok(get("/api/stories/" + storyId), t, null).get("read"));
-        assertEquals(404, status(get("/api/stories/no-such-story"), t, null));
+        assertTrue(((List<?>) ok(get("/api/stories/progress"), t, null).get("read")).contains(storyId));
+        assertEquals(404, status(post("/api/stories/no-such-story/read"), t, null));
 
-        // Muster: counts toward today once per pattern
+        // Muster: the patterns are static JSON; looking at one counts toward today once
         List<Map<String, Object>> patterns = json.readValue(
-                send(get("/api/patterns"), t, null).getResponse().getContentAsString(), List.class);
+                mvc.perform(get("/data/patterns.json")).andReturn().getResponse().getContentAsString(), List.class);
         String key = (String) patterns.get(0).get("key");
         assertEquals(true, ok(post("/api/patterns/" + key + "/seen"), t, null).get("counted"));
         assertEquals(false, ok(post("/api/patterns/" + key + "/seen"), t, null).get("counted"));
@@ -277,7 +279,7 @@ class EndToEndTest {
         assertEquals(true, ok(post("/api/sentences/generate"), t, Map.of("de", "der Hund", "en", "dog", "cat", "der")).get("needsKey"));
 
         // Phasentest: overview, a round with both directions as multiple choice, reset
-        String phase = (String) ((Map<String, Object>) groups.get(0).get("phase")).get("index");
+        String phase = stories.groups().get(0).index();
         Map<String, Object> overview = ok(get("/api/phase-tests/" + phase), t, null);
         assertEquals("notStarted", ((Map<String, Object>) overview.get("status")).get("kind"));
 
@@ -312,8 +314,8 @@ class EndToEndTest {
     @Test
     void theVerbTestOfAPhase() throws Exception {
         String t = anna();
-        List<Map<String, Object>> groups = (List<Map<String, Object>>) ok(get("/api/stories"), t, null).get("groups");
-        Map<String, Object> verbCard = (Map<String, Object>) groups.get(0).get("verbTest");
+        Map<String, Object> tests = (Map<String, Object>) ok(get("/api/stories/progress"), t, null).get("tests");
+        Map<String, Object> verbCard = (Map<String, Object>) ((Map<String, Object>) tests.get("1")).get("verbTest");
         assertNotNull(verbCard, "the story list shows each phase's verb test");
         assertEquals("notStarted", verbCard.get("kind"));
 
@@ -336,8 +338,8 @@ class EndToEndTest {
         assertEquals("inProgress", ((Map<String, Object>) ok(get("/api/phase-tests/1?set=verbs"), t, null).get("status")).get("kind"));
         assertEquals("notStarted", ((Map<String, Object>) ok(get("/api/phase-tests/1"), t, null).get("status")).get("kind"),
                 "the word test keeps its own progress");
-        assertEquals("inProgress", ((Map<String, Object>) ((List<Map<String, Object>>) ok(get("/api/stories"), t, null)
-                .get("groups")).get(0).get("verbTest")).get("kind"));
+        assertEquals("inProgress", ((Map<String, Object>) ((Map<String, Object>) ((Map<String, Object>)
+                ok(get("/api/stories/progress"), t, null).get("tests")).get("1")).get("verbTest")).get("kind"));
 
         // a retake at any time: only its score is kept, progress stays as it was
         Map<String, Object> statusBefore = (Map<String, Object>) ok(get("/api/phase-tests/1?set=verbs"), t, null).get("status");
@@ -374,7 +376,7 @@ class EndToEndTest {
         Round annas = start(a, "study", Map.of());
         act(a, annas, "grade", Map.of("grade", "good"));
         String pattern = (String) ((Map<String, Object>) json.readValue(
-                send(get("/api/patterns"), a, null).getResponse().getContentAsString(), List.class).get(1)).get("key");
+                mvc.perform(get("/data/patterns.json")).andReturn().getResponse().getContentAsString(), List.class).get(1)).get("key");
         assertEquals(true, ok(post("/api/patterns/" + pattern + "/seen"), a, null).get("counted"));
 
         assertEquals("dark", ((Map<String, Object>) ok(get("/api/summary"), a, null).get("settings")).get("theme"));

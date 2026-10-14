@@ -263,7 +263,7 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 <div id="root"></div>
 
 <script type="text/babel">
-const { useState, useCallback, useEffect, useRef } = React;
+const { useState, useCallback, useEffect, useRef, useMemo } = React;
 
 // =====================================================================
 // This page only renders. Every decision — which card comes next, the
@@ -427,9 +427,397 @@ const api = (() => {
     get: (path, opts) => call("GET", path, undefined, undefined, opts && opts.quiet),
     // opts.keepalive: the request outlives the page (for saving on pagehide)
     post: (path, body, headers, opts) => call("POST", path, body === undefined ? {} : body, headers, opts && opts.quiet, opts && opts.keepalive),
+    del: (path, opts) => call("DELETE", path, undefined, undefined, opts && opts.quiet),
     report(e) { if (onError) onError((e && e.message) || String(e)); },
   };
 })();
+
+// ---------- CONTENT (read straight from the JSON files — no API) ----------
+// The vocabulary, stories and patterns come from static JSON: german_vocab.json
+// from GitHub Pages (the bundled copy if that can't be reached) and
+// patterns.json next to this page. Everything that only shows content — the
+// story list and reader, Cards, Quiz, Articles, Separable verbs, Fill-in,
+// Patterns — is built here from them. The backend is called only to check and
+// save an answer, and for the learner's own saved data.
+const VOCAB_URL = "https://harsimar17.github.io/Deutsch-Vocab-Helper/german_vocab.json";
+const VOCAB_BUNDLED = API_BASE + "/data/german_vocab.json";
+const PATTERNS_URL = API_BASE + "/data/patterns.json";
+
+const getJson = (url, fresh) => fetch(url, fresh ? { cache: "no-cache" } : undefined).then((r) => {
+  if (!r.ok) throw new Error(url + " → HTTP " + r.status);
+  return r.json();
+});
+
+let contentLoad = null;
+// The files are read once per page load; loadContent(true) reads them again (after "+ Add word").
+function loadContent(fresh) {
+  if (!contentLoad || fresh) {
+    contentLoad = Promise.all([
+      getJson(VOCAB_URL, fresh).catch(() => getJson(VOCAB_BUNDLED)),
+      getJson(PATTERNS_URL),
+    ]).then(([vocab, patterns]) => buildContent(vocab, patterns));
+    contentLoad.catch(() => { contentLoad = null; });
+  }
+  return contentLoad;
+}
+
+function useContent(reload) {
+  const [content, setContent] = useState(null);
+  const [error, setError] = useState(null);
+  useEffect(() => {
+    let live = true;
+    loadContent().then((c) => { if (live) setContent(c); }).catch((e) => { if (live) setError(e.message); });
+    return () => { live = false; };
+  }, [reload]);
+  return [content, error];
+}
+
+const str = (o) => (o == null ? "" : String(o));
+const strOrNull = (o) => (o == null || String(o) === "" ? null : String(o));
+const asList = (v) => (Array.isArray(v) ? v.filter((x) => x && typeof x === "object") : []);
+const storyId = (o) => (o == null ? null : typeof o === "number" ? String(Math.trunc(o)) : String(o));
+const reEscape = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+const pick1 = (list) => list[Math.floor(Math.random() * list.length)];
+
+// --- cards (as CardCatalog builds them: key = "lvl|cat|de", first one wins) ---
+const LEVELS = ["A1", "A2", "B1"];
+const NOUN_CATS = ["der", "die", "das"];
+const PLAIN_CATS = [["adjectives", "adj"], ["verbs", "verb"], ["separable_verbs", "sep"], ["function_words", "func"], ["phrases", "phrase"]];
+const isNoun = (c) => NOUN_CATS.includes(c.cat);
+
+function buildCards(vocab) {
+  const byKey = new Map();
+  const add = (lvl, cat, e) => {
+    const de = str(e.de);
+    const key = lvl + "|" + cat + "|" + de;
+    if (!byKey.has(key)) byKey.set(key, { key, de, en: str(e.en), cat, lvl, example: strOrNull(e.example), prefix: strOrNull(e.prefix) });
+  };
+  const levels = (vocab && vocab.levels) || {};
+  for (const lvl of LEVELS) {
+    const level = levels[lvl];
+    if (!level || typeof level !== "object") continue;
+    const nouns = level.nouns || {};
+    for (const art of NOUN_CATS) for (const e of asList(nouns[art])) add(lvl, art, e);
+    for (const [field, cat] of PLAIN_CATS) for (const e of asList(level[field])) add(lvl, cat, e);
+  }
+  return byKey;
+}
+
+// --- German text helpers (as German.java) ---
+const SEP_PREFIXES = ["auf", "an", "aus", "ein", "mit", "nach", "vor", "zu", "ab", "um", "zurück", "weg", "hin", "her", "fest", "los", "teil", "statt", "durch", "heraus", "zusammen", "vorbei", "fern", "bei", "mit"];
+const SEP_COMMON = ["auf", "an", "aus", "ein", "mit", "nach", "vor", "zu", "ab", "um"];
+const PLURAL_NOTE = /\s*\((?:Pl\.|WG)\)/g;
+const stripArticle = (de) => str(de).replace(/^(der|die|das)\s+/, "");
+function nounForms(card) {
+  return str(card.de).replace(PLURAL_NOTE, "").trim().split(" / ")
+    .map((s) => s.replace(/^(der|die|das)\s+/i, "").trim()).filter(Boolean);
+}
+// A noun's example sentence split around the noun (Fill-in).
+function clozeMatch(card) {
+  const sentence = str(card.example);
+  if (!sentence) return null;
+  for (const f of nounForms(card)) {
+    const m = new RegExp(reEscape(f), "iu").exec(sentence);
+    if (m) return { before: sentence.slice(0, m.index), answer: m[0], after: sentence.slice(m.index + m[0].length) };
+  }
+  return null;
+}
+// Infinitive and separable prefix of a separable verb.
+function sepParts(card) {
+  const de = str(card.de).trim().replace(/^sich\s+/i, "").replace(/\s+(mit|auf|an|über|für|zu|nach|von|in|bei|um)$/i, "").trim();
+  const inf = de.split(" ")[0] || de;
+  let prefix = card.prefix;
+  if (!prefix) prefix = SEP_PREFIXES.find((p) => inf.toLowerCase().startsWith(p)) || "";
+  return { inf, prefix: prefix.toLowerCase() };
+}
+// The example sentence with the (last) free-standing prefix blanked out.
+function sepCloze(card, prefix) {
+  const ex = str(card.example).trim();
+  if (!ex || !prefix) return null;
+  const re = new RegExp("(^|[\\s(])(" + reEscape(prefix) + ")(?=[\\s.,!?;:)]|$)", "giu");
+  let at = -1, m;
+  while ((m = re.exec(ex)) !== null) at = m.index + m[1].length;
+  if (at < 0) return null;
+  return { before: ex.slice(0, at), answer: ex.slice(at, at + prefix.length), after: ex.slice(at + prefix.length) };
+}
+
+// --- word meanings in running text (as WordLookup.java) ---
+const IRREGULAR = new Map();
+const FIXED = new Map();
+const STRIP_SUFFIXES = ["test", "tet", "ten", "est", "ern", "en", "em", "er", "es", "et", "st", "te", "e", "n", "s", "t"];
+const GLOSS_TYPE_CAT = { verbs: "verb", adjectives: "adj", separable_verbs: "sep", function_words: "func", phrases: "phrase" };
+[["sein", "bin bist ist sind seid war warst waren gewesen wäre wären"], ["haben", "hat hast habe hatte hatten gehabt hätte hätten"],
+  ["werden", "wird wirst wurde wurden geworden würde würden"], ["können", "kann kannst konnte konnten könnte könnten"],
+  ["müssen", "muss musst musste mussten müsste"], ["wollen", "will willst wollte wollten"], ["dürfen", "darf darfst durfte durften dürfte"],
+  ["sollen", "soll sollst sollte sollten"], ["mögen", "mag magst mochte"], ["wissen", "weiß weißt wusste gewusst"],
+  ["geben", "gibt gab gaben gegeben"], ["sehen", "sieht sah sahen gesehen"], ["lesen", "liest las gelesen"],
+  ["fahren", "fährt fuhr fuhren gefahren"], ["nehmen", "nimmt nahm nahmen genommen"], ["sprechen", "spricht sprach sprachen gesprochen"],
+  ["helfen", "hilft half geholfen"], ["gehen", "ging gingen gegangen"], ["kommen", "kam kamen gekommen"], ["essen", "isst aß gegessen"],
+  ["treffen", "trifft traf trafen getroffen"], ["schlafen", "schläft schlief"], ["laufen", "läuft lief"], ["tragen", "trägt trug"],
+  ["halten", "hält hielt"], ["finden", "fand fanden gefunden"], ["bleiben", "blieb blieben geblieben"], ["schreiben", "schrieb geschrieben"],
+  ["stehen", "stand standen gestanden"], ["sitzen", "saß gesessen"], ["liegen", "lag gelegen"], ["denken", "dachte gedacht"],
+  ["bringen", "brachte gebracht"], ["kennen", "kannte gekannt"], ["tun", "tat tut getan"], ["rufen", "rief gerufen"],
+  ["verstehen", "verstand verstanden"], ["gelten", "gilt galt gegolten"], ["wachsen", "wächst wuchs gewachsen"], ["bekommen", "bekam bekamen bekommt"],
+].forEach(([inf, forms]) => forms.split(" ").forEach((f) => IRREGULAR.set(f, inf)));
+// closed-class words the stemmer would get wrong ("meine" is not "meinen")
+[["mein meine meinen meinem meiner meines", "mein", "my"], ["dein deine deinen deinem deiner deines", "dein", "your (informal)"],
+  ["seine seinen seinem seiner seines", "sein", "his / its"], ["ihre ihren ihrem ihrer ihres", "ihr", "her / their / your (formal)"],
+  ["unser unsere unseren unserem unserer unseres", "unser", "our"], ["euer eure euren eurem eurer eures", "euer", "your (plural)"],
+  ["dem den des", "der / die / das", "the"], ["im", "im = in dem", "in the"], ["am", "am = an dem", "at / on the"],
+  ["ans", "ans = an das", "to the"], ["ins", "ins = in das", "into the"], ["zum", "zum = zu dem", "to the"], ["zur", "zur = zu der", "to the"],
+  ["vom", "vom = von dem", "from / of the"], ["beim", "beim = bei dem", "at / at the"], ["sich", "sich", "oneself / himself / herself / themselves"],
+  ["mich mir", "ich → mich / mir", "me"], ["dich dir", "du → dich / dir", "you"], ["ihn ihm", "er → ihn / ihm", "him"],
+  ["uns", "wir → uns", "us / ourselves"], ["euch", "ihr → euch", "you (plural)"], ["ihnen", "sie → ihnen", "them"],
+  ["manche manchen mancher manches", "manche", "some"], ["andere anderen anderer anderes anderem", "andere", "other(s)"], ["mehr", "mehr", "more"],
+].forEach(([forms, head, en]) => forms.split(" ").forEach((f) => FIXED.set(f, { head, en, cat: "func", lvl: null, example: null })));
+
+function glossCat(g) {
+  if (g.type === "noun") {
+    let article = strOrNull(g.article);
+    if (article == null) { const m = /^(der|die|das)\b/i.exec(str(g.de)); article = m ? m[1] : "der"; }
+    return article.toLowerCase();
+  }
+  return GLOSS_TYPE_CAT[str(g.type)] || null;
+}
+
+// Forms → meaning, case-sensitive ("Essen" ≠ "essen") with a lowercase fallback. First entry wins.
+class Dict {
+  constructor() { this.exact = new Map(); this.lower = new Map(); }
+  put(form, g) {
+    if (!form) return;
+    if (!this.exact.has(form)) this.exact.set(form, g);
+    const lf = form.toLowerCase();
+    if (!this.lower.has(lf)) this.lower.set(lf, g);
+  }
+  // Index one entry under its bare form(s): article/"sich"/"(Pl.)" removed, " / " alternatives split.
+  add(de, en, cat, lvl, example, verbish) {
+    const cleaned = str(de).replace(PLURAL_NOTE, "").split("(sich)").join("sich").trim();
+    const heads = cleaned.split(/\s+\/\s+/).map((h) => h.trim()).filter(Boolean);
+    const ens = str(en).split(/\s+\/\s+/);
+    const paired = heads.length > 1 && ens.length === heads.length; // "ich / du" ↔ "I / you"
+    heads.forEach((h, i) => {
+      const art = /^(der|die|das)\s/i.exec(h);
+      const gCat = art && /^(der|die|das)$/.test(str(cat).toLowerCase()) ? art[1].toLowerCase() : cat;
+      const g = { head: paired ? h : cleaned, en: paired ? ens[i].trim() : en, cat: gCat, lvl, example };
+      const form = h.replace(/^(der|die|das)\s+/i, "").replace(/^sich\s+/i, "").replace(/\s*(\.\.\.|…)$/, "").trim();
+      this.put(form, g);
+      if (verbish && form.includes(" ")) this.put(form.split(" ")[0], g); // "aufhören mit" → also "aufhören"
+      if (form.includes("...") || form.includes("…")) for (const piece of form.split(/\s*(?:\.\.\.|…)\s*/)) this.put(piece.trim(), g);
+    });
+  }
+  addGlossary(glossary) {
+    for (const g of asList(glossary)) {
+      const type = str(g.type);
+      this.add(str(g.de), str(g.en), glossCat(g), "B1", strOrNull(g.example), type === "verbs" || type === "separable_verbs");
+    }
+  }
+}
+
+// Plausible base forms of an inflected word, most likely first.
+function candidates(word) {
+  const lw = word.toLowerCase();
+  const out = [];
+  const push = (s) => { if (s && s.length >= 2) out.push(s); };
+  out.push(lw);
+  if (IRREGULAR.has(lw)) push(IRREGULAR.get(lw));
+  // prefixed irregulars: annimmt → an + nehmen, verhält → ver + halten
+  IRREGULAR.forEach((inf, k) => { if (k.length >= 4 && lw.length - k.length >= 2 && lw.endsWith(k)) push(lw.slice(0, lw.length - k.length) + inf); });
+  const bases = [lw];
+  for (const p of SEP_PREFIXES) {
+    if ((lw.startsWith(p + "ge") || lw.startsWith(p + "zu")) && lw.length > p.length + 4) { bases.push(p + lw.slice(p.length + 2)); break; }
+  }
+  if (lw.startsWith("ge") && lw.length > 5) bases.push(lw.slice(2)); // gekündigt → kündigt
+  for (const b of bases) {
+    if (b !== lw) push(b);
+    push(b + "en"); push(b + "n");
+    for (const suf of STRIP_SUFFIXES) {
+      if (b.endsWith(suf) && b.length - suf.length >= 3) {
+        const stem = b.slice(0, b.length - suf.length);
+        push(stem); push(stem + "en"); push(stem + "n"); push(stem + "e");
+      }
+    }
+  }
+  return out;
+}
+
+class WordLookup {
+  constructor(dicts) { this.dicts = dicts; this.found = new Map(); }
+  lookup(word) {
+    if (this.found.has(word)) return this.found.get(word);
+    let hit = FIXED.get(word.toLowerCase()) || null;
+    if (!hit) for (const d of this.dicts) { hit = d.exact.get(word) || null; if (hit) break; }
+    if (!hit) {
+      outer: for (const c of candidates(word)) for (const d of this.dicts) { const h = d.lower.get(c); if (h) { hit = h; break outer; } }
+    }
+    if (!hit && word.includes("-")) hit = this.lookup(word.slice(word.lastIndexOf("-") + 1)); // "Kinder-Betreuung" → "Betreuung"
+    this.found.set(word, hit);
+    return hit;
+  }
+  // A **marked** target span: whole span, each " / " part, a split separable verb, each word, then the closest glossary entry.
+  lookupTarget(span, glossary) {
+    const clean = span.replace(PLURAL_NOTE, "").replace(/^(der|die|das|den|dem|des)\s+/i, "").trim();
+    let hit = this.lookup(clean);
+    if (hit) return hit;
+    const parts = clean.split(/\s+\/\s+/);
+    if (parts.length > 1) for (const p of parts) { hit = this.lookup(p.replace(/^(der|die|das)\s+/i, "")); if (hit) return hit; }
+    const pair = clean.replace(/^sich\s+/i, "").split(/\s+/);
+    if (pair.length === 2 && SEP_PREFIXES.includes(pair[1].toLowerCase())) {
+      hit = this.lookup(pair[1].toLowerCase() + pair[0].toLowerCase());
+      if (hit) return hit;
+    }
+    if (clean.includes(" ")) {
+      const words = clean.split(/\s+/).filter((w) => w.length > 2).sort((a, b) => b.length - a.length);
+      for (const w of words) { hit = this.lookup(w); if (hit) return hit; }
+    }
+    const lw = clean.toLowerCase();
+    let best = null, bestLen = 4;
+    for (const g of asList(glossary)) {
+      const f = str(g.de).replace(/^(der|die|das)\s+/i, "").replace(/^sich\s+/i, "").toLowerCase();
+      let n = 0;
+      while (n < f.length && n < lw.length && f[n] === lw[n]) n++;
+      if (n > bestLen) { bestLen = n; best = g; }
+    }
+    return best ? { head: str(best.de), en: str(best.en), cat: glossCat(best), lvl: "B1", example: strOrNull(best.example) } : null;
+  }
+}
+
+// --- stories (as StoryService.java) ---
+const TARGET = /\*\*(.+?)\*\*/g;
+const WORD = /[A-Za-zÄÖÜäöüß]+(?:-[A-Za-zÄÖÜäöüß]+)*/g;
+const paragraphsOf = (text) => str(text).split(/\n\s*\n/).map((p) => p.trim()).filter(Boolean);
+
+function plainSegments(part, lookup, segs) {
+  if (!part) return;
+  let last = 0, m;
+  const re = new RegExp(WORD.source, "g");
+  while ((m = re.exec(part)) !== null) {
+    if (m.index > last) segs.push({ t: part.slice(last, m.index) });
+    const g = m[0].length > 1 ? lookup.lookup(m[0]) : null;
+    segs.push(g ? { w: m[0], entry: g } : { t: m[0] });
+    last = m.index + m[0].length;
+  }
+  if (last < part.length) segs.push({ t: part.slice(last) });
+}
+
+// Paragraph → segments: {t} plain text, or {w, entry, target} for a word with a meaning.
+function segmentsOf(para, lookup, glossary) {
+  const segs = [];
+  let last = 0, m;
+  const re = new RegExp(TARGET.source, "g");
+  while ((m = re.exec(para)) !== null) {
+    plainSegments(para.slice(last, m.index), lookup, segs);
+    segs.push({ w: m[1], entry: lookup.lookupTarget(m[1], glossary), target: true });
+    last = m.index + m[0].length;
+  }
+  plainSegments(para.slice(last), lookup, segs);
+  return segs;
+}
+
+function buildContent(vocab, patternsRaw) {
+  const byKey = buildCards(vocab);
+  const cards = [...byKey.values()];
+  const st = (vocab && vocab.stories) || {};
+  const items = asList(st.items);
+  const byId = new Map(items.map((s) => [storyId(s.id), s]));
+  const seen = new Set();
+  const groups = [];
+  for (const p of asList(st.phases)) {
+    const list = [];
+    for (const cid of Array.isArray(p.chapter_ids) ? p.chapter_ids : []) {
+      const s = byId.get(storyId(cid));
+      if (s) { list.push(s); seen.add(storyId(cid)); }
+    }
+    if (list.length) groups.push({ phase: p, index: p.index == null ? null : String(Math.trunc(Number(p.index))), stories: list });
+  }
+  const rest = items.filter((s) => !seen.has(storyId(s.id))).sort((a, b) => (Number(a.chapter) || 0) - (Number(b.chapter) || 0));
+  if (rest.length) groups.push({ phase: { name: "Weitere Geschichten" }, index: null, stories: rest });
+  const flat = groups.flatMap((g) => g.stories);
+
+  // every story glossary first, then all vocabulary cards (A1 → B1)
+  const global = new Dict();
+  items.forEach((s) => global.addGlossary(s.glossary));
+  for (const c of cards) global.add(c.de, c.en, c.cat, c.lvl, c.example, c.cat === "verb" || c.cat === "sep");
+
+  const readers = new Map();
+  const brief = (s) => ({ id: storyId(s.id), chapter: s.chapter == null ? "" : s.chapter });
+  function reader(id) {
+    if (readers.has(id)) return readers.get(id);
+    const story = byId.get(id);
+    if (!story) return null;
+    const glossary = asList(story.glossary);
+    const own = new Dict();
+    own.addGlossary(glossary);
+    const lookup = new WordLookup([own, global]);
+    const de = paragraphsOf(story.story_de), en = paragraphsOf(story.story_en);
+    const paragraphs = de.map((para, i) => {
+      const segments = segmentsOf(para, lookup, glossary);
+      return { segments, en: i < en.length ? en[i] : null, speech: segments.map((sg) => (sg.t != null ? sg.t : sg.w)).join("") };
+    });
+    const i = flat.findIndex((s) => storyId(s.id) === id);
+    let endsPhase = null;
+    for (const g of groups) {
+      const ids = g.phase.chapter_ids;
+      if (g.index && Array.isArray(ids) && ids.length && storyId(ids[ids.length - 1]) === id) endsPhase = g.index;
+    }
+    const v = {
+      id, chapter: story.chapter, phaseName: story.phase_name, titleDe: story.title_de, titleEn: story.title_en, paragraphs,
+      glossary: glossary.map((g) => ({ de: str(g.de), en: str(g.en), cat: glossCat(g) || "" })),
+      prev: i > 0 ? brief(flat[i - 1]) : null, next: i >= 0 && i < flat.length - 1 ? brief(flat[i + 1]) : null, endsPhase,
+    };
+    readers.set(id, v);
+    return v;
+  }
+
+  // The story list; read marks and phase test statuses come from the learner's progress (null until it has loaded).
+  function storyList(progress) {
+    const read = new Set(progress ? progress.read : []);
+    const tests = (progress && progress.tests) || {};
+    let readCount = 0;
+    const out = groups.map((g) => {
+      const stories = g.stories.map((s) => {
+        const id = storyId(s.id);
+        if (read.has(id)) readCount++;
+        return { id, chapter: s.chapter, titleDe: s.title_de, titleEn: s.title_en,
+          words: s.target_count != null ? s.target_count : asList(s.glossary).length, read: read.has(id) };
+      });
+      const t = (g.index && tests[g.index]) || {};
+      return { phase: { index: g.index, name: g.phase.name, description: g.phase.description, note: g.phase.note },
+        stories, allRead: stories.every((s) => s.read), test: t.test || null, verbTest: t.verbTest || null };
+    });
+    return { level: st.level || "B1", count: byId.size, readCount, total: flat.length, groups: out };
+  }
+
+  // patterns.json, each example read as one sentence (for 🔊)
+  const patterns = asList(patternsRaw).map((p) => Object.assign({}, p, {
+    examples: asList(p.examples).map((e) => Object.assign({}, e, {
+      sentence: asList(e.chunks).map((c) => c.text).join(" ").replace(/\s+([,.!?])/g, "$1"),
+    })),
+  }));
+
+  return {
+    cards, card: (key) => byKey.get(key) || null,
+    pool: (levels, cats) => cards.filter((c) => levels.includes(c.lvl) && cats.includes(c.cat)),
+    reader, storyList, patterns,
+  };
+}
+
+// Saves one answer of a round the page runs (the backend checks it against the card and saves it).
+function saveAnswer(mode, key, pick, onChange) {
+  return api.post("/api/answers", { mode, key, pick }, undefined, { quiet: true })
+    .then((r) => { if (onChange) onChange(r); return r; })
+    .catch((e) => { api.report(e); return null; });
+}
+
+// A round the page runs itself: a plain object built from the content, changed
+// in place by the component, which then re-renders.
+function useRound(build, deps, reload) {
+  const [content, error] = useContent(reload);
+  const [, setTick] = useState(0);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const round = useMemo(() => (content ? build(content) : null), [content, ...deps]);
+  const update = useCallback((fn) => { if (round) { fn(round); setTick((n) => n + 1); } }, [round]);
+  return { round, update, error };
+}
 
 // A practice round run by the backend: start it, render its view, send actions.
 function useDrill(mode, params, version, onChange) {
@@ -439,7 +827,7 @@ function useDrill(mode, params, version, onChange) {
   const start = useCallback(() => {
     setState({ id: null, view: null, error: null });
     return api.post("/api/drills/" + mode, params || {})
-      .then((r) => { setState({ id: r.id, view: r.view, error: null }); if (onChange) onChange(); })
+      .then((r) => { setState({ id: r.id, view: r.view, error: null }); })
       .catch((e) => setState({ id: null, view: null, error: e.message }));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mode, paramsKey, version]);
@@ -448,7 +836,7 @@ function useDrill(mode, params, version, onChange) {
     if (!state.id || busy.current) return Promise.resolve();
     busy.current = true;
     return api.post("/api/drills/" + state.id + "/" + action, payload || {})
-      .then((r) => { setState((s) => Object.assign({}, s, { view: r.view })); if (onChange) onChange(); })
+      .then((r) => { setState((s) => Object.assign({}, s, { view: r.view })); if (onChange) onChange(r); })
       .catch((e) => { if (e.status === 410) start(); else api.report(e); })
       .finally(() => { busy.current = false; });
   }, [state.id, start, onChange]);
@@ -574,10 +962,12 @@ function DrillError({ message }) {
 
 // Example sentence for a card: the backend serves the saved one, or generates
 // it with Gemini (using the key held in this page's memory) and saves it.
+// A Gemini example sentence for the card — only asked for when a Gemini key is set.
 function AiSentence({ card, apiKey }) {
-  const [state, setState] = useState({ status: "loading" });
+  const [state, setState] = useState({ status: apiKey ? "loading" : "idle" });
   const [attempt, setAttempt] = useState(0);
   useEffect(() => {
+    if (!apiKey) { setState({ status: "idle" }); return undefined; }
     let cancelled = false;
     setState({ status: "loading" });
     api.post("/api/sentences/generate", { de: card.de, en: card.en, cat: card.cat }, apiKey ? { "X-Gemini-Key": apiKey } : {}, { quiet: true })
@@ -708,25 +1098,20 @@ function shuffled(list) {
   return a;
 }
 
-// Cards run in the browser: the round's first view carries the whole shuffled
-// deck, so flipping, moving and shuffling make no call. The ✗ / ✓ marks are kept
-// here and saved in one "results" action when the deck is done, the tab is left
-// or the page is hidden.
+// Cards run in the page: the deck is the content's cards for the current
+// settings. The ✗ / ✓ marks are kept here and saved in one call when the deck
+// is done, the tab is left or the page is hidden.
 const FLASH_RESULTS_PER_CALL = 200;
-function saveFlashResults(id, results, keepalive) {
+function saveFlashResults(results, keepalive) {
   const chunks = [];
   for (let i = 0; i < results.length; i += FLASH_RESULTS_PER_CALL) chunks.push(results.slice(i, i + FLASH_RESULTS_PER_CALL));
-  const post = (roundId) => Promise.all(chunks.map((chunk) =>
-    api.post("/api/drills/" + roundId + "/results", { results: chunk }, undefined, { quiet: true, keepalive })));
-  // 410: the round was dropped on the server (6 h without a call) — save into a fresh one
-  return post(id).catch((e) => e.status === 410
-    ? api.post("/api/drills/flash", {}, undefined, { quiet: true }).then((r) => post(r.id))
-    : Promise.reject(e));
+  return Promise.all(chunks.map((chunk) => api.post("/api/answers/batch", { results: chunk }, undefined, { quiet: true, keepalive })));
 }
 
-function Flashcards({ version, onChange }) {
-  const [round, setRound] = useState({ id: null, view: null, error: null });
-  const [order, setOrder] = useState([]);
+function Flashcards({ settings, version, onChange }) {
+  const { levels, cats, direction, noRepeat } = settings;
+  const [content, error] = useContent(version);
+  const [order, setOrder] = useState(null);
   const [idx, setIdx] = useState(0);
   const [done, setDone] = useState(false);
   const [flipped, setFlipped] = useState(false);
@@ -734,54 +1119,41 @@ function Flashcards({ version, onChange }) {
   const onChangeRef = useRef(onChange);
   onChangeRef.current = onChange;
 
-  const flush = useCallback((id, keepalive) => {
+  const pool = useMemo(() => (content ? content.pool(levels, cats) : null), [content, version, levels.join(), cats.join()]);
+  useEffect(() => {
+    if (!pool) return;
+    setOrder(shuffled(pool)); setIdx(0); setDone(false); setFlipped(false);
+  }, [pool]);
+
+  const flush = useCallback((keepalive) => {
     const results = pending.current;
-    if (!id || !results.length) return;
+    if (!results.length) return;
     pending.current = [];
-    saveFlashResults(id, results, keepalive)
-      .then(() => { if (onChangeRef.current) onChangeRef.current(); })
+    saveFlashResults(results, keepalive)
+      .then((rs) => { if (onChangeRef.current) onChangeRef.current(rs[rs.length - 1]); })
       .catch((e) => { if (e.status !== 401) api.report(e); });
   }, []);
-
+  // save on leaving the tab (cleanup), and when the page is hidden or closed
   useEffect(() => {
-    let cancelled = false;
-    setRound({ id: null, view: null, error: null });
-    api.post("/api/drills/flash", {})
-      .then((r) => {
-        if (cancelled) return;
-        setRound({ id: r.id, view: r.view, error: null });
-        setOrder(r.view.cards);
-        setIdx(0);
-        setDone(false);
-        setFlipped(false);
-      })
-      .catch((e) => { if (!cancelled) setRound({ id: null, view: null, error: e.message }); });
-    return () => { cancelled = true; };
-  }, [version]);
-
-  // save on leaving the tab or starting a new round (cleanup), and when the page is hidden or closed
-  useEffect(() => {
-    const id = round.id;
-    const onHide = () => { if (document.visibilityState === "hidden") flush(id, true); };
-    const onPageHide = () => flush(id, true);
+    const onHide = () => { if (document.visibilityState === "hidden") flush(true); };
+    const onPageHide = () => flush(true);
     document.addEventListener("visibilitychange", onHide);
     window.addEventListener("pagehide", onPageHide);
     return () => {
       document.removeEventListener("visibilitychange", onHide);
       window.removeEventListener("pagehide", onPageHide);
-      flush(id);
+      flush();
     };
-  }, [round.id, flush]);
+  }, [flush]);
 
-  const v = round.view;
-  const total = order.length;
+  const total = order ? order.length : 0;
   const move = (to) => { setFlipped(false); setIdx(to); };
   const next = () => {
     if (idx + 1 < total) return move(idx + 1);
-    if (v.noRepeat) { setDone(true); flush(round.id); } else move(0);
+    if (noRepeat) { setDone(true); flush(); } else move(0);
   };
   const prev = () => move((idx - 1 + total) % total);
-  const reshuffle = () => { setOrder(shuffled(v.cards)); setDone(false); move(0); };
+  const reshuffle = () => { setOrder(shuffled(pool)); setDone(false); move(0); };
   const mark = (knew) => { pending.current.push({ key: order[idx].key, knew }); next(); };
 
   // Enter: first reveals the card, then moves on (like "next ›").
@@ -791,17 +1163,17 @@ function Flashcards({ version, onChange }) {
     const onKey = (e) => {
       if (e.key !== "Enter" || e.isComposing) return;
       if (e.target && /^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName)) return;
-      if (!v || done || v.empty) return;
+      if (!order || done || !order.length) return;
       e.preventDefault();
       if (!flipped) setFlipped(true); else nextRef.current();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [v, done, flipped]);
+  }, [order, done, flipped]);
 
-  if (round.error) return <DrillError message={round.error} />;
-  if (!v) return <Loading />;
-  if (v.empty) return <p style={srsNote}>No cards match this filter — pick at least one category in settings ▸.</p>;
+  if (error) return <DrillError message={error} />;
+  if (!order) return <Loading />;
+  if (!order.length) return <p style={srsNote}>No cards match this filter — pick at least one category in settings ▸.</p>;
   if (done) {
     return (
       <div style={{ ...srsCol, padding: "40px 0" }}>
@@ -811,25 +1183,25 @@ function Flashcards({ version, onChange }) {
     );
   }
   const c = order[idx];
-  const front = v.direction === "en-de" ? c.en : c.de;
-  const back = v.direction === "en-de" ? c.de : c.en;
+  const front = direction === "en-de" ? c.en : c.de;
+  const back = direction === "en-de" ? c.de : c.en;
   const meta = CATEGORY_META[c.cat] || { color: "var(--accent)" };
   return (
     <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "18px" }}>
-      <div style={counterStyle}>{v.noRepeat ? `${idx + 1} / ${total} attempted` : `CARD ${idx + 1} / ${total}`}</div>
+      <div style={counterStyle}>{noRepeat ? `${idx + 1} / ${total} attempted` : `CARD ${idx + 1} / ${total}`}</div>
       <div onClick={() => setFlipped((f) => !f)} style={{ width: "min(440px, 92vw)", height: "280px", cursor: "pointer", perspective: "1400px" }}>
         <div style={{ position: "relative", width: "100%", height: "100%", transition: "transform 0.55s cubic-bezier(.2,.7,.2,1)", transformStyle: "preserve-3d", transform: flipped ? "rotateY(180deg)" : "rotateY(0deg)" }}>
           <div style={{ ...cardFace, position: "absolute", inset: 0, width: "auto", backfaceVisibility: "hidden", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: "18px", padding: "28px" }}>
             <CatChip cat={c.cat} />
             <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "14px" }}>
-              {v.direction === "de-en" && <SpeakButton text={c.de} />}
+              {direction === "de-en" && <SpeakButton text={c.de} />}
               <div style={{ fontFamily: "var(--font-serif)", fontWeight: 600, fontSize: front.length > 28 ? "20px" : front.length > 16 ? "26px" : "34px", lineHeight: 1.25, letterSpacing: "-0.01em", color: "var(--ink)" }}>{front}</div>
             </div>
             <div style={{ ...monoLabel, letterSpacing: "0.16em" }}>tap or ⏎ to reveal</div>
           </div>
           <div style={{ position: "absolute", inset: 0, backfaceVisibility: "hidden", transform: "rotateY(180deg)", background: `linear-gradient(165deg, ${meta.color} 0%, ${meta.color}e0 100%)`, borderRadius: "16px", boxShadow: "var(--shadow-card)", display: "flex", alignItems: "center", justifyContent: "center", padding: "28px" }}>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "14px" }}>
-              {v.direction === "en-de" && <SpeakButton text={c.de} />}
+              {direction === "en-de" && <SpeakButton text={c.de} />}
               <div style={{ fontFamily: "var(--font-serif)", fontWeight: 600, fontSize: back.length > 28 ? "19px" : "25px", lineHeight: 1.3, color: "#FCF8EE", textAlign: "center", textShadow: "0 1px 8px rgba(0,0,0,.18)" }}>{back}</div>
             </div>
           </div>
@@ -1154,205 +1526,314 @@ function WriteMode({ version, onChange, geminiKey }) {
   );
 }
 
-function Quiz({ version, onChange, geminiKey }) {
-  const drill = useDrill("quiz", null, version, onChange);
+// --- multiple-choice rounds the page runs (questions built here, answers checked and saved by the backend) ---
+
+// Correct answer from source (or the pool); 3 distractors of the same category if there are enough.
+function choiceQuestion(pool, source) {
+  const correct = pick1(source && source.length ? source : pool);
+  const sameCat = pool.filter((d) => d.cat === correct.cat && d.key !== correct.key);
+  const distract = sameCat.length >= 3 ? sameCat : pool.filter((d) => d.key !== correct.key);
+  return { correct, options: shuffled(shuffled(distract).slice(0, 3).concat([correct])) };
+}
+// Next item: without repeats, one not asked yet (or done); otherwise any.
+function nextOf(r, all, make) {
+  if (r.noRepeat) {
+    const remaining = all.filter((d) => !r.asked.has(d.key));
+    if (!remaining.length) { r.done = true; r.picked = null; return; }
+    make(remaining);
+  } else {
+    make(null);
+  }
+  r.picked = null;
+}
+
+function Quiz({ settings, version, onChange, geminiKey }) {
+  const { levels, cats, direction, noRepeat } = settings;
   const [historyOpen, setHistoryOpen] = useState(false);
+  const [history, setHistory] = useState(null); // {sessions, allTime}: loaded when the past rounds are opened
+  const [allTime, setAllTime] = useState(null); // comes with each answer
+  const ask = (r, source) => { r.q = choiceQuestion(r.pool, source); if (r.noRepeat) r.asked.add(r.q.correct.key); };
+  const reset = (r) => { r.asked.clear(); r.done = false; r.picked = null; ask(r, null); };
+  const { round: r, update, error } = useRound((content) => {
+    const x = { pool: content.pool(levels, cats), noRepeat, asked: new Set(), q: null, picked: null, right: 0, total: 0, saved: false, done: false };
+    if (x.pool.length >= 4) reset(x);
+    return x;
+  }, [version, levels.join(), cats.join(), noRepeat], version);
+  if (error) return <DrillError message={error} />;
+  if (!r) return <Loading />;
+  if (r.pool.length < 4) return <p style={srsNote}>Pick at least a couple categories in settings ▸ — need a few options to quiz from.</p>;
+
+  const answer = (key) => {
+    if (r.picked != null || r.done) return;
+    const correctKey = r.q.correct.key;
+    update((x) => { x.picked = key; x.right += key === correctKey ? 1 : 0; x.total += 1; x.saved = false; });
+    saveAnswer("quiz", correctKey, key, onChange).then((res) => { if (res && res.allTime) setAllTime(res.allTime); });
+  };
+  const next = () => update((x) => nextOf(x, x.pool, (src) => ask(x, src)));
+  const finish = () => {
+    if (!r.total) return;
+    api.post("/api/quiz-sessions", { right: r.right, total: r.total, cats }).then((h) => {
+      setHistory(h); setAllTime(h.allTime);
+      update((x) => { x.saved = true; x.right = 0; x.total = 0; });
+    }).catch(api.report);
+  };
+  const openHistory = () => {
+    setHistoryOpen((o) => !o);
+    if (!history) api.get("/api/quiz-sessions", { quiet: true }).then((h) => { setHistory(h); setAllTime(h.allTime); }).catch(api.report);
+  };
+  const clearHistory = () => api.del("/api/quiz-sessions").then((h) => { setHistory(h); setAllTime(h.allTime); }).catch(api.report);
+
+  const score = { right: r.right, total: r.total };
+  const saveBtn = r.total > 0 && (
+    <button onClick={finish} style={{ ...navBtnStyle, background: r.saved ? "var(--good)" : "transparent", border: `1px solid ${r.saved ? "var(--good)" : "var(--ink-muted)"}`, color: r.saved ? "#F6F1E5" : "var(--ink-muted)" }}>
+      {r.saved ? "✓ saved" : "finish & save this round"}
+    </button>
+  );
+  if (r.done) {
+    return (
+      <div style={{ ...srsCol, padding: "40px 0" }}>
+        <ScoreLine score={score} />
+        <div style={{ fontFamily: "var(--font-serif)", fontSize: "22px", color: "var(--ink)", textAlign: "center" }}>All {r.pool.length} / {r.pool.length} words done 🎉</div>
+        <div style={{ display: "flex", gap: "10px" }}>{saveBtn}<button onClick={() => update(reset)} style={navBtnStyle}>⟲ start over</button></div>
+      </div>
+    );
+  }
+  const card = r.q.correct;
+  const picked = r.picked != null;
+  const options = r.q.options.map((o) => ({ key: o.key, text: direction === "en-de" ? o.de : o.en }));
+  const sessions = history ? history.sessions : [];
   return (
-    <DrillGate drill={drill}>{(v, act) => {
-      if (v.tooFew) return <p style={srsNote}>Pick at least a couple categories in settings ▸ — need a few options to quiz from.</p>;
-      const saveBtn = v.score.total > 0 && (
-        <button onClick={() => act("finish")} style={{ ...navBtnStyle, background: v.saved ? "var(--good)" : "transparent", border: `1px solid ${v.saved ? "var(--good)" : "var(--ink-muted)"}`, color: v.saved ? "#F6F1E5" : "var(--ink-muted)" }}>
-          {v.saved ? "✓ saved" : "finish & save this round"}
-        </button>
-      );
-      if (v.done) {
-        return (
-          <div style={{ ...srsCol, padding: "40px 0" }}>
-            <ScoreLine score={v.score} />
-            <div style={{ fontFamily: "var(--font-serif)", fontSize: "22px", color: "var(--ink)", textAlign: "center" }}>All {v.poolSize} / {v.poolSize} words done 🎉</div>
-            <div style={{ display: "flex", gap: "10px" }}>{saveBtn}<button onClick={() => act("restart")} style={navBtnStyle}>⟲ start over</button></div>
-          </div>
-        );
-      }
-      const picked = v.picked != null;
-      return (
-        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "18px" }}>
-          <ScoreLine score={v.score} extra={v.allTime.total > 0 && <span style={{ marginLeft: "14px", color: "var(--ink-faint)" }}>· ALL-TIME {v.allTime.right} / {v.allTime.total}</span>} />
-          {v.noRepeat && <div style={{ ...counterStyle, fontSize: "11px", marginTop: "-10px" }}>{v.asked} / {v.poolSize} attempted</div>}
-          <div style={{ textAlign: "center" }}>
-            <div style={{ marginBottom: "10px" }}><CatChip cat={v.card.cat} /></div>
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "14px", flexWrap: "wrap" }}>
-              {v.direction === "de-en" && <SpeakButton text={v.card.de} />}
-              <div style={{ fontFamily: "var(--font-serif)", fontWeight: 600, fontSize: "30px", letterSpacing: "-0.01em", color: "var(--ink)" }}>{v.prompt}</div>
-              {v.direction === "en-de" && picked && <SpeakButton text={v.card.de} />}
-              {picked && <button onClick={() => act("next")} style={navBtnStyle}>next ›</button>}
-            </div>
-          </div>
-          <OptionList options={v.options} picked={v.picked} correctKey={v.correctKey} onPick={(key) => act("answer", { key })} />
-          {picked && <AiSentence card={v.card} apiKey={geminiKey} />}
-          {saveBtn}
-          {v.sessions && v.sessions.length > 0 && (
-            <div style={{ width: "min(420px, 90vw)", marginTop: "10px" }}>
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "12px" }}>
-                <button onClick={() => setHistoryOpen((o) => !o)} style={{ ...counterStyle, fontSize: "11px", background: "transparent", border: "none", padding: 0, cursor: "pointer" }}>
-                  {historyOpen ? "▾" : "▸"} PAST ROUNDS ({v.sessions.length})
-                </button>
-                {historyOpen && (
-                  <button onClick={() => { if (window.confirm("Clear all saved rounds? This can't be undone.")) act("clearHistory"); }} style={smallOutline("var(--bad)")}>clear history</button>
-                )}
-              </div>
-              {historyOpen && (
-                <div style={{ display: "flex", flexDirection: "column", gap: "6px", marginTop: "10px" }}>
-                  {v.sessions.map((s) => {
-                    const pct = s.total ? Math.round((s.right / s.total) * 100) : 0;
-                    const d = s.timestamp ? new Date(s.timestamp) : null;
-                    const dateStr = d ? d.toLocaleDateString(undefined, { month: "short", day: "numeric" }) + " " + d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" }) : "";
-                    return (
-                      <div key={s.id} style={{ display: "flex", justifyContent: "space-between", fontFamily: "var(--font-mono)", fontSize: "12px", color: "var(--ink-soft)", background: "var(--paper-raised)", border: "1px solid var(--line-card)", borderRadius: "3px", padding: "7px 12px" }}>
-                        <span>{dateStr}</span><span>{s.right}/{s.total} ({pct}%)</span>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
+    <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "18px" }}>
+      <ScoreLine score={score} extra={allTime && allTime.total > 0 && <span style={{ marginLeft: "14px", color: "var(--ink-faint)" }}>· ALL-TIME {allTime.right} / {allTime.total}</span>} />
+      {r.noRepeat && <div style={{ ...counterStyle, fontSize: "11px", marginTop: "-10px" }}>{r.asked.size} / {r.pool.length} attempted</div>}
+      <div style={{ textAlign: "center" }}>
+        <div style={{ marginBottom: "10px" }}><CatChip cat={card.cat} /></div>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "14px", flexWrap: "wrap" }}>
+          {direction === "de-en" && <SpeakButton text={card.de} />}
+          <div style={{ fontFamily: "var(--font-serif)", fontWeight: 600, fontSize: "30px", letterSpacing: "-0.01em", color: "var(--ink)" }}>{direction === "en-de" ? card.en : card.de}</div>
+          {direction === "en-de" && picked && <SpeakButton text={card.de} />}
+          {picked && <button onClick={next} style={navBtnStyle}>next ›</button>}
+        </div>
+      </div>
+      <OptionList options={options} picked={r.picked} correctKey={picked ? card.key : null} onPick={answer} />
+      {picked && <AiSentence card={card} apiKey={geminiKey} />}
+      {saveBtn}
+      <div style={{ width: "min(420px, 90vw)", marginTop: "10px" }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "12px" }}>
+          <button onClick={openHistory} style={{ ...counterStyle, fontSize: "11px", background: "transparent", border: "none", padding: 0, cursor: "pointer" }}>
+            {historyOpen ? "▾" : "▸"} PAST ROUNDS{history ? ` (${sessions.length})` : ""}
+          </button>
+          {historyOpen && sessions.length > 0 && (
+            <button onClick={() => { if (window.confirm("Clear all saved rounds? This can't be undone.")) clearHistory(); }} style={smallOutline("var(--bad)")}>clear history</button>
           )}
         </div>
-      );
-    }}</DrillGate>
-  );
-}
-
-function ArticleQuiz({ version, onChange, geminiKey }) {
-  const drill = useDrill("articles", null, version, onChange);
-  return (
-    <DrillGate drill={drill}>{(v, act) => {
-      if (v.empty) return <p style={srsNote}>Select at least one of der / die / das in settings ▸ to practice articles.</p>;
-      if (v.done) {
-        return (
-          <div style={{ ...srsCol, padding: "40px 0" }}>
-            <ScoreLine score={v.score} />
-            <div style={{ fontFamily: "var(--font-serif)", fontSize: "22px", color: "var(--ink)", textAlign: "center" }}>All {v.poolSize} / {v.poolSize} nouns done 🎉</div>
-            <button onClick={() => act("restart")} style={navBtnStyle}>⟲ start over</button>
-          </div>
-        );
-      }
-      const picked = v.picked != null;
-      return (
-        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "18px" }}>
-          <ScoreLine score={v.score} />
-          {v.noRepeat && <div style={{ ...counterStyle, fontSize: "11px", marginTop: "-10px" }}>{v.asked} / {v.poolSize} attempted</div>}
-          <div style={{ textAlign: "center" }}>
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "14px", flexWrap: "wrap" }}>
-              <SpeakButton text={v.speak} />
-              <div style={{ fontFamily: "var(--font-serif)", fontWeight: 600, fontSize: "34px", letterSpacing: "-0.01em", color: "var(--ink)" }}>{v.bare}</div>
-              {picked && <button onClick={() => act("next")} style={navBtnStyle}>next ›</button>}
-            </div>
-            <div style={{ fontFamily: "var(--font-serif)", fontStyle: "italic", fontSize: "15px", color: "var(--ink-soft)", marginTop: "8px" }}>{v.en}</div>
-          </div>
-          <div style={{ display: "flex", gap: "12px" }}>
-            {v.articles.map((art) => {
-              const meta = CATEGORY_META[art];
-              let bg = meta.color + "0d", color = meta.color, shadow = "none", border = meta.color + "66";
-              if (picked) {
-                if (art === v.answer) { bg = meta.color; color = "#FCF8EE"; shadow = `0 10px 24px -10px ${meta.color}`; border = meta.color; }
-                else if (art === v.picked) { bg = "var(--bad)"; color = "#FCF8EE"; border = "var(--bad)"; }
-                else { bg = "transparent"; color = "var(--ink-faint)"; }
-              }
+        {historyOpen && history && (
+          <div style={{ display: "flex", flexDirection: "column", gap: "6px", marginTop: "10px" }}>
+            {!sessions.length && <div style={{ ...srsNote, fontSize: "13px" }}>No saved rounds yet.</div>}
+            {sessions.map((s) => {
+              const pct = s.total ? Math.round((s.right / s.total) * 100) : 0;
+              const d = s.timestamp ? new Date(s.timestamp) : null;
+              const dateStr = d ? d.toLocaleDateString(undefined, { month: "short", day: "numeric" }) + " " + d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" }) : "";
               return (
-                <button key={art} onClick={() => act("answer", { article: art })} style={{ fontFamily: "var(--font-serif)", fontWeight: 600, fontSize: "21px", padding: "14px 30px", borderRadius: "12px", border: `1.5px solid ${border}`, background: bg, color, boxShadow: shadow, cursor: picked ? "default" : "pointer" }}>
-                  {art}
-                </button>
+                <div key={s.id} style={{ display: "flex", justifyContent: "space-between", fontFamily: "var(--font-mono)", fontSize: "12px", color: "var(--ink-soft)", background: "var(--paper-raised)", border: "1px solid var(--line-card)", borderRadius: "3px", padding: "7px 12px" }}>
+                  <span>{dateStr}</span><span>{s.right}/{s.total} ({pct}%)</span>
+                </div>
               );
             })}
           </div>
-          {picked && v.card && <AiSentence card={v.card} apiKey={geminiKey} />}
-        </div>
-      );
-    }}</DrillGate>
+        )}
+      </div>
+    </div>
   );
 }
 
-function SeparableVerbs({ version, onChange, geminiKey }) {
-  const drill = useDrill("sep", null, version, onChange);
+const ARTICLES = ["der", "die", "das"];
+function ArticleQuiz({ settings, version, onChange, geminiKey }) {
+  const { levels, cats, noRepeat } = settings;
+  const ask = (r, source) => { r.word = pick1(source || r.nouns); if (r.noRepeat) r.asked.add(r.word.key); };
+  const reset = (r) => { if (!r.nouns.length) return; r.asked.clear(); r.done = false; r.picked = null; ask(r, null); };
+  const { round: r, update, error } = useRound((content) => {
+    const x = { nouns: content.pool(levels, cats).filter(isNoun), noRepeat, asked: new Set(), word: null, picked: null, right: 0, total: 0, done: false };
+    reset(x);
+    return x;
+  }, [version, levels.join(), cats.join(), noRepeat], version);
+  if (error) return <DrillError message={error} />;
+  if (!r) return <Loading />;
+  if (!r.nouns.length) return <p style={srsNote}>Select at least one of der / die / das in settings ▸ to practice articles.</p>;
+  const score = { right: r.right, total: r.total };
+  if (r.done) {
+    return (
+      <div style={{ ...srsCol, padding: "40px 0" }}>
+        <ScoreLine score={score} />
+        <div style={{ fontFamily: "var(--font-serif)", fontSize: "22px", color: "var(--ink)", textAlign: "center" }}>All {r.nouns.length} / {r.nouns.length} nouns done 🎉</div>
+        <button onClick={() => update(reset)} style={navBtnStyle}>⟲ start over</button>
+      </div>
+    );
+  }
+  const word = r.word;
+  const picked = r.picked != null;
+  const answer = (art) => {
+    if (picked) return;
+    update((x) => { x.picked = art; x.right += art === word.cat ? 1 : 0; x.total += 1; });
+    saveAnswer("articles", word.key, art, onChange);
+  };
+  const next = () => update((x) => nextOf(x, x.nouns, (src) => ask(x, src)));
   return (
-    <DrillGate drill={drill}>{(v, act) => {
-      if (v.tooFew) return <p style={srsNote}>Not enough separable verbs in the current selection — turn on the <strong>trenn.</strong> category (and a level or two) in settings ▸.</p>;
-      const picked = v.picked != null;
-      const accent = CATEGORY_META.sep.color;
-      return (
-        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "18px" }}>
-          <ScoreLine score={v.score} extra={<span style={{ marginLeft: "12px", color: "var(--ink-faint)" }}>· {v.verbs} verbs</span>} />
-          <div style={{ ...cardFace, position: "relative", padding: "26px 22px" }}>
-            {picked && <button onClick={() => act("next")} style={{ ...navBtnStyle, position: "absolute", right: "14px", top: "18px", zIndex: 5, padding: "8px 14px", fontSize: "11px", borderRadius: "999px" }}>next ›</button>}
-            <div style={{ marginBottom: "14px" }}><CatChip cat="sep" /></div>
-            <div style={{ fontFamily: "var(--font-serif)", fontStyle: "italic", fontSize: "15px", color: "var(--ink-soft)", marginBottom: "12px" }}>{picked ? `${v.inf} — ${v.en}` : v.en}</div>
-            <GapSentence before={v.before} gap={v.gap} after={v.after} revealed={picked} accent={accent} minWidth="68px" />
-            {picked && (
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "12px", marginTop: "14px" }}>
-                <SpeakButton text={v.sentence} size={30} />
-                <div style={{ ...monoLabel, color: v.picked === v.answer ? "var(--good)" : "var(--bad)" }}>{v.picked === v.answer ? "richtig" : `→ ${v.answer}`}</div>
-              </div>
-            )}
-          </div>
-          <div style={monoLabel}>which prefix goes in the gap?</div>
-          <div style={{ display: "flex", gap: "10px", flexWrap: "wrap", justifyContent: "center", width: "min(440px, 92vw)" }}>
-            {v.options.map((opt) => {
-              let bg = accent + "0d", color = accent, border = accent + "66", shadow = "none";
-              if (picked) {
-                if (opt === v.answer) { bg = accent; color = "#FCF8EE"; border = accent; shadow = `0 10px 24px -10px ${accent}`; }
-                else if (opt === v.picked) { bg = "var(--bad)"; color = "#FCF8EE"; border = "var(--bad)"; }
-                else { bg = "transparent"; color = "var(--ink-faint)"; border = "var(--line-card)"; }
-              }
-              return (
-                <button key={opt} onClick={() => act("answer", { prefix: opt })} style={{ fontFamily: "var(--font-serif)", fontWeight: 600, fontSize: "19px", padding: "12px 24px", borderRadius: "12px", border: `1.5px solid ${border}`, background: bg, color, boxShadow: shadow, cursor: picked ? "default" : "pointer" }}>
-                  {opt}
-                </button>
-              );
-            })}
-          </div>
-          {picked && <AiSentence card={v.card} apiKey={geminiKey} />}
+    <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "18px" }}>
+      <ScoreLine score={score} />
+      {r.noRepeat && <div style={{ ...counterStyle, fontSize: "11px", marginTop: "-10px" }}>{r.asked.size} / {r.nouns.length} attempted</div>}
+      <div style={{ textAlign: "center" }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "14px", flexWrap: "wrap" }}>
+          <SpeakButton text={picked ? word.de : stripArticle(word.de)} />
+          <div style={{ fontFamily: "var(--font-serif)", fontWeight: 600, fontSize: "34px", letterSpacing: "-0.01em", color: "var(--ink)" }}>{stripArticle(word.de)}</div>
+          {picked && <button onClick={next} style={navBtnStyle}>next ›</button>}
         </div>
-      );
-    }}</DrillGate>
+        <div style={{ fontFamily: "var(--font-serif)", fontStyle: "italic", fontSize: "15px", color: "var(--ink-soft)", marginTop: "8px" }}>{word.en}</div>
+      </div>
+      <div style={{ display: "flex", gap: "12px" }}>
+        {ARTICLES.map((art) => {
+          const meta = CATEGORY_META[art];
+          let bg = meta.color + "0d", color = meta.color, shadow = "none", border = meta.color + "66";
+          if (picked) {
+            if (art === word.cat) { bg = meta.color; color = "#FCF8EE"; shadow = `0 10px 24px -10px ${meta.color}`; border = meta.color; }
+            else if (art === r.picked) { bg = "var(--bad)"; color = "#FCF8EE"; border = "var(--bad)"; }
+            else { bg = "transparent"; color = "var(--ink-faint)"; }
+          }
+          return (
+            <button key={art} onClick={() => answer(art)} style={{ fontFamily: "var(--font-serif)", fontWeight: 600, fontSize: "21px", padding: "14px 30px", borderRadius: "12px", border: `1.5px solid ${border}`, background: bg, color, boxShadow: shadow, cursor: picked ? "default" : "pointer" }}>
+              {art}
+            </button>
+          );
+        })}
+      </div>
+      {picked && <AiSentence card={word} apiKey={geminiKey} />}
+    </div>
   );
 }
 
-function ClozeQuiz({ version, onChange, geminiKey }) {
-  const drill = useDrill("cloze", null, version, onChange);
+function SeparableVerbs({ settings, version, onChange, geminiKey }) {
+  const { levels, cats } = settings;
+  const ask = (r, avoidKey) => {
+    const src = r.playable.length > 1 && avoidKey ? r.playable.filter((d) => d.key !== avoidKey) : r.playable;
+    r.card = pick1(src);
+    r.answer = sepParts(r.card).prefix;
+    r.cloze = sepCloze(r.card, r.answer);
+    r.options = shuffled(shuffled(SEP_COMMON.filter((p) => p !== r.answer)).slice(0, 3).concat([r.answer]));
+    r.picked = null;
+  };
+  const { round: r, update, error } = useRound((content) => {
+    const playable = content.pool(levels, cats).filter((d) => {
+      if (d.cat !== "sep") return false;
+      const prefix = sepParts(d).prefix;
+      return !!prefix && sepCloze(d, prefix) != null;
+    });
+    const x = { playable, card: null, answer: null, cloze: null, options: [], picked: null, right: 0, total: 0 };
+    if (playable.length >= 4) ask(x, null);
+    return x;
+  }, [version, levels.join(), cats.join()], version);
+  if (error) return <DrillError message={error} />;
+  if (!r) return <Loading />;
+  if (r.playable.length < 4) return <p style={srsNote}>Not enough separable verbs in the current selection — turn on the <strong>trenn.</strong> category (and a level or two) in settings ▸.</p>;
+  const picked = r.picked != null;
+  const accent = CATEGORY_META.sep.color;
+  const { inf } = sepParts(r.card);
+  const sentence = (r.cloze.before + r.cloze.answer + r.cloze.after).trim();
+  const answer = (opt) => {
+    if (picked) return;
+    update((x) => { x.picked = opt; x.right += opt === x.answer ? 1 : 0; x.total += 1; });
+    saveAnswer("sep", r.card.key, opt, onChange);
+  };
   return (
-    <DrillGate drill={drill}>{(v, act) => {
-      if (v.tooFew) return <p style={srsNote}>Fill-in-the-blank runs on example sentences — select <strong>der / die / das</strong> in settings ▸ (and enough nouns) to play.</p>;
-      if (v.done) {
-        return (
-          <div style={{ ...srsCol, padding: "40px 0" }}>
-            <ScoreLine score={v.score} />
-            <div style={{ fontFamily: "var(--font-serif)", fontSize: "22px", color: "var(--ink)", textAlign: "center" }}>All {v.poolSize} / {v.poolSize} sentences done 🎉</div>
-            <button onClick={() => act("restart")} style={navBtnStyle}>⟲ start over</button>
+    <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "18px" }}>
+      <ScoreLine score={{ right: r.right, total: r.total }} extra={<span style={{ marginLeft: "12px", color: "var(--ink-faint)" }}>· {r.playable.length} verbs</span>} />
+      <div style={{ ...cardFace, position: "relative", padding: "26px 22px" }}>
+        {picked && <button onClick={() => update((x) => ask(x, x.card.key))} style={{ ...navBtnStyle, position: "absolute", right: "14px", top: "18px", zIndex: 5, padding: "8px 14px", fontSize: "11px", borderRadius: "999px" }}>next ›</button>}
+        <div style={{ marginBottom: "14px" }}><CatChip cat="sep" /></div>
+        <div style={{ fontFamily: "var(--font-serif)", fontStyle: "italic", fontSize: "15px", color: "var(--ink-soft)", marginBottom: "12px" }}>{picked ? `${inf} — ${r.card.en}` : r.card.en}</div>
+        <GapSentence before={r.cloze.before} gap={r.cloze.answer} after={r.cloze.after} revealed={picked} accent={accent} minWidth="68px" />
+        {picked && (
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "12px", marginTop: "14px" }}>
+            <SpeakButton text={sentence} size={30} />
+            <div style={{ ...monoLabel, color: r.picked === r.answer ? "var(--good)" : "var(--bad)" }}>{r.picked === r.answer ? "richtig" : `→ ${r.answer}`}</div>
           </div>
-        );
-      }
-      const picked = v.picked != null;
-      return (
-        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "18px" }}>
-          <ScoreLine score={v.score} />
-          {v.noRepeat && <div style={{ ...counterStyle, fontSize: "11px", marginTop: "-10px" }}>{v.asked} / {v.poolSize} attempted</div>}
-          <div style={{ ...cardFace, position: "relative", padding: "26px 22px" }}>
-            {picked && <button onClick={() => act("next")} style={{ ...navBtnStyle, position: "absolute", right: "14px", top: "18px", zIndex: 5, padding: "8px 14px", fontSize: "11px", borderRadius: "999px" }}>next ›</button>}
-            <div style={{ marginBottom: "16px" }}><CatChip cat={v.cat} /></div>
-            <GapSentence before={v.before} gap={v.gap} after={v.after} revealed={picked} accent={catColor(v.cat)} />
-            {picked && v.card && (
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "12px", marginTop: "14px" }}>
-                <SpeakButton text={v.sentence} size={30} />
-                <div style={{ fontFamily: "var(--font-serif)", fontStyle: "italic", fontSize: "14px", color: "var(--ink-soft)" }}>{v.card.de} · {v.card.en}</div>
-              </div>
-            )}
+        )}
+      </div>
+      <div style={monoLabel}>which prefix goes in the gap?</div>
+      <div style={{ display: "flex", gap: "10px", flexWrap: "wrap", justifyContent: "center", width: "min(440px, 92vw)" }}>
+        {r.options.map((opt) => {
+          let bg = accent + "0d", color = accent, border = accent + "66", shadow = "none";
+          if (picked) {
+            if (opt === r.answer) { bg = accent; color = "#FCF8EE"; border = accent; shadow = `0 10px 24px -10px ${accent}`; }
+            else if (opt === r.picked) { bg = "var(--bad)"; color = "#FCF8EE"; border = "var(--bad)"; }
+            else { bg = "transparent"; color = "var(--ink-faint)"; border = "var(--line-card)"; }
+          }
+          return (
+            <button key={opt} onClick={() => answer(opt)} style={{ fontFamily: "var(--font-serif)", fontWeight: 600, fontSize: "19px", padding: "12px 24px", borderRadius: "12px", border: `1.5px solid ${border}`, background: bg, color, boxShadow: shadow, cursor: picked ? "default" : "pointer" }}>
+              {opt}
+            </button>
+          );
+        })}
+      </div>
+      {picked && <AiSentence card={r.card} apiKey={geminiKey} />}
+    </div>
+  );
+}
+
+function ClozeQuiz({ settings, version, onChange, geminiKey }) {
+  const { levels, cats, noRepeat } = settings;
+  const ask = (r, source) => {
+    const q = choiceQuestion(r.clozePool, source);
+    r.correct = q.correct; r.options = q.options; r.hit = clozeMatch(q.correct);
+    if (r.noRepeat) r.asked.add(r.correct.key);
+  };
+  const reset = (r) => { if (r.clozePool.length < 4) return; r.asked.clear(); r.done = false; r.picked = null; ask(r, null); };
+  const { round: r, update, error } = useRound((content) => {
+    const clozePool = content.pool(levels, cats).filter((d) => isNoun(d) && d.example && clozeMatch(d) != null);
+    const x = { clozePool, noRepeat, asked: new Set(), correct: null, hit: null, options: [], picked: null, right: 0, total: 0, done: false };
+    reset(x);
+    return x;
+  }, [version, levels.join(), cats.join(), noRepeat], version);
+  if (error) return <DrillError message={error} />;
+  if (!r) return <Loading />;
+  if (r.clozePool.length < 4) return <p style={srsNote}>Fill-in-the-blank runs on example sentences — select <strong>der / die / das</strong> in settings ▸ (and enough nouns) to play.</p>;
+  const score = { right: r.right, total: r.total };
+  if (r.done) {
+    return (
+      <div style={{ ...srsCol, padding: "40px 0" }}>
+        <ScoreLine score={score} />
+        <div style={{ fontFamily: "var(--font-serif)", fontSize: "22px", color: "var(--ink)", textAlign: "center" }}>All {r.clozePool.length} / {r.clozePool.length} sentences done 🎉</div>
+        <button onClick={() => update(reset)} style={navBtnStyle}>⟲ start over</button>
+      </div>
+    );
+  }
+  const picked = r.picked != null;
+  const card = r.correct;
+  const options = r.options.map((o) => ({ key: o.key, label: nounForms(o)[0] || o.de }));
+  const sentence = (r.hit.before + r.hit.answer + r.hit.after).trim();
+  const answer = (key) => {
+    if (picked) return;
+    update((x) => { x.picked = key; x.right += key === card.key ? 1 : 0; x.total += 1; });
+    saveAnswer("cloze", card.key, key, onChange);
+  };
+  const next = () => update((x) => nextOf(x, x.clozePool, (src) => ask(x, src)));
+  return (
+    <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "18px" }}>
+      <ScoreLine score={score} />
+      {r.noRepeat && <div style={{ ...counterStyle, fontSize: "11px", marginTop: "-10px" }}>{r.asked.size} / {r.clozePool.length} attempted</div>}
+      <div style={{ ...cardFace, position: "relative", padding: "26px 22px" }}>
+        {picked && <button onClick={next} style={{ ...navBtnStyle, position: "absolute", right: "14px", top: "18px", zIndex: 5, padding: "8px 14px", fontSize: "11px", borderRadius: "999px" }}>next ›</button>}
+        <div style={{ marginBottom: "16px" }}><CatChip cat={card.cat} /></div>
+        <GapSentence before={r.hit.before} gap={r.hit.answer} after={r.hit.after} revealed={picked} accent={catColor(card.cat)} />
+        {picked && (
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "12px", marginTop: "14px" }}>
+            <SpeakButton text={sentence} size={30} />
+            <div style={{ fontFamily: "var(--font-serif)", fontStyle: "italic", fontSize: "14px", color: "var(--ink-soft)" }}>{card.de} · {card.en}</div>
           </div>
-          <OptionList options={v.options} picked={v.picked} correctKey={v.correctKey} onPick={(key) => act("answer", { key })} textKey="label" align="center" width="min(440px, 92vw)" />
-          {picked && v.card && <AiSentence card={v.card} apiKey={geminiKey} />}
-        </div>
-      );
-    }}</DrillGate>
+        )}
+      </div>
+      <OptionList options={options} picked={r.picked} correctKey={picked ? card.key : null} onPick={answer} textKey="label" align="center" width="min(440px, 92vw)" />
+      {picked && <AiSentence card={card} apiKey={geminiKey} />}
+    </div>
   );
 }
 
@@ -1438,14 +1919,19 @@ function ChunkRow({ chunks, big }) {
   );
 }
 
+const PATTERNS_SEEN = new Set(); // "day|key" already sent from this page
+
 function PatternStudy({ onChange }) {
-  const [patterns, setPatterns] = useState(null);
-  const [error, setError] = useState(null);
+  const [content, error] = useContent();
+  const patterns = content ? content.patterns : null;
   const [pi, setPi] = useState(0);
-  useEffect(() => { api.get("/api/patterns").then(setPatterns).catch((e) => setError(e.message)); }, []);
-  // Looking at a pattern counts toward today's goal (the backend counts each once a day).
+  // Looking at a pattern counts toward today's goal — once per pattern and day, so it is sent once.
   useEffect(() => {
-    if (patterns && patterns[pi]) api.post("/api/patterns/" + encodeURIComponent(patterns[pi].key) + "/seen", undefined, undefined, { quiet: true }).then(onChange).catch(api.report);
+    if (!patterns || !patterns[pi]) return;
+    const mark = new Date().toDateString() + "|" + patterns[pi].key;
+    if (PATTERNS_SEEN.has(mark)) return;
+    PATTERNS_SEEN.add(mark);
+    api.post("/api/patterns/" + encodeURIComponent(patterns[pi].key) + "/seen", undefined, undefined, { quiet: true }).then(onChange).catch(api.report);
   }, [patterns, pi]);
   if (error) return <DrillError message={error} />;
   if (!patterns) return <Loading />;
@@ -1539,12 +2025,11 @@ function testStatusText(s, unit = "words") {
   }
 }
 
-function StoriesList({ onSettings }) {
-  const [data, setData] = useState(null);
-  const [error, setError] = useState(null);
-  useEffect(() => { api.get("/api/stories").then(setData).catch((e) => setError(e.message)); }, []);
+function StoriesList({ progress, onSettings }) {
+  const [content, error] = useContent();
   if (error) return <DrillError message={error} />;
-  if (!data) return <Loading />;
+  if (!content) return <Loading />;
+  const data = content.storyList(progress);
   if (!data.groups.length) return <p style={srsNote}>No stories found in german_vocab.json.</p>;
   return (
     <div style={{ ...srsCol, width: "100%", maxWidth: "560px", margin: "0 auto", alignItems: "stretch", gap: "22px" }}>
@@ -1627,15 +2112,14 @@ const PaperClip = () => (
 // The story as a notebook page on a desk, like a mission briefing: the page
 // slides in, the header types itself, the chapter is stamped, the paragraphs
 // appear one by one. Words stay tappable for their meaning.
-function StoryReader({ id, onSettings }) {
-  const [story, setStory] = useState(null);
-  const [error, setError] = useState(null);
+function StoryReader({ id, read, showEn, onRead, onSettings }) {
+  const [content, error] = useContent();
+  const story = content ? content.reader(id) : null;
   const [tip, setTip] = useState(null);
   const [glossOpen, setGlossOpen] = useState(false);
   const topRef = useRef(null);
   useEffect(() => {
-    setStory(null); setTip(null); setGlossOpen(false);
-    api.get("/api/stories/" + encodeURIComponent(id)).then(setStory).catch((e) => setError(e.message));
+    setTip(null); setGlossOpen(false);
     if (topRef.current && topRef.current.getBoundingClientRect().top < 0) topRef.current.scrollIntoView({ block: "start" });
   }, [id]);
   // Close the tooltip on tap outside or Escape.
@@ -1650,6 +2134,7 @@ function StoryReader({ id, onSettings }) {
 
   const frame = { ...srsCol, width: "100%", maxWidth: "640px", margin: "0 auto", gap: "18px", alignItems: "stretch", scrollMarginTop: "12px" };
   if (error) return <DrillError message={error} />;
+  if (content && !story) return <DrillError message={"no such story: " + id} />;
   if (!story) {
     return (
       <div ref={topRef} style={frame}>
@@ -1661,8 +2146,8 @@ function StoryReader({ id, onSettings }) {
     );
   }
   const show = (e, key, seg, pinned) => setTip({ key, el: e.currentTarget, entry: seg.entry, word: seg.w, pinned });
-  const setShowEn = (v) => { setStory((s) => Object.assign({}, s, { showEn: v })); onSettings("setStoryShowEn", v); };
-  const toggleRead = () => api.post("/api/stories/" + encodeURIComponent(story.id) + "/read").then((r) => setStory((s) => Object.assign({}, s, { read: r.read }))).catch(api.report);
+  const setShowEn = (v) => onSettings("setStoryShowEn", v);
+  const toggleRead = () => api.post("/api/stories/" + encodeURIComponent(story.id) + "/read").then((r) => onRead(story.id, r.read)).catch(api.report);
   const hover = window.matchMedia && window.matchMedia("(hover: hover)").matches;
   const chapter = String(story.chapter).padStart(2, "0");
 
@@ -1670,7 +2155,7 @@ function StoryReader({ id, onSettings }) {
     <div ref={topRef} style={frame}>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "10px", flexWrap: "wrap" }}>
         <button onClick={() => onSettings("openStory", null)} style={miniBtn}>‹ all stories</button>
-        <Switch on={!!story.showEn} onChange={setShowEn} label="English notes" />
+        <Switch on={!!showEn} onChange={setShowEn} label="English notes" />
       </div>
       <div className="notebook" key={story.id}>
         <div className="holes" />
@@ -1701,7 +2186,7 @@ function StoryReader({ id, onSettings }) {
                   );
                 })}
               </p>
-              {story.showEn && p.en && <p className="pencil">{p.en}</p>}
+              {showEn && p.en && <p className="pencil">{p.en}</p>}
             </div>
             <SpeakButton text={p.speech} size={30} />
           </div>
@@ -1726,8 +2211,8 @@ function StoryReader({ id, onSettings }) {
         )}
       </div>
       <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "12px", paddingTop: "4px" }}>
-        <button onClick={toggleRead} style={{ ...navBtnStyle, background: story.read ? "var(--good)" : "transparent", border: "1px solid " + (story.read ? "var(--good)" : "var(--ink-muted)"), color: story.read ? "#F6F1E5" : "var(--ink-muted)", boxShadow: "none" }}>
-          {story.read ? "✓ read" : "mark as read"}
+        <button onClick={toggleRead} style={{ ...navBtnStyle, background: read ? "var(--good)" : "transparent", border: "1px solid " + (read ? "var(--good)" : "var(--ink-muted)"), color: read ? "#F6F1E5" : "var(--ink-muted)", boxShadow: "none" }}>
+          {read ? "✓ read" : "mark as read"}
         </button>
         <div style={{ display: "flex", gap: "10px", flexWrap: "wrap", justifyContent: "center" }}>
           {story.endsPhase && <button onClick={() => onSettings("openPhaseTest", story.endsPhase)} style={{ ...navBtnStyle, background: "var(--good)", borderColor: "var(--good)" }}>🎯 Phase test</button>}
@@ -2009,10 +2494,26 @@ function PhaseRound({ idx, set, refresh, retake, onExit, onNext, onChange }) {
   );
 }
 
+// The stories come from german_vocab.json; the learner's read marks and phase
+// test statuses are loaded on opening Stories and again after a Phasentest.
+// Loaded once per login; fetched again only after a phase test (which changes it).
+const STORY_PROGRESS = { value: null, stale: true };
 function StoriesPage({ settings, onSettings, onChange }) {
+  const [progress, setProgressState] = useState(STORY_PROGRESS.value);
+  const setProgress = (fn) => setProgressState((p) => (STORY_PROGRESS.value = typeof fn === "function" ? fn(p) : fn));
+  useEffect(() => {
+    if (settings.storyTest) { STORY_PROGRESS.stale = true; return; }
+    if (!STORY_PROGRESS.stale) return;
+    STORY_PROGRESS.stale = false;
+    api.get("/api/stories/progress", { quiet: true }).then(setProgress).catch((e) => { STORY_PROGRESS.stale = true; api.report(e); });
+  }, [settings.storyTest]);
+  const onRead = (id, read) => setProgress((p) => p && Object.assign({}, p, { read: read ? p.read.filter((x) => x !== id).concat([id]) : p.read.filter((x) => x !== id) }));
   if (settings.storyTest) return <PhaseTestPage key={settings.storyTest} idx={settings.storyTest} onSettings={onSettings} onChange={onChange} />;
-  if (settings.storyOpen) return <StoryReader id={settings.storyOpen} onSettings={onSettings} />;
-  return <StoriesList onSettings={onSettings} />;
+  if (settings.storyOpen) {
+    return <StoryReader id={settings.storyOpen} read={!!(progress && progress.read.includes(settings.storyOpen))} showEn={!!settings.storyShowEn}
+      onRead={onRead} onSettings={onSettings} />;
+  }
+  return <StoriesList progress={progress} onSettings={onSettings} />;
 }
 
 // ---------- SETTINGS CONTROLS (show the saved settings; every change is a backend action) ----------
@@ -2762,12 +3263,22 @@ function LoginScreen({ onLoggedIn }) {
 
 // settings changes after which practice rounds start over with the new choices
 const ROUND_SETTINGS = ["toggleLevel", "toggleCat", "toggleDirection", "toggleNoRepeat", "setFocus"];
+// Where the learner is in the app: kept in the page only, never sent to the backend.
+// Every visit starts on Practice.
+const NAV_START = { storyMode: false, storyOpen: null, storyTest: null };
+const NAV_SETTINGS = {
+  setStoryMode: (v) => ({ storyMode: !!v }),
+  openStory: (v) => ({ storyOpen: v == null ? null : String(v), storyTest: null }),
+  openPhaseTest: (v) => ({ storyTest: v == null ? null : String(v) }),
+};
 
 function App() {
   const [status, setStatus] = useState("loading"); // "loading" | "ready" | "login" | { error }
   const [user, setUser] = useState(session.user());
   const [attempt, setAttempt] = useState(0);
   const [summary, setSummary] = useState(null);
+  const [nav, setNav] = useState(NAV_START); // where the learner is — page only
+  const visited = useRef({}); // pages opened since login (kept mounted)
   const [saveError, setSaveError] = useState(null);
   const [mode, setMode] = useState("study");
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -2786,6 +3297,11 @@ function App() {
   const refreshSummary = useCallback(() => {
     return api.get("/api/summary?ai=" + (geminiKey ? "true" : "false"), { quiet: true }).then(setSummary).catch(api.report);
   }, [geminiKey]);
+  // After an answer: the response carries the header numbers it changed ({summary: {header, mistakeCount}}).
+  const applyChange = useCallback((r) => {
+    if (r && r.summary) setSummary((s) => (s ? Object.assign({}, s, r.summary) : s));
+    else refreshSummary();
+  }, [refreshSummary]);
 
   useEffect(() => {
     let cancelled = false;
@@ -2793,6 +3309,7 @@ function App() {
     if (!API_CONFIGURED) { setStatus({ error: "No backend configured — set PROD_API_BASE in index.html to the Spring Boot URL." }); return; }
     if (!user) {
       // someone else may log in next: drop everything of the last user
+      STORY_PROGRESS.value = null; STORY_PROGRESS.stale = true; setNav(NAV_START); visited.current = {};
       setSummary(null); setSaveError(null); setGeminiKey(""); setGhToken(""); setMode("study"); setSettingsOpen(false); setFormulas(false);
       setStatus("login");
       return;
@@ -2805,14 +3322,19 @@ function App() {
   useEffect(() => { if (status === "ready") refreshSummary(); }, [geminiKey]);
 
   const onSettings = useCallback((action, value) => {
-    return api.post("/api/settings/" + action, { value })
-      .then((settings) => {
-        setSummary((s) => (s ? Object.assign({}, s, { settings }) : s));
+    // Moving around (Practice/Stories, a story, a phase test) stays in the page — no call.
+    const nav = NAV_SETTINGS[action];
+    if (nav) {
+      setNav((n) => Object.assign({}, n, nav(value)));
+      return Promise.resolve();
+    }
+    return api.post("/api/settings/" + action + "?ai=" + (geminiKey ? "true" : "false"), { value })
+      .then((next) => { // the whole new summary — no second call
+        setSummary(next);
         if (ROUND_SETTINGS.includes(action)) setVersion((v) => v + 1);
-        return refreshSummary();
       })
       .catch(api.report);
-  }, [refreshSummary]);
+  }, [geminiKey]);
 
   const theme = summary && summary.settings.theme ? summary.settings.theme : SYSTEM_THEME;
   applyCategoryPalette(theme);
@@ -2842,7 +3364,7 @@ function App() {
     return <div style={shellStyle}><div style={{ ...counterStyle, fontSize: "13px" }}>loading …</div></div>;
   }
 
-  const s = summary.settings;
+  const s = Object.assign({}, summary.settings, nav);
   const notice = saveError ? (
     <div role="alert" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "10px", padding: "8px 12px", borderRadius: "10px", border: "1px solid var(--bad)", fontFamily: "var(--font-mono)", fontSize: "10px", letterSpacing: "0.04em", color: "var(--bad)" }}>
       <span>⚠ {saveError}</span>
@@ -2857,60 +3379,51 @@ function App() {
     </React.Fragment>
   );
 
-  if (formulas) {
-    return (
-      <div style={{ minHeight: "100%", padding: "20px 20px 56px", fontFamily: "var(--font-serif)" }}>
-        <div style={{ maxWidth: "760px", margin: "0 auto", display: "flex", flexDirection: "column", gap: "22px" }}>
-          {topBar}
-          <div style={{ animation: "cardIn .35s ease both" }}><FormulasPage /></div>
-        </div>
-      </div>
-    );
-  }
-
-  if (s.storyMode) {
-    return (
-      <div style={{ minHeight: "100%", padding: "20px 20px 56px", fontFamily: "var(--font-serif)" }}>
-        <div style={{ maxWidth: "620px", margin: "0 auto", display: "flex", flexDirection: "column", gap: "22px" }}>
-          {topBar}
-          <div style={{ animation: "cardIn .35s ease both" }}>
-            <StoriesPage settings={s} onSettings={onSettings} onChange={refreshSummary} />
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  const drillProps = { version, onChange: refreshSummary, geminiKey };
+  // Practice, Stories and Rules stay mounted once opened and are only hidden,
+  // so switching between them starts nothing again on the backend.
+  const page = formulas ? "rules" : s.storyMode ? "stories" : "practice";
+  if (!visited.current[page]) visited.current[page] = true;
+  const show = (p) => ({ display: page === p ? "block" : "none" });
+  const drillProps = { version, onChange: applyChange, geminiKey, settings: s };
   return (
     <div style={{ minHeight: "100%", padding: "20px 20px 56px", fontFamily: "var(--font-serif)" }}>
-      <div style={{ maxWidth: "560px", margin: "0 auto", display: "flex", flexDirection: "column", gap: "18px" }}>
+      <div style={{ maxWidth: page === "rules" ? "760px" : page === "stories" ? "620px" : "560px", margin: "0 auto", display: "flex", flexDirection: "column", gap: page === "practice" ? "18px" : "22px" }}>
         {topBar}
-        <div style={{ textAlign: "center" }}>
-          <div style={{ display: "inline-block", ...monoLabel, fontSize: "9px", letterSpacing: "0.16em", border: "1px solid var(--line)", borderRadius: "999px", padding: "3px 11px", marginBottom: "14px" }}>⇣ everything served by the Java backend</div>
-          <div style={{ fontFamily: "var(--font-mono)", fontSize: "10px", fontWeight: 500, letterSpacing: "0.28em", color: "var(--accent)", marginBottom: "8px" }}>{summary.levelTitle}</div>
-          <div style={{ fontSize: "13px", fontStyle: "italic", color: "var(--ink-soft)", marginTop: "8px" }}>{summary.cardCount} cards — nouns, verbs, separable verbs, adjectives, connectors &amp; phrases</div>
-          <div style={{ width: "48px", height: "2px", background: "var(--accent)", opacity: 0.5, borderRadius: "2px", margin: "18px auto 0" }} />
-        </div>
-        <div style={{ textAlign: "center" }}>
-          <button onClick={() => setSettingsOpen((o) => !o)} style={{ ...monoLabel, color: "var(--ink-soft)", letterSpacing: "0.1em", background: settingsOpen ? "var(--tint)" : "transparent", border: "1px solid var(--line)", borderRadius: "999px", padding: "8px 16px", cursor: "pointer", maxWidth: "100%" }}>
-            {settingsOpen ? "▾" : "▸"} {summary.settingsLabel}
-          </button>
-        </div>
-        {settingsOpen && <SettingsPanel summary={summary} onSettings={onSettings} geminiKey={geminiKey} setGeminiKey={setGeminiKey} ghToken={ghToken} setGhToken={setGhToken} />}
-        <StreakHeader header={summary.header} showCounts={mode === "study" || mode === "write"} />
-        <TabBar mode={mode} setMode={setMode} mistakeCount={summary.mistakeCount} />
-        <div style={{ marginTop: "6px", animation: "cardIn .35s ease both" }} key={mode}>
-          {mode === "study" && <StudyMode {...drillProps} />}
-          {mode === "write" && <WriteMode {...drillProps} />}
-          {mode === "build" && <PatternStudy onChange={refreshSummary} />}
-          {mode === "flash" && <Flashcards {...drillProps} />}
-          {mode === "quiz" && <Quiz {...drillProps} />}
-          {mode === "articles" && <ArticleQuiz {...drillProps} />}
-          {mode === "sep" && <SeparableVerbs {...drillProps} />}
-          {mode === "cloze" && <ClozeQuiz {...drillProps} />}
-          {mode === "mistakes" && <MistakesReview {...drillProps} />}
-          {mode === "add" && <AddWord summary={summary} ghToken={ghToken} onToken={setGhToken} onAdded={() => { setVersion((v) => v + 1); refreshSummary(); }} />}
+        {visited.current.rules && <div style={show("rules")}><div style={{ animation: "cardIn .35s ease both" }}><FormulasPage /></div></div>}
+        {visited.current.stories && (
+          <div style={show("stories")}>
+            <div style={{ animation: "cardIn .35s ease both" }}>
+              <StoriesPage settings={s} onSettings={onSettings} onChange={applyChange} />
+            </div>
+          </div>
+        )}
+        <div style={{ display: page === "practice" ? "flex" : "none", flexDirection: "column", gap: "18px" }}>
+          <div style={{ textAlign: "center" }}>
+            <div style={{ display: "inline-block", ...monoLabel, fontSize: "9px", letterSpacing: "0.16em", border: "1px solid var(--line)", borderRadius: "999px", padding: "3px 11px", marginBottom: "14px" }}>⇣ everything served by the Java backend</div>
+            <div style={{ fontFamily: "var(--font-mono)", fontSize: "10px", fontWeight: 500, letterSpacing: "0.28em", color: "var(--accent)", marginBottom: "8px" }}>{summary.levelTitle}</div>
+            <div style={{ fontSize: "13px", fontStyle: "italic", color: "var(--ink-soft)", marginTop: "8px" }}>{summary.cardCount} cards — nouns, verbs, separable verbs, adjectives, connectors &amp; phrases</div>
+            <div style={{ width: "48px", height: "2px", background: "var(--accent)", opacity: 0.5, borderRadius: "2px", margin: "18px auto 0" }} />
+          </div>
+          <div style={{ textAlign: "center" }}>
+            <button onClick={() => setSettingsOpen((o) => !o)} style={{ ...monoLabel, color: "var(--ink-soft)", letterSpacing: "0.1em", background: settingsOpen ? "var(--tint)" : "transparent", border: "1px solid var(--line)", borderRadius: "999px", padding: "8px 16px", cursor: "pointer", maxWidth: "100%" }}>
+              {settingsOpen ? "▾" : "▸"} {summary.settingsLabel}
+            </button>
+          </div>
+          {settingsOpen && <SettingsPanel summary={summary} onSettings={onSettings} geminiKey={geminiKey} setGeminiKey={setGeminiKey} ghToken={ghToken} setGhToken={setGhToken} />}
+          <StreakHeader header={summary.header} showCounts={mode === "study" || mode === "write"} />
+          <TabBar mode={mode} setMode={setMode} mistakeCount={summary.mistakeCount} />
+          <div style={{ marginTop: "6px", animation: "cardIn .35s ease both" }} key={mode}>
+            {mode === "study" && <StudyMode {...drillProps} />}
+            {mode === "write" && <WriteMode {...drillProps} />}
+            {mode === "build" && <PatternStudy onChange={applyChange} />}
+            {mode === "flash" && <Flashcards {...drillProps} />}
+            {mode === "quiz" && <Quiz {...drillProps} />}
+            {mode === "articles" && <ArticleQuiz {...drillProps} />}
+            {mode === "sep" && <SeparableVerbs {...drillProps} />}
+            {mode === "cloze" && <ClozeQuiz {...drillProps} />}
+            {mode === "mistakes" && <MistakesReview {...drillProps} />}
+            {mode === "add" && <AddWord summary={summary} ghToken={ghToken} onToken={setGhToken} onAdded={() => { loadContent(true).finally(() => setVersion((v) => v + 1)); refreshSummary(); }} />}
+          </div>
         </div>
       </div>
     </div>

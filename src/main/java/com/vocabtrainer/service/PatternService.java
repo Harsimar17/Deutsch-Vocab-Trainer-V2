@@ -19,7 +19,7 @@ import tools.jackson.databind.json.JsonMapper;
 
 /**
  * Muster: German sentence patterns as colour-coded slots, each with real
- * example sentences (patterns.json). Looking at a pattern counts toward
+ * example sentences (static/data/patterns.json, which the page reads directly). Looking at a pattern counts toward
  * today's goal once per pattern, user and day.
  */
 @Service
@@ -27,12 +27,14 @@ public class PatternService {
 
     private final List<Map<String, Object>> patterns;
     private final ProgressService progress;
+    private final SummaryService summary;
     private final Set<String> seenToday = ConcurrentHashMap.newKeySet(); // "yyyy-MM-dd|uid|key"
 
     @SuppressWarnings("unchecked")
-    public PatternService(JsonMapper json, ProgressService progress) throws IOException {
+    public PatternService(JsonMapper json, ProgressService progress, SummaryService summary) throws IOException {
         this.progress = progress;
-        try (InputStream in = new ClassPathResource("patterns.json").getInputStream()) {
+        this.summary = summary;
+        try (InputStream in = new ClassPathResource("static/data/patterns.json").getInputStream()) {
             List<Map<String, Object>> raw = json.readValue(in, List.class);
             List<Map<String, Object>> out = new ArrayList<>();
             for (Map<String, Object> p : raw) {
@@ -62,10 +64,6 @@ public class PatternService {
         return sb.toString().replaceAll("\\s+([,.!?])", "$1");
     }
 
-    public List<Map<String, Object>> all() {
-        return patterns;
-    }
-
     /** Records that the learner looked at a pattern; {counted}: whether it counted toward today. */
     public Map<String, Object> seen(Ctx ctx, String key) {
         if (patterns.stream().noneMatch(p -> key.equals(p.get("key")))) {
@@ -79,6 +77,6 @@ public class PatternService {
         if (counted) {
             progress.tickDaily(ctx);
         }
-        return Map.of("counted", counted);
+        return Map.of("counted", counted, "summary", summary.afterAnswer(ctx));
     }
 }

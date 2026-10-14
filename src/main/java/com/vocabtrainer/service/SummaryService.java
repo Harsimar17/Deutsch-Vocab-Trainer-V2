@@ -25,9 +25,41 @@ public class SummaryService {
         this.catalog = catalog;
     }
 
+    /** One settings change, answered with the whole new summary (settings, label, header …). */
+    public Map<String, Object> change(Ctx ctx, String action, Object value, boolean ai) {
+        settings.change(ctx, action, value);
+        return summary(ctx, ai);
+    }
+
+    /** What an answer can change in the frame: the header numbers and the Review count. */
+    public Map<String, Object> afterAnswer(Ctx ctx) {
+        Map<String, Object> v = new LinkedHashMap<>();
+        v.put("header", header(ctx, settings.get(ctx)));
+        v.put("mistakeCount", mistakeCount(ctx));
+        return v;
+    }
+
     /** Everything around the practice area. {@code ai}: whether the page holds a Gemini key (for the label). */
     public Map<String, Object> summary(Ctx ctx, boolean ai) {
         Settings s = settings.get(ctx);
+        Map<String, Object> v = new LinkedHashMap<>();
+        v.put("settings", s.view());
+        v.put("settingsLabel", SettingsService.label(s, ai));
+        v.put("levelTitle", s.levels().size() == 1
+                ? s.levels().get(0) + " · " + LEVEL_META.get(s.levels().get(0)) : String.join("  +  ", s.levels()));
+        v.put("cardCount", catalog.levelCards(s.levels()).size());
+        v.put("header", header(ctx, s));
+        v.put("mistakeCount", mistakeCount(ctx));
+        v.put("levels", CardCatalog.LEVELS);
+        v.put("cats", CardCatalog.CATS);
+        return v;
+    }
+
+    private long mistakeCount(Ctx ctx) {
+        return progress.mistakes(ctx).keySet().stream().filter(k -> catalog.card(k) != null).count();
+    }
+
+    private Map<String, Object> header(Ctx ctx, Settings s) {
         Map<String, Map<String, Object>> srs = progress.srs(ctx);
         Map<String, Object> daily = progress.daily(ctx);
         long now = System.currentTimeMillis();
@@ -45,17 +77,6 @@ public class SummaryService {
         header.put("due", due);
         header.put("new", fresh);
         header.put("focus", s.focus());
-
-        Map<String, Object> v = new LinkedHashMap<>();
-        v.put("settings", s.view());
-        v.put("settingsLabel", SettingsService.label(s, ai));
-        v.put("levelTitle", s.levels().size() == 1
-                ? s.levels().get(0) + " · " + LEVEL_META.get(s.levels().get(0)) : String.join("  +  ", s.levels()));
-        v.put("cardCount", catalog.levelCards(s.levels()).size());
-        v.put("header", header);
-        v.put("mistakeCount", progress.mistakes(ctx).keySet().stream().filter(k -> catalog.card(k) != null).count());
-        v.put("levels", CardCatalog.LEVELS);
-        v.put("cats", CardCatalog.CATS);
-        return v;
+        return header;
     }
 }

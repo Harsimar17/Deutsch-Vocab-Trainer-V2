@@ -25,14 +25,10 @@ public class StoriesController {
         this.tests = tests;
     }
 
-    @GetMapping("/stories")
-    public Map<String, Object> list(Ctx ctx) {
-        return stories.list(ctx);
-    }
-
-    @GetMapping("/stories/{id}")
-    public Map<String, Object> story(Ctx ctx, @PathVariable String id) {
-        return stories.reader(ctx, id);
+    /** The learner's read marks and phase test statuses (the stories themselves are static JSON). */
+    @GetMapping("/stories/progress")
+    public Map<String, Object> progress(Ctx ctx) {
+        return stories.progress(ctx);
     }
 
     @PostMapping("/stories/{id}/read")
