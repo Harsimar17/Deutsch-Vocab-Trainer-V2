@@ -89,6 +89,27 @@ class DrillsTest {
     }
 
     @Test
+    void sentenceHintsArePartOfTheEnglish() {
+        SentencePracticeService service = new SentencePracticeService(TestVocab.stories(), JsonMapper.builder().build());
+        int hints = 0;
+        for (int phase = 1; ; phase++) {
+            List<SentencePracticeService.Sentence> sentences;
+            try {
+                sentences = service.forPhase(String.valueOf(phase));
+            } catch (org.springframework.web.server.ResponseStatusException noSuchPhase) {
+                break;
+            }
+            for (SentencePracticeService.Sentence s : sentences) {
+                if (s.hint() != null) {
+                    hints++;
+                    assertTrue(s.en().contains(s.hint()), s.hint() + " in " + s.en());
+                }
+            }
+        }
+        assertTrue(hints > 500, "the sentences whose English doesn't use the dictionary meaning have a hint");
+    }
+
+    @Test
     void sentenceTilesDropPunctuation() {
         assertEquals(List.of("Ohne", "Arbeit", "bekommt", "sie", "Sozialleistungen", "vom", "Staat"),
                 SentencePracticeService.words("Ohne Arbeit bekommt sie Sozialleistungen vom Staat."));

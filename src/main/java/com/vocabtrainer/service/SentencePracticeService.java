@@ -19,13 +19,15 @@ import tools.jackson.databind.json.JsonMapper;
  * Sentences for the Phasentest's third tab: easy written sentences (German,
  * English and how the word is used) for every word and verb of a phase.
  * They live in data/sentences_b1.json, keyed by the word's German
- * ("die Regierung", "abhängen von"): {use, sentences: [{de, en}, …]}.
+ * ("die Regierung", "abhängen von"): {use, sentences: [{de, en, hint?}, …]}.
+ * "hint" is the part of the English that stands for the word, where the
+ * dictionary meaning isn't in the sentence as such ("applying" for "der Antrag").
  */
 @Service
 public class SentencePracticeService {
 
-    /** One sentence to build: the word it practises, the German, the English, how the word is used, the words in order. */
-    public record Sentence(Card card, String de, String en, String use, List<String> words) {
+    /** One sentence to build: the word it practises, the German, the English, the English for the word (or null), how the word is used, the words in order. */
+    public record Sentence(Card card, String de, String en, String hint, String use, List<String> words) {
     }
 
     /** One word's entry in data/sentences_b1.json. */
@@ -63,7 +65,7 @@ public class SentencePracticeService {
             Written w = written.get(c.de());
             if (w != null) {
                 for (Map<String, String> s : w.sentences()) {
-                    out.add(new Sentence(c, s.get("de"), s.get("en"), w.use(), words(s.get("de"))));
+                    out.add(new Sentence(c, s.get("de"), s.get("en"), s.get("hint"), w.use(), words(s.get("de"))));
                 }
             }
         }

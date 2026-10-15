@@ -140,6 +140,9 @@ class SentenceDrill implements Drill {
             item.put("word", it.sentence().card().de());
             item.put("meaning", it.sentence().card().en());
             item.put("en", it.sentence().en());
+            if (it.sentence().hint() != null) {
+                item.put("hint", it.sentence().hint());
+            }
             item.put("tiles", it.tiles());
             v.put("item", item);
             if (verdict != null) {
