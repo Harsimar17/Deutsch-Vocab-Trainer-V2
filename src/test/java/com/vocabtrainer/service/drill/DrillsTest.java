@@ -2,6 +2,7 @@ package com.vocabtrainer.service.drill;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -38,15 +39,16 @@ class DrillsTest {
 
     @Test
     @SuppressWarnings("unchecked")
-    void phaseSentencesAskEveryWordOnceThenTheMissedOnes() {
+    void phaseSentencesGoTwelveWordsARoundAndRememberTheRightOnes() {
         ProgressService p = TestVocab.progress();
         SentencePracticeService service = new SentencePracticeService(TestVocab.stories(), JsonMapper.builder().build());
         List<SentencePracticeService.Sentence> pool = service.forPhase("1");
         long words = pool.stream().map(x -> x.card().de()).distinct().count();
-        assertTrue(words > 10, "phase 1 has sentences");
-        SentenceDrill d = new SentenceDrill("1", pool, p);
+        assertTrue(words > 2 * SentenceDrill.ROUND_WORDS, "phase 1 has sentences for several rounds");
+        SentenceDrill d = new SentenceDrill(ctx, "1", pool, p);
         Map<String, Object> v = d.view(ctx);
-        assertEquals((int) words, v.get("total"), "a round covers every word of the phase");
+        assertEquals(SentenceDrill.ROUND_WORDS, v.get("total"), "a round asks 12 words");
+        assertEquals((int) words, v.get("phaseOpen"));
 
         Map<String, Object> item = (Map<String, Object>) v.get("item");
         assertNotNull(item.get("en"), "the English sentence is shown");
@@ -59,19 +61,31 @@ class DrillsTest {
         assertEquals(2L, p.srs(ctx).get(s.card().key()).get("box"), "a right sentence counts for its word");
 
         java.util.Set<Object> seen = new java.util.HashSet<>(List.of(item.get("word")));
-        for (int i = 1; i < words; i++) {
+        for (int i = 1; i < SentenceDrill.ROUND_WORDS; i++) {
             d.act(ctx, "next", Map.of());
             seen.add(((Map<String, Object>) d.view(ctx).get("item")).get("word"));
             d.act(ctx, i < 3 ? "check" : "skip", Map.of("words", List.of("falsch")));
         }
         d.act(ctx, "next", Map.of());
-        assertEquals(words, seen.size(), "each word once");
+        assertEquals(SentenceDrill.ROUND_WORDS, seen.size(), "each word once");
         assertEquals(true, d.view(ctx).get("done"));
-        assertEquals((int) words - 1, d.view(ctx).get("missed"));
+        assertEquals(SentenceDrill.ROUND_WORDS - 1, d.view(ctx).get("missed"));
 
         d.act(ctx, "retryMissed", Map.of());
-        assertEquals((int) words - 1, d.view(ctx).get("total"), "the retry asks only the missed words");
+        assertEquals(SentenceDrill.ROUND_WORDS - 1, d.view(ctx).get("total"), "the retry asks only the missed words");
         assertEquals(true, d.view(ctx).get("retry"));
+
+        // the right word is saved: a new round (even another day) leaves it out
+        SentenceDrill later = new SentenceDrill(ctx, "1", pool, p);
+        assertEquals(1, later.view(ctx).get("phaseDone"));
+        assertEquals((int) words - 1, later.view(ctx).get("phaseOpen"));
+        for (int r = 0; r < 10; r++) {
+            later.act(ctx, "nextRound", Map.of());
+            assertNotEquals(s.card().de(), ((Map<String, Object>) later.view(ctx).get("item")).get("word"));
+        }
+        later.act(ctx, "reset", Map.of());
+        assertEquals(0, later.view(ctx).get("phaseDone"), "reset starts the phase over");
+        assertEquals(0, new SentenceDrill(ctx, "1", pool, p).view(ctx).get("phaseDone"));
     }
 
     @Test

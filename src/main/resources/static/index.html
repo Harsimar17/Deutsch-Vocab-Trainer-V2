@@ -1249,16 +1249,33 @@ function PhaseSentences({ idx, onChange }) {
   return (
     <DrillGate drill={drill}>{(v, act) => {
       const stat = (
-        <div style={{ ...counterStyle, textAlign: "center" }}>
-          {v.retry ? `RETRY · ${v.total} MISSED WORDS` : `ALL ${v.words} WORDS & VERBS · ONE SENTENCE EACH`}
-          <span style={{ marginLeft: "10px" }}><span style={{ color: "var(--good)" }}>✓ {v.right}</span> · <span style={{ color: "var(--bad)" }}>✗ {v.missed}</span></span>
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "8px", width: "100%" }}>
+          <div style={{ ...counterStyle, textAlign: "center" }}>
+            {v.retry ? `RETRY · ${v.total} MISSED WORDS` : `ROUND · ${v.total} WORDS`}
+            <span style={{ marginLeft: "10px" }}><span style={{ color: "var(--good)" }}>✓ {v.right}</span> · <span style={{ color: "var(--bad)" }}>✗ {v.missed}</span></span>
+          </div>
+          <div style={{ ...monoLabel, fontSize: "9px" }}>Phase: {v.phaseDone} / {v.words} words written right</div>
+          <div style={{ width: "min(520px, 94vw)", height: "4px", borderRadius: "2px", background: "var(--line)", overflow: "hidden" }}>
+            <div style={{ height: "100%", width: `${v.words ? (v.phaseDone / v.words) * 100 : 0}%`, background: "var(--accent)", transition: "width .3s" }} />
+          </div>
         </div>
       );
+      const reset = () => { if (window.confirm("Satz-Fortschritt dieser Phase zurücksetzen und von vorn beginnen?")) act("reset"); };
       if (v.empty) {
         return (
           <div style={srsCol}>
             {stat}
             <p style={srsNote}>No sentences for this phase yet.</p>
+          </div>
+        );
+      }
+      if (v.allDone) {
+        return (
+          <div style={{ ...srsCol, padding: "30px 0" }}>
+            {stat}
+            <div style={{ fontFamily: "var(--font-serif)", fontSize: "22px", color: "var(--ink)", textAlign: "center" }}>All {v.words} words written right 🎉</div>
+            <p style={{ ...srsNote, fontSize: "14px" }}>Every word and verb of this phase, in a sentence of its own.</p>
+            <button onClick={reset} style={navBtnStyle}>⟲ start the phase over</button>
           </div>
         );
       }
@@ -1268,12 +1285,17 @@ function PhaseSentences({ idx, onChange }) {
             {stat}
             <div style={{ fontFamily: "var(--font-serif)", fontSize: "22px", color: "var(--ink)", textAlign: "center" }}>{v.right} / {v.total} sentences right {v.missed === 0 ? "🎉" : ""}</div>
             <div style={{ ...srsNote, fontSize: "14px" }}>
-              {v.missed === 0 ? (v.retry ? "All the missed words are right now." : "Every word of this phase, right first time.")
+              {v.missed === 0 ? (v.retry ? "All the missed words are right now." : "Every word of this round, right first time.")
                 : `${v.missed} ${v.missed === 1 ? "word" : "words"} to practise again — each comes back with another sentence where there is one.`}
+            </div>
+            <div style={{ ...srsNote, fontSize: "13px" }}>
+              {v.phaseOpen > 0 ? `${v.phaseOpen} words of this phase still to go — come back any time, your place is saved.` : "That was the last of this phase."}
             </div>
             <div style={{ display: "flex", gap: "10px", flexWrap: "wrap", justifyContent: "center" }}>
               {v.missed > 0 && <button onClick={() => act("retryMissed")} style={navBtnStyle}>↻ retry {v.missed} missed</button>}
-              <button onClick={() => act("restart")} style={v.missed > 0 ? ghostBtn : navBtnStyle}>⟲ new round · all {v.words}</button>
+              {v.phaseOpen > 0
+                ? <button onClick={() => act("nextRound")} style={v.missed > 0 ? ghostBtn : navBtnStyle}>▶ next round · {Math.min(v.roundWords, v.phaseOpen)} words</button>
+                : <button onClick={reset} style={ghostBtn}>⟲ start the phase over</button>}
             </div>
           </div>
         );

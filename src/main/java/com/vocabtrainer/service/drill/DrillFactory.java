@@ -45,7 +45,7 @@ public class DrillFactory {
                 if (idx == null || !idx.matches("\\d{1,3}")) {
                     throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "phase must be a number");
                 }
-                yield new SentenceDrill(idx, sentences.forPhase(idx), progress);
+                yield new SentenceDrill(ctx, idx, sentences.forPhase(idx), progress);
             }
             case "review" -> new ReviewDrill(ctx, catalog, s.direction(), progress);
             case "phase" -> {
