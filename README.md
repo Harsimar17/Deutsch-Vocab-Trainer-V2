@@ -1,4 +1,5 @@
 # Deutsch Vocab Trainer V2( Fully Vibe Coded App)
+# https://deutsch-vocab-trainer-v2-1.onrender.com/
 
 A German vocabulary trainer (A1–B1) with spaced repetition, quizzes, B1
 reading stories and end-of-phase tests — run entirely by a Spring Boot app. **All logic lives
