@@ -34,7 +34,8 @@ import tools.jackson.databind.json.JsonMapper;
  *
  * A Talkloop link is the same kind of token with "scope": "talkloop" and a
  * fixed {@link #LINK_VALIDITY}. It is never renewed and is accepted only by
- * {@link #verifyLink} (the learnt-words call) — never as a session.
+ * {@link #verifyLink} (Talkloop's calls: reading the learnt words, syncing its
+ * own mistake log) — never as a session.
  */
 @Component
 public class JwtService {
@@ -88,7 +89,7 @@ public class JwtService {
         return issue(s.uid(), s.email(), s.firebaseRefreshToken());
     }
 
-    /** A Talkloop link for this user: lets Talkloop read their learnt words for {@link #LINK_VALIDITY}. */
+    /** A Talkloop link for this user: lets Talkloop read their learnt words and sync its mistake log for {@link #LINK_VALIDITY}. */
     public String issueLink(Session s) {
         return sign(s.uid(), s.email(), s.firebaseRefreshToken(), LINK_SCOPE, LINK_VALIDITY);
     }

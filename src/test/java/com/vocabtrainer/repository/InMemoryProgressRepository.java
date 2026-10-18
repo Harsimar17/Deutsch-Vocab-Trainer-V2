@@ -18,7 +18,7 @@ import org.springframework.web.server.ResponseStatusException;
 /**
  * Firestore in memory, for tests and the local demo server: one document per
  * uid with the same field-write / increment semantics as the real commit, plus
- * the sessions and aiSentences subcollections. Like Firestore's rules, it only
+ * the sessions and aiSentences subcollections and Talkloop's mistake log. Like Firestore's rules, it only
  * serves a uid's data to an ID token issued for that uid ("id-{uid}-…").
  */
 public class InMemoryProgressRepository extends ProgressRepository {
@@ -26,6 +26,8 @@ public class InMemoryProgressRepository extends ProgressRepository {
     private final Map<String, Map<String, Object>> docs = new ConcurrentHashMap<>();
     private final Map<String, List<Map<String, Object>>> sessions = new ConcurrentHashMap<>();
     private final Map<String, Map<String, Map<String, Object>>> sentences = new ConcurrentHashMap<>();
+    private final Map<String, Map<String, Object>> talkloopMistakes = new ConcurrentHashMap<>();
+    private int talkloopMistakeWrites;
 
     public InMemoryProgressRepository() {
         super(RestClient.create(), new AppProperties(new AppProperties.Firebase("fake", "fake-key", "http://unused"),
@@ -108,6 +110,25 @@ public class InMemoryProgressRepository extends ProgressRepository {
     public synchronized void saveSentence(Ctx ctx, String word, String de, String en) {
         rules(ctx);
         sentences.computeIfAbsent(ctx.uid(), k -> new LinkedHashMap<>()).put(word, Map.of("word", word, "de", de, "en", en));
+    }
+
+    @Override
+    public synchronized Map<String, Object> findTalkloopMistakes(Ctx ctx) {
+        rules(ctx);
+        Map<String, Object> m = talkloopMistakes.get(ctx.uid());
+        return m == null ? null : copy(m);
+    }
+
+    @Override
+    public synchronized void saveTalkloopMistakes(Ctx ctx, Map<String, Object> data) {
+        rules(ctx);
+        talkloopMistakes.put(ctx.uid(), copy(data));
+        talkloopMistakeWrites++;
+    }
+
+    /** How many times the mistake log was written (tests: a pull alone must not write). */
+    public synchronized int talkloopMistakeWrites() {
+        return talkloopMistakeWrites;
     }
 
     @SuppressWarnings("unchecked")

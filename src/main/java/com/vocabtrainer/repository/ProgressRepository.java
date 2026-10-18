@@ -34,9 +34,10 @@ import org.springframework.web.server.ResponseStatusException;
  * project's security rules — no service-account key involved.
  *
  * Each user has one document, scores/{uid}, holding their state. Quiz rounds
- * live in its "sessions" subcollection and generated example sentences in its
- * "aiSentences" subcollection — all under the user's own document, so one
- * security rule ("scores/{uid}/** only for that uid") covers everything.
+ * live in its "sessions" subcollection, generated example sentences in its
+ * "aiSentences" subcollection and Talkloop's mistake log in talkloop/mistakes —
+ * all under the user's own document, so one security rule ("scores/{uid}/** only
+ * for that uid") covers everything.
  *
  * The progress document is read on almost every request, so {@link #find}
  * keeps each user's copy for {@value #CACHE_MS} ms; {@link #save} writes to
@@ -282,6 +283,21 @@ public class ProgressRepository {
         } catch (NoSuchAlgorithmException e) {
             throw new IllegalStateException(e);
         }
+    }
+
+    // ---- Talkloop's mistake log ----
+    // A document of its own, scores/{uid}/talkloop/mistakes, rather than fields of the
+    // progress document, which is read on almost every request: the log never slows
+    // the trainer down, and Talkloop's sync never touches the progress document.
+
+    public Map<String, Object> findTalkloopMistakes(Ctx ctx) {
+        Map<String, Object> doc = getDocument(ctx.token(), progressName(ctx) + "/talkloop/mistakes");
+        return doc == null ? null : fieldsOf(doc);
+    }
+
+    public void saveTalkloopMistakes(Ctx ctx, Map<String, Object> data) {
+        // No update mask: the whole document is written (created or replaced).
+        commit(ctx.token(), List.of(update(progressName(ctx) + "/talkloop/mistakes", data, null)));
     }
 
     // ---- REST plumbing ----

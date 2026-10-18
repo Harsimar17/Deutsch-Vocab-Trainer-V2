@@ -10,7 +10,7 @@ import org.springframework.web.server.ResponseStatusException;
 import org.springframework.web.servlet.HandlerInterceptor;
 
 /**
- * The learnt-words call Talkloop makes carries a Talkloop link ("Authorization:
+ * Talkloop's calls (learnt words, mistake log) carry a Talkloop link ("Authorization:
  * Bearer …", see {@link JwtService#issueLink}) instead of a session. It sets the
  * same request attribute as {@link SessionInterceptor}, so controllers can take
  * a Ctx as usual, but nothing is renewed: a link simply runs out.

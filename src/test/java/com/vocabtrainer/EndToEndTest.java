@@ -394,6 +394,72 @@ class EndToEndTest {
         assertEquals(401, status(get("/api/talkloop/words"), null, null));
     }
 
+    @Test
+    void talkloopSyncsItsMistakeLogAcrossDevices() throws Exception {
+        String t = login(BEN, "ben-test-pw");
+        String link = (String) ok(post("/api/talkloop/link"), t, null).get("token");
+        long now = System.currentTimeMillis();
+        Map<String, Object> laptopMistake = Map.of("type", "perfekt_auxiliary", "at", now - 5000,
+                "said", "Ich habe gefahren.", "fix", "Ich bin gefahren.");
+        Map<String, Object> phoneMistake = Map.of("type", "case_article", "at", now - 3000,
+                "said", "Ich sehe der Mann.", "fix", "Ich sehe den Mann.");
+
+        // The laptop sends its new mistake (twice: a retried sync must not duplicate it).
+        Map<String, Object> laptop = Map.of("languages", Map.of("German", Map.of("resetAt", 0, "entries", List.of(laptopMistake))));
+        ok(post("/api/talkloop/mistakes"), link, laptop);
+        assertEquals(1, germanEntries(ok(post("/api/talkloop/mistakes"), link, laptop)).size());
+
+        // The phone sends its own and gets both back, oldest first.
+        List<Map<String, Object>> both = germanEntries(ok(post("/api/talkloop/mistakes"), link,
+                Map.of("languages", Map.of("German", Map.of("resetAt", 0, "entries", List.of(phoneMistake))))));
+        assertEquals(List.of("perfekt_auxiliary", "case_article"), both.stream().map(m -> m.get("type")).toList());
+
+        // A device that only pulls gets everything and costs no write.
+        int writes = firestore.talkloopMistakeWrites();
+        Map<String, Object> pulled = ok(post("/api/talkloop/mistakes"), link, Map.of("languages", Map.of()));
+        assertEquals(2, germanEntries(pulled).size());
+        assertEquals(writes, firestore.talkloopMistakeWrites());
+
+        // Malformed entries are skipped, long texts cut, unknown shapes refused.
+        List<Map<String, Object>> after = germanEntries(ok(post("/api/talkloop/mistakes"), link, Map.of("languages", Map.of(
+                "German", Map.of("entries", List.of(
+                        Map.of("type", "Bad Type!", "at", now, "said", "x", "fix", "y"),
+                        Map.of("type", "plural", "at", now + 7 * 86_400_000L, "said", "x", "fix", "y"),
+                        Map.of("type", "plural", "at", now - 1000, "said", "x".repeat(1000), "fix", "y"))),
+                "<script>", Map.of("entries", List.of(phoneMistake))))));
+        assertEquals(3, after.size());
+        assertEquals(300, ((String) after.get(2).get("said")).length());
+        assertEquals(400, status(post("/api/talkloop/mistakes"), link, Map.of("languages", "German")));
+
+        // A reset on one device clears the log for all, and an old entry sent afterwards stays out.
+        assertEquals(0, germanEntries(ok(post("/api/talkloop/mistakes"), link,
+                Map.of("languages", Map.of("German", Map.of("resetAt", now, "entries", List.of()))))).size());
+        assertEquals(0, germanEntries(ok(post("/api/talkloop/mistakes"), link, laptop)).size());
+
+        // Only the newest are kept.
+        List<Map<String, Object>> many = new java.util.ArrayList<>();
+        for (int i = 1; i <= 350; i++) {
+            many.add(Map.of("type", "plural", "at", now + i, "said", "Satz " + i, "fix", "Satz " + i + "."));
+        }
+        List<Map<String, Object>> kept = germanEntries(ok(post("/api/talkloop/mistakes"), link,
+                Map.of("languages", Map.of("German", Map.of("entries", many)))));
+        assertEquals(300, kept.size());
+        assertEquals("Satz 51", kept.get(0).get("said"));
+
+        // Like the learnt words: the link only, never renewed; a session can't use it.
+        MvcResult r = send(post("/api/talkloop/mistakes"), link, Map.of("languages", Map.of()));
+        assertEquals(200, r.getResponse().getStatus());
+        assertNull(r.getResponse().getHeader("X-Auth-Token"));
+        assertEquals(401, status(post("/api/talkloop/mistakes"), t, Map.of("languages", Map.of())));
+        assertEquals(401, status(post("/api/talkloop/mistakes"), null, Map.of("languages", Map.of())));
+    }
+
+    @SuppressWarnings("unchecked")
+    private static List<Map<String, Object>> germanEntries(Map<String, Object> answer) {
+        Map<String, Object> german = (Map<String, Object>) ((Map<String, Object>) answer.get("languages")).get("German");
+        return german == null ? List.of() : (List<Map<String, Object>>) german.get("entries");
+    }
+
     // ---- separate users ----
 
     @Test
