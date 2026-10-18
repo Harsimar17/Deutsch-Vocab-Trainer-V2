@@ -364,6 +364,36 @@ class EndToEndTest {
         assertEquals(400, status(post("/api/drills/phase"), t, Map.of("phase", "1", "set", "nouns")));
     }
 
+    // ---- Talkloop ----
+
+    @Test
+    void talkloopReadsTheLearntWordsWithItsLink() throws Exception {
+        String t = login(BEN, "ben-test-pw");
+        assertEquals(401, status(post("/api/talkloop/link"), null, null));
+        String link = (String) ok(post("/api/talkloop/link"), t, null).get("token");
+        int before = ((Number) ok(get("/api/talkloop/words"), link, null).get("count")).intValue();
+
+        Round study = start(t, "study", Map.of());
+        String de = (String) ((Map<String, Object>) study.view().get("card")).get("de");
+        act(t, study, "grade", Map.of("grade", "again"));
+
+        MvcResult r = send(get("/api/talkloop/words"), link, null);
+        assertEquals(200, r.getResponse().getStatus());
+        assertNull(r.getResponse().getHeader("X-Auth-Token"), "a link is never renewed");
+        Map<String, Object> words = json.readValue(r.getResponse().getContentAsString(), Map.class);
+        assertTrue(((Number) words.get("count")).intValue() >= Math.max(1, before));
+        Map<String, Object> w = ((List<Map<String, Object>>) words.get("words")).stream()
+                .filter(x -> de.equals(x.get("de"))).findFirst().orElseThrow();
+        assertNotNull(w.get("en"));
+        assertEquals(1, ((Number) w.get("box")).intValue());
+
+        // the link only reads words; a session doesn't read them
+        assertEquals(401, status(get("/api/summary"), link, null));
+        assertEquals(401, status(post("/api/talkloop/link"), link, null));
+        assertEquals(401, status(get("/api/talkloop/words"), t, null));
+        assertEquals(401, status(get("/api/talkloop/words"), null, null));
+    }
+
     // ---- separate users ----
 
     @Test

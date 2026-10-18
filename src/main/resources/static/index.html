@@ -2816,7 +2816,25 @@ function TabBar({ mode, setMode, mistakeCount }) {
   );
 }
 
-// The logged-in user as a round initial; click for their email and "log out".
+// Talkloop, the speaking-practice app: opened with a link (in the #fragment, so
+// it never reaches a server) that lets it read this learner's learnt words.
+// The tab opens straight away so the popup blocker allows it; the link follows.
+const TALKLOOP_URL = /^(localhost|127\.0\.0\.1)$/.test(location.hostname)
+  ? "http://localhost:8765/" : "https://harsimar17.github.io/talkloop/";
+async function openTalkloop() {
+  const tab = window.open("", "_blank");
+  try {
+    const { token } = await api.post("/api/talkloop/link");
+    const fragment = new URLSearchParams({ "vocab-link": token, "vocab-api": API_BASE || location.origin });
+    if (tab) { tab.opener = null; tab.location.href = TALKLOOP_URL + "#" + fragment; }
+    else location.href = TALKLOOP_URL + "#" + fragment;
+  } catch (e) {
+    if (tab) tab.close();
+    api.report(e);
+  }
+}
+
+// The logged-in user as a round initial; click for their email, Talkloop and "log out".
 function UserMenu({ user, onLogout }) {
   const [open, setOpen] = useState(false);
   const ref = useRef(null);
@@ -2844,6 +2862,8 @@ function UserMenu({ user, onLogout }) {
           display: "flex", flexDirection: "column", gap: "10px" }}>
           <div style={{ ...monoLabel, fontSize: "9px" }}>logged in as</div>
           <div style={{ fontFamily: "var(--font-mono)", fontSize: "12px", color: "var(--ink)", overflowWrap: "anywhere" }}>{email}</div>
+          <button role="menuitem" onClick={() => { setOpen(false); openTalkloop(); }}
+            style={{ ...miniBtn, alignSelf: "flex-start" }}>🗣 practise in Talkloop</button>
           <button role="menuitem" onClick={() => { setOpen(false); onLogout(); }} style={{ ...miniBtn, color: "var(--bad)", borderColor: "var(--bad)", alignSelf: "flex-start" }}>⎋ log out</button>
         </div>
       )}

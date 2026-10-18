@@ -69,6 +69,21 @@ class JwtServiceTest {
     }
 
     @Test
+    void aTalkloopLinkIsNeverASessionAndASessionIsNeverALink() {
+        JwtService j = jwt(SECRET, Duration.ofHours(24));
+        String session = j.issue("uid-1", "a@b.de", "r");
+        String link = j.issueLink(j.verify(session));
+        assertNull(j.verify(link));
+        assertNull(j.verifyLink(session));
+        JwtService.Session s = j.verifyLink(link);
+        assertEquals("uid-1", s.uid());
+        assertEquals("r", s.firebaseRefreshToken());
+        long in180d = System.currentTimeMillis() + JwtService.LINK_VALIDITY.toMillis();
+        assertTrue(Math.abs(s.expiresAt() - in180d) < 5_000);
+        assertNull(jwt("another-secret-another-secret-xx", Duration.ofHours(24)).verifyLink(link));
+    }
+
+    @Test
     void withoutASecretTokensStillWorkWithinOneRun() {
         JwtService j = jwt("", Duration.ofHours(24));
         assertNotNull(j.verify(j.issue("uid-1", "a@b.de", "r")));

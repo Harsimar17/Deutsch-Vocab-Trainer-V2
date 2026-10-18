@@ -60,6 +60,7 @@ Tests mirror the same packages under `src/test/java`.
 | Vocabulary file: read from GitHub (cached, re-checked every 5 min, bundled fallback), "+ Add word" commits | `VocabController` | `VocabService`, `GitHubVocabCommitter` | — (GitHub) |
 | Login, creating users | `AuthController`, `UserController` | `AuthService`, `UserService` | `FirebaseAuthClient` |
 | Session JWT with a 24 h idle timeout | — | — | `security/JwtService`, `security/SessionInterceptor` |
+| Talkloop link: "practise in Talkloop" (user menu) lets [Talkloop](https://harsimar17.github.io/talkloop/) read the learnt words | `TalkloopController` | `TalkloopService` | `ProgressRepository`, `security/TalkloopLinkInterceptor` |
 
 ## API
 
@@ -84,6 +85,8 @@ it was issued, so a session ends after 24 h without a request. Send
 | `POST /api/sentences/generate` (+ `X-Gemini-Key`) | saved sentence, or generate + save; `{needsKey}` without a key |
 | `POST /api/vocab/words` (+ `X-GitHub-Token`) | add a word = one commit on GitHub |
 | `GET /api/vocab` | the raw file (public) |
+| `POST /api/talkloop/link` | → `{token, expiresAt}`: a read-only link for Talkloop, valid 180 days, never renewed |
+| `GET /api/talkloop/words` (with the link as `Bearer`, not a session) | learnt words (every card with a schedule), least secure first → `{count, words: [{de, en, cat, lvl, example, box, lapses, last}]}` |
 
 Rounds are kept in memory (`repository/DrillRepository`, 6 h idle limit) and belong
 to the user who started them; every answer is saved to Firestore as it happens,

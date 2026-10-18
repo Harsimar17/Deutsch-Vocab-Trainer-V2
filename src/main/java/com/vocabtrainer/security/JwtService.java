@@ -9,6 +9,7 @@ import java.time.Duration;
 import java.util.Base64;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.Objects;
 
 import javax.crypto.Cipher;
 import javax.crypto.Mac;
@@ -30,6 +31,10 @@ import tools.jackson.databind.json.JsonMapper;
  * "exp" is always issue time + the idle timeout, and every authenticated
  * request gets a re-issued token, so a session ends only after that long
  * without a request.
+ *
+ * A Talkloop link is the same kind of token with "scope": "talkloop" and a
+ * fixed {@link #LINK_VALIDITY}. It is never renewed and is accepted only by
+ * {@link #verifyLink} (the learnt-words call) — never as a session.
  */
 @Component
 public class JwtService {
@@ -39,6 +44,8 @@ public class JwtService {
     private static final Base64.Decoder B64D = Base64.getUrlDecoder();
     private static final String HEADER = B64.encodeToString("{\"alg\":\"HS256\",\"typ\":\"JWT\"}".getBytes(StandardCharsets.UTF_8));
     private static final SecureRandom RANDOM = new SecureRandom();
+    private static final String LINK_SCOPE = "talkloop";
+    public static final Duration LINK_VALIDITY = Duration.ofDays(180);
 
     /** A verified session: who it is and the Firebase refresh token to act as them. */
     public record Session(String uid, String email, String firebaseRefreshToken, long expiresAt) {
@@ -74,23 +81,44 @@ public class JwtService {
     }
 
     public String issue(String uid, String email, String firebaseRefreshToken) {
-        long now = System.currentTimeMillis() / 1000;
-        Map<String, Object> claims = new LinkedHashMap<>();
-        claims.put("sub", uid);
-        claims.put("email", email);
-        claims.put("frt", encrypt(firebaseRefreshToken));
-        claims.put("iat", now);
-        claims.put("exp", now + idle.toSeconds());
-        String body = HEADER + "." + B64.encodeToString(json.writeValueAsBytes(claims));
-        return body + "." + B64.encodeToString(hmac(body));
+        return sign(uid, email, firebaseRefreshToken, null, idle);
     }
 
     public String reissue(Session s) {
         return issue(s.uid(), s.email(), s.firebaseRefreshToken());
     }
 
-    /** The session in a token, or null if it is malformed, tampered with or expired. */
+    /** A Talkloop link for this user: lets Talkloop read their learnt words for {@link #LINK_VALIDITY}. */
+    public String issueLink(Session s) {
+        return sign(s.uid(), s.email(), s.firebaseRefreshToken(), LINK_SCOPE, LINK_VALIDITY);
+    }
+
+    private String sign(String uid, String email, String firebaseRefreshToken, String scope, Duration validity) {
+        long now = System.currentTimeMillis() / 1000;
+        Map<String, Object> claims = new LinkedHashMap<>();
+        claims.put("sub", uid);
+        claims.put("email", email);
+        claims.put("frt", encrypt(firebaseRefreshToken));
+        if (scope != null) {
+            claims.put("scope", scope);
+        }
+        claims.put("iat", now);
+        claims.put("exp", now + validity.toSeconds());
+        String body = HEADER + "." + B64.encodeToString(json.writeValueAsBytes(claims));
+        return body + "." + B64.encodeToString(hmac(body));
+    }
+
+    /** The session in a token, or null if it is malformed, tampered with, expired or a Talkloop link. */
     public Session verify(String token) {
+        return verify(token, null);
+    }
+
+    /** The user a Talkloop link stands for, or null if it is not a valid, unexpired link. */
+    public Session verifyLink(String token) {
+        return verify(token, LINK_SCOPE);
+    }
+
+    private Session verify(String token, String scope) {
         if (token == null || token.length() > 8192) {
             return null;
         }
@@ -106,6 +134,9 @@ public class JwtService {
             Map<?, ?> c = json.readValue(B64D.decode(parts[1]), Map.class);
             if (!(c.get("sub") instanceof String uid) || !uid.matches("[A-Za-z0-9_-]{1,128}")
                     || !(c.get("exp") instanceof Number exp) || !(c.get("frt") instanceof String frt)) {
+                return null;
+            }
+            if (!Objects.equals(scope, c.get("scope"))) {
                 return null;
             }
             if (exp.longValue() * 1000 <= System.currentTimeMillis()) {

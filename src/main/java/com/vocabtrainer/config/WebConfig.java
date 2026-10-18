@@ -5,6 +5,7 @@ import java.util.List;
 import com.vocabtrainer.security.CtxArgumentResolver;
 import com.vocabtrainer.security.IdTokenCache;
 import com.vocabtrainer.security.SessionInterceptor;
+import com.vocabtrainer.security.TalkloopLinkInterceptor;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.web.method.support.HandlerMethodArgumentResolver;
@@ -18,11 +19,14 @@ public class WebConfig implements WebMvcConfigurer {
 
     private final AppProperties props;
     private final SessionInterceptor sessionInterceptor;
+    private final TalkloopLinkInterceptor talkloopLinkInterceptor;
     private final IdTokenCache idTokens;
 
-    public WebConfig(AppProperties props, SessionInterceptor sessionInterceptor, IdTokenCache idTokens) {
+    public WebConfig(AppProperties props, SessionInterceptor sessionInterceptor, TalkloopLinkInterceptor talkloopLinkInterceptor,
+                     IdTokenCache idTokens) {
         this.props = props;
         this.sessionInterceptor = sessionInterceptor;
+        this.talkloopLinkInterceptor = talkloopLinkInterceptor;
         this.idTokens = idTokens;
     }
 
@@ -44,9 +48,12 @@ public class WebConfig implements WebMvcConfigurer {
     @Override
     public void addInterceptors(InterceptorRegistry registry) {
         // Public: the vocabulary (same data as the repo), logging in, and creating
-        // users (guarded by the admin key instead). Everything else needs a session.
+        // users (guarded by the admin key instead). Talkloop's learnt-words call
+        // needs a Talkloop link instead. Everything else needs a session.
         registry.addInterceptor(sessionInterceptor)
                 .addPathPatterns("/api/**")
-                .excludePathPatterns("/api/vocab", "/api/auth/login", "/api/users");
+                .excludePathPatterns("/api/vocab", "/api/auth/login", "/api/users", "/api/talkloop/words");
+        registry.addInterceptor(talkloopLinkInterceptor)
+                .addPathPatterns("/api/talkloop/words");
     }
 }
