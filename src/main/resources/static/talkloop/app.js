@@ -856,11 +856,16 @@ let recognizer = null;
 let dropNextResult = false; // set when listening is cut short on purpose, so its result is ignored
 let redoNextResult = false; // set by Delete: what was heard is dropped and the mic listens again
 
-// On iPhone and iPad every browser is Safari underneath, and Safari opens a mic that a tap
-// didn't start as a silent one: "Listening…" shows, the mic is on, but no words ever come.
-// So there hands-free doesn't reopen the mic after a reply; the mic button asks for a tap.
+// On iPhone and iPad every browser is Safari underneath, and Safari's speech recognition
+// often opens a silent mic once a reply has played: "Listening…" shows, the mic is on, but
+// no sound and no words ever come, tap or no tap. So there Talkloop records the mic itself
+// (getUserMedia, which voice-call sites rely on) and has the AI write down what was said;
+// see startRecording. ?record does the same anywhere, for testing.
 const IOS = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
-let awaitingTap = false; // iPhone: the learner's turn, waiting for a tap on the mic
+const RECORD_MODE = (IOS || new URLSearchParams(location.search).has("record"))
+  && Boolean(navigator.mediaDevices?.getUserMedia && window.MediaRecorder);
+// Old iPhones without recording fall back to Safari's recognition, opened only by a tap.
+let awaitingTap = false; // the learner's turn, waiting for a tap on the mic
 
 // iPhone (Safari, iOS 17+): once a reply has played through the <audio> element the audio
 // session stays set up for playback, and a mic opened then records silence (the orange dot
@@ -902,12 +907,13 @@ function showHeard(text) {
 }
 
 function startListening() {
+  if (recognizer) return; // one listening session at a time
+  setAwaitingTap(false);
+  if (RECORD_MODE) return startRecording();
   if (!Recognition) {
     setStatus("Voice input needs Chrome or Edge. You can still type.");
     return;
   }
-  if (recognizer) return; // one listening session at a time
-  setAwaitingTap(false);
   stopSpeaking();
   // This session's recognizer: its handlers and pause timer use it, not the shared variable,
   // so a session that ends late (e.g. aborted by "Hear it") can't unhook the next one.
@@ -949,32 +955,7 @@ function startListening() {
     setAudioSession("auto");
     setMic(false);
     showHeard("");
-    const spoken = heard;
-    if (dropNextResult) {
-      dropNextResult = false; // cut short on purpose (e.g. "Hear it" or Skip in a drill)
-      redoNextResult = false;
-    } else if (redoNextResult) {
-      // Deleted: nothing is sent; hands-free listens again for the new try.
-      redoNextResult = false;
-      maybeResumeListening();
-      setStatus(recognizer ? "Deleted. Say it again." : "Deleted.");
-    } else if (state.paused) {
-      // Paused mid-sentence: drop it rather than sending half a thought.
-    } else if (isPauseCommand(spoken)) {
-      setPaused(true, { byVoice: true });
-    } else if (state.drill && spoken) {
-      // Saying the corrected sentence: check it; hands-free listens again after a miss.
-      if (isSkipCommand(spoken)) endDrill();
-      else if (!checkDrill(spoken)) maybeResumeListening();
-    } else if (spoken) {
-      // Hands-free: send straight away. Listening resumes after the reply is spoken.
-      sendTurn(spoken);
-    } else if (state.handsFree) {
-      // Nothing heard but still hands-free (e.g. restarted too soon) — keep listening.
-      maybeResumeListening();
-    } else {
-      setStatus("");
-    }
+    afterListening(heard);
   };
   setAudioSession("play-and-record");
   try {
@@ -992,6 +973,239 @@ function startListening() {
   }
   setMic(true);
   setStatus("Listening… just talk. Tap the mic to stop hands-free.");
+}
+
+// What to do with what was said once listening ends (speech recognition or a recording).
+function afterListening(spoken) {
+  if (dropNextResult) {
+    dropNextResult = false; // cut short on purpose (e.g. "Hear it" or Skip in a drill)
+    redoNextResult = false;
+  } else if (redoNextResult) {
+    // Deleted: nothing is sent; hands-free listens again for the new try.
+    redoNextResult = false;
+    maybeResumeListening();
+    setStatus(recognizer ? "Deleted. Say it again." : "Deleted.");
+  } else if (state.paused) {
+    // Paused mid-sentence: drop it rather than sending half a thought.
+  } else if (isPauseCommand(spoken)) {
+    setPaused(true, { byVoice: true });
+  } else if (state.drill && spoken) {
+    // Saying the corrected sentence: check it; hands-free listens again after a miss.
+    if (isSkipCommand(spoken)) endDrill();
+    else if (!checkDrill(spoken)) maybeResumeListening();
+  } else if (spoken) {
+    // Hands-free: send straight away. Listening resumes after the reply is spoken.
+    sendTurn(spoken);
+  } else if (state.handsFree) {
+    // Nothing heard but still hands-free (e.g. restarted too soon) — keep listening.
+    maybeResumeListening();
+  } else {
+    setStatus("");
+  }
+}
+
+// ---------- recording + transcription (iPhone) ----------
+// The mic stream stays open while hands-free is on, so each turn only starts a new
+// recorder on it: nothing reopens the mic, so no tap is needed between turns. A level
+// meter ends the turn after a pause, as speech recognition does.
+const SPEECH_LEVEL = 0.02; // RMS of the mic signal that counts as speaking
+const NO_SPEECH_MS = 20_000; // a turn with no speech at all ends after this
+const MAX_TURN_MS = 60_000;
+let micStream = null;
+let meterContext = null;
+
+async function openMicStream() {
+  if (micStream?.getAudioTracks().some((t) => t.readyState === "live")) return micStream;
+  micStream = await navigator.mediaDevices.getUserMedia({
+    audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+  });
+  debugLog("mic stream opened");
+  return micStream;
+}
+
+// Hands-free is off and no turn is running: let the mic go (the orange dot goes off).
+function releaseMicIfIdle() {
+  if (RECORD_MODE && !state.handsFree && !recognizer) closeMicStream();
+}
+
+function closeMicStream() {
+  if (!micStream) return;
+  micStream.getTracks().forEach((t) => t.stop());
+  micStream = null;
+  debugLog("mic stream closed");
+}
+
+// One turn: record until a pause after speech, then have the AI write it down. It sits in
+// `recognizer` like a recognition session (stop() ends the turn, abort() drops it), so the
+// rest of the app treats both the same.
+function startRecording() {
+  stopSpeaking();
+  // Made (or woken) inside the tap where possible: Safari only runs audio that a tap started.
+  try {
+    meterContext ??= new (window.AudioContext ?? window.webkitAudioContext)();
+    if (meterContext.state !== "running") meterContext.resume().catch(() => {});
+  } catch {
+    meterContext = null; // no meter: the turn ends with a tap on the mic instead
+  }
+  let aborted = false;
+  let finish = null; // ends the recording once it runs
+  const session = {
+    stop() { if (finish) finish(); else aborted = true; },
+    abort() { aborted = true; finish?.(); },
+  };
+  recognizer = session;
+  setMic(true);
+  setStatus("Listening… just talk. Tap the mic to stop hands-free.");
+
+  const done = (spoken) => {
+    if (recognizer !== session) return;
+    recognizer = null;
+    setMic(false);
+    showHeard("");
+    afterListening(spoken);
+    releaseMicIfIdle();
+  };
+
+  openMicStream().then((stream) => {
+    if (recognizer !== session) return;
+    if (aborted) return done("");
+    const type = ["audio/mp4", "audio/webm;codecs=opus", "audio/webm"].find((t) => MediaRecorder.isTypeSupported?.(t)) ?? "";
+    const recorder = new MediaRecorder(stream, type ? { mimeType: type } : undefined);
+    const chunks = [];
+    recorder.ondataavailable = (event) => { if (event.data.size) chunks.push(event.data); };
+
+    // Level meter: speech starts the turn, a pause after it ends the turn.
+    let analyser = null;
+    let source = null;
+    try {
+      source = meterContext.createMediaStreamSource(stream);
+      analyser = meterContext.createAnalyser();
+      analyser.fftSize = 1024;
+      source.connect(analyser);
+    } catch {
+      analyser = null;
+    }
+    const samples = new Float32Array(1024);
+    const startedAt = Date.now();
+    let spokeAt = 0;
+    let lastSpeech = 0;
+    const meter = setInterval(() => {
+      const now = Date.now();
+      // A meter whose audio isn't running reads silence forever: end the turn by tap instead.
+      if (analyser && meterContext.state !== "running" && now - startedAt > 1000) {
+        analyser = null;
+        debugLog(`meter off (${meterContext.state})`);
+        setStatus("Listening… tap the mic when you're done.");
+      }
+      if (analyser) {
+        analyser.getFloatTimeDomainData(samples);
+        let sum = 0;
+        for (const v of samples) sum += v * v;
+        if (Math.sqrt(sum / samples.length) > SPEECH_LEVEL) {
+          if (!spokeAt) { spokeAt = now; debugLog("speech"); }
+          lastSpeech = now;
+        }
+      }
+      if (spokeAt && now - lastSpeech > SILENCE_MS) finish();
+      else if (!spokeAt && analyser && now - startedAt > NO_SPEECH_MS) finish();
+      else if (now - startedAt > MAX_TURN_MS) finish();
+    }, 100);
+
+    finish = () => {
+      finish = () => {};
+      clearInterval(meter);
+      try { source?.disconnect(); } catch { /* already gone */ }
+      if (recorder.state !== "inactive") recorder.stop();
+    };
+    recorder.onstop = async () => {
+      debugLog(`recorded ${((Date.now() - startedAt) / 1000).toFixed(1)}s, speech ${spokeAt ? "yes" : "no"}`);
+      // Nothing worth sending: cut short on purpose, or (with a working meter) no speech at all.
+      if (aborted || (analyser && !spokeAt) || !chunks.length) return done("");
+      setStatus("Writing down what you said…");
+      try {
+        const text = await transcribe(new Blob(chunks, { type: recorder.mimeType || type || "audio/mp4" }));
+        debugLog(`heard "${text.slice(0, 40)}"`);
+        done(text);
+      } catch (error) {
+        debugLog(`transcription failed: ${error.message}`);
+        if (recognizer !== session) return;
+        recognizer = null;
+        setMic(false);
+        setStatus(`Couldn't write down what you said (${error.message}). Tap the mic to try again, or type.`);
+        releaseMicIfIdle();
+      }
+    };
+    recorder.start();
+    debugLog(`recording (${recorder.mimeType || "default"}, meter ${analyser ? meterContext.state : "off"})`);
+    if (!analyser) setStatus("Listening… tap the mic when you're done.");
+  }, (error) => {
+    debugLog(`mic stream failed: ${error.name} ${error.message}`);
+    if (recognizer !== session) return;
+    recognizer = null;
+    state.handsFree = false;
+    setMic(false);
+    setStatus(error.name === "NotAllowedError"
+      ? "Microphone permission was denied."
+      : `The microphone didn't start (${error.message}). Tap the mic to try again.`);
+  });
+}
+
+// Whisper-style models sometimes "hear" these in a silent or noisy clip.
+const PHANTOM_TRANSCRIPTS = /untertitel|amara\.org|vielen dank fürs zuschauen|thanks for watching/i;
+
+// Speech to text with the learner's own keys: Groq's Whisper (fastest), Mistral's Voxtral,
+// then Gemini, whichever keys there are, trying the next one if a service fails.
+async function transcribe(blob) {
+  const lang = state.settings.locale.split("-")[0];
+  const mime = (blob.type || "audio/mp4").split(";")[0];
+  const ext = { "audio/webm": "webm", "audio/ogg": "ogg", "audio/wav": "wav" }[mime] ?? "m4a";
+  const file = new File([blob], `speech.${ext}`, { type: mime });
+  const openAiStyle = async (url, key, model) => {
+    const form = new FormData();
+    form.append("file", file);
+    form.append("model", model);
+    form.append("language", lang);
+    const res = await fetch(url, { method: "POST", headers: { Authorization: `Bearer ${key}` }, body: form });
+    if (!res.ok) throw new Error(`${res.status} ${(await res.text()).slice(0, 80)}`);
+    return (await res.json()).text ?? "";
+  };
+  const gemini = async () => {
+    const res = await fetch(`${API_BASE}/${CONV_MODEL}:generateContent?key=${encodeURIComponent(getKey("gemini"))}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        contents: [{ parts: [
+          { inline_data: { mime_type: mime, data: bytesToBase64(new Uint8Array(await blob.arrayBuffer())) } },
+          { text: `Write down exactly what is said in this recording (${state.settings.language}, maybe mixed with ${state.settings.native}). Reply with only those words, mistakes included, or with nothing if nobody speaks.` },
+        ] }],
+        generationConfig: { temperature: 0 },
+      }),
+    });
+    if (!res.ok) throw new Error(`${res.status}`);
+    const data = await res.json();
+    return data.candidates?.[0]?.content?.parts?.map((p) => p.text ?? "").join("") ?? "";
+  };
+  const services = [];
+  if (getKey("groq")) services.push(["Groq", () => openAiStyle("https://api.groq.com/openai/v1/audio/transcriptions", getKey("groq"), "whisper-large-v3-turbo")]);
+  if (getKey("mistral")) services.push(["Mistral", () => openAiStyle("https://api.mistral.ai/v1/audio/transcriptions", getKey("mistral"), "voxtral-mini-latest")]);
+  if (getKey("gemini")) services.push(["Gemini", gemini]);
+  if (!services.length) throw new Error("no API key for speech");
+  const errors = [];
+  for (const [name, run] of services) {
+    try {
+      const text = (await run()).replace(/\s+/g, " ").trim();
+      return PHANTOM_TRANSCRIPTS.test(text) ? "" : text;
+    } catch (error) {
+      errors.push(`${name}: ${error.message}`);
+    }
+  }
+  throw new Error(errors.join("; "));
+}
+
+function bytesToBase64(bytes) {
+  let bin = "";
+  for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  return btoa(bin);
 }
 
 // ---------- voice commands: "zwei Minuten" pauses the call, "zurück" / "back" resumes ----------
@@ -1063,6 +1277,7 @@ function stopListening() {
   state.handsFree = false;
   setAwaitingTap(false);
   recognizer?.stop();
+  releaseMicIfIdle(); // a turn still being recorded lets the mic go when it ends
   setStatus("Hands-free off.");
   updateCallState();
 }
@@ -1466,7 +1681,7 @@ function maybeResumeListening() {
     return;
   }
   if (state.handsFree && !state.finished && !state.paused && !state.speaking && !recognizer) {
-    if (IOS) {
+    if (IOS && !RECORD_MODE) {
       setAwaitingTap(true);
       setStatus("Your turn: tap the mic and talk.");
     } else {
@@ -1693,7 +1908,8 @@ function setPaused(paused, { byVoice = false } = {}) {
   if (paused === state.paused) return;
   if (paused) {
     resumeHandsFree = state.handsFree;
-    pausedByVoice = byVoice && Boolean(Recognition);
+    // (Not while recording: the resume word needs speech recognition, which isn't reliable there.)
+    pausedByVoice = byVoice && Boolean(Recognition) && !RECORD_MODE;
     state.paused = true; // set first so nothing restarts the mic or voice
     if (recognizer) stopListening();
     state.handsFree = false;
@@ -1811,6 +2027,7 @@ function presentReply(turn) {
     renderSuggestions([]);
     state.handsFree = false;
     setAwaitingTap(false);
+    releaseMicIfIdle();
     setStatus("Scene complete! Tap End to start another.");
     setBusy(false);
   }
@@ -2384,7 +2601,7 @@ $("end").addEventListener("click", () => {
 if ("speechSynthesis" in window) speechSynthesis.onvoiceschanged = () => {};
 
 // With ?debug: which build this phone runs (a cached old one would explain old behaviour).
-debugLog(`Talkloop v22 · ${IOS ? "iPhone/iPad" : "not iOS"} · speech ${Recognition ? "yes" : "no"} · audio session ${navigator.audioSession?.type ?? "none"}`);
+debugLog(`Talkloop v23 · ${IOS ? "iPhone/iPad" : "not iOS"} · ${RECORD_MODE ? "recording + AI transcription" : `speech recognition ${Recognition ? "yes" : "no"}`}`);
 refreshKeyGate();
 renderStats();
 renderBookmarks();
