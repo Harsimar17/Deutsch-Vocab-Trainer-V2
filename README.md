@@ -60,7 +60,8 @@ Tests mirror the same packages under `src/test/java`.
 | Vocabulary file: read from GitHub (cached, re-checked every 5 min, bundled fallback), "+ Add word" commits | `VocabController` | `VocabService`, `GitHubVocabCommitter` | — (GitHub) |
 | Login, creating users | `AuthController`, `UserController` | `AuthService`, `UserService` | `FirebaseAuthClient` |
 | Session JWT with a 24 h idle timeout | — | — | `security/JwtService`, `security/SessionInterceptor` |
-| Talkloop (speaking practice, at `/talkloop/`, opened from the user menu): reads the learnt words and keeps its mistake log here, so it follows the learner across devices | `TalkloopController` | `TalkloopService` | `ProgressRepository`, `security/TalkloopLinkInterceptor` |
+| Talkloop (speaking practice, a static page at `/talkloop/`, opened from the user menu) | — | — | — |
+| Talkloop link API (learnt words, mistake log; not used by the current Talkloop page) | `TalkloopController` | `TalkloopService` | `ProgressRepository`, `security/TalkloopLinkInterceptor` |
 
 ## API
 
@@ -98,14 +99,14 @@ so losing a round only means starting a new one.
 Talkloop, the voice-conversation partner (formerly its own site,
 [Harsimar17/talkloop](https://github.com/Harsimar17/talkloop)), is part of this
 app: its files are in `src/main/resources/static/talkloop/` and it is served at
-`/talkloop/`. It still runs in the browser and talks to Mistral / Gemini / Groq
-with the learner's own keys (kept in that browser only, never sent here).
+`/talkloop/`. It runs entirely in the browser and talks to Gemini with the
+learner's own key (kept in that browser only, never sent here). Open it from
+the user menu (**practise in Talkloop**) or at `/talkloop/`.
 
-Open it from the user menu (**practise in Talkloop**) or at `/talkloop/`. Being
-the same site, it finds the trainer's login in the browser and swaps it for its
-link (`POST /api/talkloop/link`) on its own, so there is nothing to connect: its
-partner uses every A1/A2 word plus the learnt B1 words, and its mistake log is
-kept here (`POST /api/talkloop/mistakes`), so it follows the learner to every device.
+The copy here is the one from talkloop's `36860a8`, which went back to its
+early version (`bfa9006`): it doesn't use the trainer's login, the learnt words
+or the mistake log. The `/api/talkloop/*` calls are still here, unused, for a
+later Talkloop that links to the trainer again.
 
 ## Users
 
