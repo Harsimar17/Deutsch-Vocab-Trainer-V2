@@ -1168,18 +1168,34 @@ function startRecording() {
 // Whisper-style models sometimes "hear" these in a silent or noisy clip.
 const PHANTOM_TRANSCRIPTS = /untertitel|amara\.org|vielen dank fürs zuschauen|thanks for watching/i;
 
-// Speech to text with the learner's own keys: Groq's Whisper (fastest), Mistral's Voxtral,
-// then Gemini, whichever keys there are, trying the next one if a service fails.
+// What the learner is likely to say, so speech-to-text expects those words rather than
+// similar-sounding ones: the partner's last line, the sentence to say again, and the
+// practice words on screen. (Whisper reads it as the text just before the recording.)
+function transcriptionHint() {
+  const parts = [];
+  const reply = state.history.findLast?.((m) => m.role === "assistant")?.content;
+  if (reply) parts.push(`${state.settings.characterName}: ${reply}`);
+  if (state.drill?.target) parts.push(state.drill.target);
+  const words = [...document.querySelectorAll("#focus .focus-word")].map((el) => el.textContent).filter(Boolean);
+  if (words.length) parts.push(`${words.join(", ")}.`);
+  return parts.join("\n").slice(-700);
+}
+
+// Speech to text with the learner's own keys: Groq's Whisper (the full model, the most
+// accurate here), Mistral's Voxtral, then Gemini, whichever keys there are, trying the next
+// one if a service fails.
 async function transcribe(blob) {
   const lang = state.settings.locale.split("-")[0];
+  const hint = transcriptionHint();
   const mime = (blob.type || "audio/mp4").split(";")[0];
   const ext = { "audio/webm": "webm", "audio/ogg": "ogg", "audio/wav": "wav" }[mime] ?? "m4a";
   const file = new File([blob], `speech.${ext}`, { type: mime });
-  const openAiStyle = async (url, key, model) => {
+  const openAiStyle = async (url, key, model, extra = {}) => {
     const form = new FormData();
     form.append("file", file);
     form.append("model", model);
     form.append("language", lang);
+    for (const [name, value] of Object.entries(extra)) if (value !== "") form.append(name, value);
     const res = await fetch(url, { method: "POST", headers: { Authorization: `Bearer ${key}` }, body: form });
     if (!res.ok) throw new Error(`${res.status} ${(await res.text()).slice(0, 80)}`);
     return (await res.json()).text ?? "";
@@ -1191,7 +1207,7 @@ async function transcribe(blob) {
       body: JSON.stringify({
         contents: [{ parts: [
           { inline_data: { mime_type: mime, data: bytesToBase64(new Uint8Array(await blob.arrayBuffer())) } },
-          { text: `Write down exactly what is said in this recording (${state.settings.language}, maybe mixed with ${state.settings.native}). Reply with only those words, mistakes included, or with nothing if nobody speaks.` },
+          { text: `Write down exactly what is said in this recording (${state.settings.language}, maybe mixed with ${state.settings.native}). Reply with only those words, mistakes included, or with nothing if nobody speaks.${hint ? ` It answers this, and may use these words:\n${hint}` : ""}` },
         ] }],
         generationConfig: { temperature: 0 },
       }),
@@ -1201,7 +1217,7 @@ async function transcribe(blob) {
     return data.candidates?.[0]?.content?.parts?.map((p) => p.text ?? "").join("") ?? "";
   };
   const services = [];
-  if (getKey("groq")) services.push(["Groq", () => openAiStyle("https://api.groq.com/openai/v1/audio/transcriptions", getKey("groq"), "whisper-large-v3-turbo")]);
+  if (getKey("groq")) services.push(["Groq", () => openAiStyle("https://api.groq.com/openai/v1/audio/transcriptions", getKey("groq"), "whisper-large-v3", { prompt: hint, temperature: "0" })]);
   if (getKey("mistral")) services.push(["Mistral", () => openAiStyle("https://api.mistral.ai/v1/audio/transcriptions", getKey("mistral"), "voxtral-mini-latest")]);
   if (getKey("gemini")) services.push(["Gemini", gemini]);
   if (!services.length) throw new Error("no API key for speech");
@@ -1209,6 +1225,7 @@ async function transcribe(blob) {
   for (const [name, run] of services) {
     try {
       const text = (await run()).replace(/\s+/g, " ").trim();
+      debugLog(`written down by ${name}`);
       return PHANTOM_TRANSCRIPTS.test(text) ? "" : text;
     } catch (error) {
       errors.push(`${name}: ${error.message}`);
@@ -2616,7 +2633,7 @@ $("end").addEventListener("click", () => {
 if ("speechSynthesis" in window) speechSynthesis.onvoiceschanged = () => {};
 
 // With ?debug: which build this phone runs (a cached old one would explain old behaviour).
-debugLog(`Talkloop v24 · ${IOS ? "iPhone/iPad" : "not iOS"} · ${RECORD_MODE ? "recording + AI transcription" : `speech recognition ${Recognition ? "yes" : "no"}`}`);
+debugLog(`Talkloop v25 · ${IOS ? "iPhone/iPad" : "not iOS"} · ${RECORD_MODE ? "recording + AI transcription" : `speech recognition ${Recognition ? "yes" : "no"}`}`);
 refreshKeyGate();
 renderStats();
 renderBookmarks();
