@@ -856,6 +856,12 @@ let recognizer = null;
 let dropNextResult = false; // set when listening is cut short on purpose, so its result is ignored
 let redoNextResult = false; // set by Delete: what was heard is dropped and the mic listens again
 
+// On iPhone and iPad every browser is Safari underneath, and Safari opens a mic that a tap
+// didn't start as a silent one: "Listening…" shows, the mic is on, but no words ever come.
+// So there hands-free doesn't reopen the mic after a reply; the mic button asks for a tap.
+const IOS = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+let awaitingTap = false; // iPhone: the learner's turn, waiting for a tap on the mic
+
 // iPhone (Safari, iOS 17+): once a reply has played through the <audio> element the audio
 // session stays set up for playback, and a mic opened then records silence (the orange dot
 // is on, "Listening…" shows, but no words come). So it is switched to recording just before
@@ -901,6 +907,7 @@ function startListening() {
     return;
   }
   if (recognizer) return; // one listening session at a time
+  setAwaitingTap(false);
   stopSpeaking();
   // This session's recognizer: its handlers and pause timer use it, not the shared variable,
   // so a session that ends late (e.g. aborted by "Hear it") can't unhook the next one.
@@ -1054,6 +1061,7 @@ function stopWakeListener() {
 
 function stopListening() {
   state.handsFree = false;
+  setAwaitingTap(false);
   recognizer?.stop();
   setStatus("Hands-free off.");
   updateCallState();
@@ -1061,8 +1069,16 @@ function stopListening() {
 
 function setMic(on) {
   $("mic").setAttribute("aria-pressed", String(on));
-  $("mic").querySelector(".round-label").textContent = on ? "Listening" : "Talk";
+  $("mic").querySelector(".round-label").textContent = on ? "Listening" : awaitingTap ? "Tap to talk" : "Talk";
   updateCallState();
+}
+
+// iPhone: the reply is over and hands-free is on; the mic pulses until it is tapped.
+function setAwaitingTap(on) {
+  if (awaitingTap === on) return;
+  awaitingTap = on;
+  $("mic").classList.toggle("tap-me", on);
+  setMic($("mic").getAttribute("aria-pressed") === "true");
 }
 
 // ---------- speech synthesis with word highlighting ----------
@@ -1450,7 +1466,12 @@ function maybeResumeListening() {
     return;
   }
   if (state.handsFree && !state.finished && !state.paused && !state.speaking && !recognizer) {
-    startListening();
+    if (IOS) {
+      setAwaitingTap(true);
+      setStatus("Your turn: tap the mic and talk.");
+    } else {
+      startListening();
+    }
   }
 }
 
@@ -1622,7 +1643,7 @@ function setSpeaking(on) {
 // The pill in the call header: what's happening right now.
 function updateCallState() {
   let key = "idle";
-  let text = state.handsFree ? "Your turn — just talk" : "Your turn";
+  let text = awaitingTap ? "Your turn — tap the mic" : state.handsFree ? "Your turn — just talk" : "Your turn";
   if (state.finished) { key = "ended"; text = "Scene complete"; }
   else if (state.paused) { key = "paused"; text = wakeRecognizer ? "Paused — say “zurück”" : "Paused"; }
   else if (state.busy) { key = "thinking"; text = "Thinking…"; }
@@ -1676,6 +1697,7 @@ function setPaused(paused, { byVoice = false } = {}) {
     state.paused = true; // set first so nothing restarts the mic or voice
     if (recognizer) stopListening();
     state.handsFree = false;
+    setAwaitingTap(false);
     stopSpeaking();
     holdCallTimer();
     setStatus(pausedByVoice
@@ -1747,6 +1769,7 @@ if (window.visualViewport) {
 // ---------- conversation turns ----------
 async function sendTurn(message) {
   if (state.busy || state.finished) return;
+  setAwaitingTap(false); // typed instead (iPhone): the next reply asks for a tap again
   if (message) addLearnerMessage(message);
   setBusy(true);
   setStatus(`${state.settings.characterName} is thinking…`);
@@ -1787,6 +1810,7 @@ function presentReply(turn) {
     state.finished = true;
     renderSuggestions([]);
     state.handsFree = false;
+    setAwaitingTap(false);
     setStatus("Scene complete! Tap End to start another.");
     setBusy(false);
   }
@@ -2270,7 +2294,9 @@ onTap($("composer").querySelector("button[type='submit']"), () => {
 }, { click: false });
 
 $("mic").addEventListener("click", () => {
-  if (state.handsFree || $("mic").getAttribute("aria-pressed") === "true") {
+  if (awaitingTap && !recognizer) {
+    startListening(); // iPhone: the tap that opens the mic for this turn
+  } else if (state.handsFree || $("mic").getAttribute("aria-pressed") === "true") {
     stopListening();
   } else {
     state.handsFree = true; // hands-free loop: talk, auto-send on pause, resume after each reply
@@ -2336,6 +2362,7 @@ $("end").addEventListener("click", () => {
   state.rapport = 0;
   state.finished = false;
   state.handsFree = false;
+  setAwaitingTap(false);
   pendingReply = null;
   resumeHandsFree = false;
   setPaused(false);

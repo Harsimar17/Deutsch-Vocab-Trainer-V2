@@ -215,6 +215,10 @@ body.in-call { overflow: hidden; }
 }
 .round:active svg { transform: scale(0.94); }
 .mic[aria-pressed="true"] svg { background: var(--warn); border-color: transparent; color: #fff; }
+/* iPhone: the learner's turn — the mic pulses until it is tapped. */
+.mic.tap-me svg { background: var(--accent); border-color: transparent; color: var(--accent-text); animation: tap-me 1.4s ease-in-out infinite; }
+@keyframes tap-me { 0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 55%, transparent); } 50% { box-shadow: 0 0 0 10px transparent; } }
+@media (prefers-reduced-motion: reduce) { .mic.tap-me svg { animation: none; } }
 .end svg { background: #e0393e; border-color: transparent; color: #fff; }
 .pause .icon-play, .pause[aria-pressed="true"] .icon-pause { display: none; }
 .pause[aria-pressed="true"] .icon-play { display: inline; }
