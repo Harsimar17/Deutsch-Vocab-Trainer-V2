@@ -929,12 +929,15 @@ function startListening() {
   };
   recognizer.onend = () => {
     clearTimeout(silenceTimer);
+    debugLog(`mic end, heard "${finalText.trim().slice(0, 40)}"`);
     recognizer = null;
     setMic(false);
     showHeard("");
     afterListening(finalText.trim());
   };
+  if (DEBUG) for (const type of ["audiostart", "soundstart", "speechstart", "audioend"]) recognizer.addEventListener(type, () => debugLog(`mic ${type}`));
   recognizer.start();
+  debugLog("mic start");
   setMic(true);
   setStatus("Listening… just talk. Tap the mic to stop hands-free.");
 }
@@ -1215,6 +1218,7 @@ async function speak(text, wordSpans, onDone, mood = "neutral") {
     console.warn("Natural voice unavailable, using the browser voice:", reason);
     noteVoice(wordSpans, `Browser voice — ${reason}`);
     setSpeaking(true);
+    debugLog("reply → iPhone/browser voice");
     browserSpeak(text, rate, wordSpans, finish);
   };
   const play = (audio, note) => {
@@ -1288,19 +1292,23 @@ async function playCloudAudio(pcm, sampleRate, wordSpans, onDone, onFail) {
   const token = speakToken;
   const ctx = getAudioCtx();
   if (!ctx) {
+    debugLog("reply → <audio> (no Web Audio)");
     playCloudAudioWav(pcm, sampleRate, wordSpans, onDone, onFail);
     return;
   }
   if (ctx.state !== "running") {
+    debugLog(`Web Audio is ${ctx.state}, waking it`);
     await Promise.race([ctx.resume().catch(() => {}), new Promise((r) => setTimeout(r, 300))]);
     if (token !== speakToken) return;
     // A still-suspended context (iPhone after the mic was used) would play silently
     // and never end; try the primed <audio> element instead.
     if (ctx.state !== "running") {
+      debugLog(`reply → <audio> (Web Audio still ${ctx.state})`);
       playCloudAudioWav(pcm, sampleRate, wordSpans, onDone, onFail);
       return;
     }
   }
+  debugLog("reply → Web Audio");
 
   // 16-bit little-endian mono PCM -> AudioBuffer.
   const view = new DataView(pcm.buffer, pcm.byteOffset, pcm.byteLength);
@@ -2110,6 +2118,8 @@ $("start").addEventListener("click", async () => {
   bumpStreak();
   renderStats();
   $("setup").hidden = true;
+  // Start hands-free, so the mic opens once the opening line is spoken — no tap needed.
+  state.handsFree = Boolean(Recognition);
   enterCall();
   // The on-device voice is the default: get it ready while the first reply loads.
   if (hasPiperVoice(state.settings.locale)) {
@@ -2367,7 +2377,7 @@ $("end").addEventListener("click", () => {
 if ("speechSynthesis" in window) speechSynthesis.onvoiceschanged = () => {};
 
 // With ?debug: which build this phone runs (a cached old one would explain old behaviour).
-debugLog(`Talkloop v27 · speech recognition ${Recognition ? "yes" : "no"}`);
+debugLog(`Talkloop v29 · speech recognition ${Recognition ? "yes" : "no"}`);
 refreshKeyGate();
 renderStats();
 renderBookmarks();
