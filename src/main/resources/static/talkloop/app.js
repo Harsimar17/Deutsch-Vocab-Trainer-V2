@@ -873,7 +873,7 @@ function setAudioSession(type) {
   } catch {
     // unsupported value or browser: the default session still works
   }
-  debugLog(`audio session → ${type}`);
+  debugLog(`audio session → ${type} (now ${navigator.audioSession?.type ?? "none"}/${navigator.audioSession?.state ?? "-"})`);
 }
 
 // Open the page with ?debug to see what the mic does, in a few lines at the bottom left
@@ -979,7 +979,7 @@ function startListening() {
   setAudioSession("play-and-record");
   try {
     rec.start();
-    debugLog("mic start");
+    debugLog(`mic start (${navigator.userActivation?.isActive ? "after a tap" : "no tap"})`);
   } catch (error) {
     // The browser refused to start (e.g. the microphone is still busy): say so, don't pretend to listen.
     debugLog(`mic start failed: ${error.message}`);
@@ -2383,6 +2383,8 @@ $("end").addEventListener("click", () => {
 // Voices load asynchronously in Chrome.
 if ("speechSynthesis" in window) speechSynthesis.onvoiceschanged = () => {};
 
+// With ?debug: which build this phone runs (a cached old one would explain old behaviour).
+debugLog(`Talkloop v22 · ${IOS ? "iPhone/iPad" : "not iOS"} · speech ${Recognition ? "yes" : "no"} · audio session ${navigator.audioSession?.type ?? "none"}`);
 refreshKeyGate();
 renderStats();
 renderBookmarks();
