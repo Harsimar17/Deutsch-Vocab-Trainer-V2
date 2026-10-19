@@ -1011,6 +1011,8 @@ function afterListening(spoken) {
 const SPEECH_LEVEL = 0.02; // RMS of the mic signal that counts as speaking
 const NO_SPEECH_MS = 20_000; // a turn with no speech at all ends after this
 const MAX_TURN_MS = 60_000;
+// What was written down shows this long, with Edit and Delete, before it is sent.
+const REVIEW_MS = 3000;
 let micStream = null;
 let meterContext = null;
 
@@ -1049,9 +1051,17 @@ function startRecording() {
   }
   let aborted = false;
   let finish = null; // ends the recording once it runs
+  let review = null; // { timer, text } while what was heard waits to be sent
   const session = {
-    stop() { if (finish) finish(); else aborted = true; },
-    abort() { aborted = true; finish?.(); },
+    // While reviewing, stop sends it now (e.g. the mic tapped to end hands-free).
+    stop() {
+      if (review) { clearTimeout(review.timer); done(review.text); } else if (finish) finish(); else aborted = true;
+    },
+    // Edit and Delete land here while reviewing: nothing is sent.
+    abort() {
+      aborted = true;
+      if (review) { clearTimeout(review.timer); done(""); } else finish?.();
+    },
   };
   recognizer = session;
   setMic(true);
@@ -1125,7 +1135,12 @@ function startRecording() {
       try {
         const text = await transcribe(new Blob(chunks, { type: recorder.mimeType || type || "audio/mp4" }));
         debugLog(`heard "${text.slice(0, 40)}"`);
-        done(text);
+        if (recognizer !== session || aborted) return done("");
+        if (!text) return done("");
+        // Show it with Edit and Delete for a moment, then send it.
+        showHeard(text);
+        setStatus("Sending… tap Edit to fix it or Delete to say it again.");
+        review = { text, timer: setTimeout(() => done(text), REVIEW_MS) };
       } catch (error) {
         debugLog(`transcription failed: ${error.message}`);
         if (recognizer !== session) return;
@@ -2601,7 +2616,7 @@ $("end").addEventListener("click", () => {
 if ("speechSynthesis" in window) speechSynthesis.onvoiceschanged = () => {};
 
 // With ?debug: which build this phone runs (a cached old one would explain old behaviour).
-debugLog(`Talkloop v23 · ${IOS ? "iPhone/iPad" : "not iOS"} · ${RECORD_MODE ? "recording + AI transcription" : `speech recognition ${Recognition ? "yes" : "no"}`}`);
+debugLog(`Talkloop v24 · ${IOS ? "iPhone/iPad" : "not iOS"} · ${RECORD_MODE ? "recording + AI transcription" : `speech recognition ${Recognition ? "yes" : "no"}`}`);
 refreshKeyGate();
 renderStats();
 renderBookmarks();
