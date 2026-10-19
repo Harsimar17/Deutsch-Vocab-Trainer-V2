@@ -548,6 +548,159 @@ function mergeMistakes(merged, startedAt) {
   store.set("mistakes", log);
 }
 
+// ---------- speaking schedule ----------
+// Knowing a word in the trainer isn't the same as saying it without thinking. That comes
+// from recalling it yourself, out loud, in a real sentence, again over several days. So
+// each call has a few "today's words": shown in English, elicited (never said first) by
+// the partner, and checked by the coach. Said correctly on a new day, a word moves up a
+// stage and comes back later; at stage 4 it is automatic. Kept per word in this browser
+// ("spoken": {de: {stage, due, uses, lastDay, updatedAt}}) and synced with the trainer.
+const TODAY_WORDS = 5;
+const SPOKEN_DAYS = [1, 3, 7, 21]; // due again this many days after reaching stage 1..4
+const AUTOMATIC_RECHECK_DAYS = 60; // an automatic word said correctly again
+const DONE_AFTER = 2; // correct uses in one call before a word makes room for the next
+let todayWords = null; // { active, waiting, status: {de: {correct, wrong, peeked}} } during a linked call
+
+function localDay(t = Date.now()) {
+  const d = new Date(t);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+// Due words first (the least secure first), then words never said, in the trainer's
+// order (least secure first). Words not yet due, automatic ones included, wait.
+function pickTodayWords(learnt) {
+  const spoken = store.get("spoken", {});
+  const now = Date.now();
+  const due = learnt.filter((w) => spoken[w.de] && spoken[w.de].due <= now)
+    .sort((a, b) => spoken[a.de].stage - spoken[b.de].stage || spoken[a.de].due - spoken[b.de].due);
+  const order = [...due, ...learnt.filter((w) => !spoken[w.de])];
+  todayWords = { active: order.slice(0, TODAY_WORDS), waiting: order.slice(TODAY_WORDS), status: {} };
+}
+
+function setSpoken(de, entry) {
+  const spoken = store.get("spoken", {});
+  spoken[de] = { ...entry, updatedAt: Date.now() };
+  store.set("spoken", spoken);
+}
+
+// Said correctly without peeking: up a stage, once per day (a second use the same day only counts).
+function spokenCorrect(de) {
+  const prev = store.get("spoken", {})[de];
+  const day = localDay();
+  if (prev && prev.lastDay === day) {
+    setSpoken(de, { ...prev, uses: prev.uses + 1 });
+    return;
+  }
+  const stage = Math.min(4, (prev?.stage ?? 0) + 1);
+  const days = prev?.stage === 4 ? AUTOMATIC_RECHECK_DAYS : SPOKEN_DAYS[stage - 1];
+  setSpoken(de, { stage, due: Date.now() + days * 86_400_000, uses: (prev?.uses ?? 0) + 1, lastDay: day });
+}
+
+// Wrong, or needed the German shown: back to stage 1 (0 if never said), due tomorrow.
+function spokenMissed(de) {
+  const prev = store.get("spoken", {})[de];
+  setSpoken(de, {
+    stage: prev ? Math.min(prev.stage, 1) : 0,
+    due: Date.now() + 86_400_000,
+    uses: prev?.uses ?? 0,
+    lastDay: prev?.lastDay ?? "",
+  });
+}
+
+// Which of today's words the model means: it may drop or change the article.
+const bareWord = (s) => normalizeSpeech(s).replace(/^(der|die|das) /, "");
+function findTodayWord(word) {
+  return todayWords?.active.find((w) => bareWord(w.de) === bareWord(word ?? ""));
+}
+
+// The coach's used_words for the learner's last message.
+function recordUsedWords(used) {
+  if (!todayWords || !Array.isArray(used)) return;
+  for (const u of used) {
+    const w = findTodayWord(u?.word);
+    if (!w) continue;
+    const s = (todayWords.status[w.de] ??= { correct: 0, wrong: 0, peeked: false });
+    if (u.correct) {
+      s.correct++;
+      if (!s.peeked) spokenCorrect(w.de); // after a peek it counts for this call only
+    } else {
+      s.wrong++;
+      spokenMissed(w.de);
+    }
+  }
+  // A word said correctly often enough makes room for the next one.
+  const done = todayWords.active.filter((w) => (todayWords.status[w.de]?.correct ?? 0) >= DONE_AFTER);
+  for (const w of done) {
+    todayWords.active.splice(todayWords.active.indexOf(w), 1, ...todayWords.waiting.splice(0, 1));
+  }
+}
+
+function peekTodayWord(de) {
+  const s = (todayWords.status[de] ??= { correct: 0, wrong: 0, peeked: false });
+  if (s.peeked || s.correct) return; // a word already said shows its German anyway
+  s.peeked = true;
+  spokenMissed(de);
+}
+
+// After a call: what was said, tried and not reached, under "Start a conversation".
+function renderRecap() {
+  const box = $("recap");
+  const status = todayWords?.status ?? {};
+  const said = Object.entries(status).filter(([, s]) => s.correct && !s.peeked).map(([de]) => de);
+  const tried = Object.entries(status).filter(([de]) => !said.includes(de)).map(([de]) => de);
+  const missed = todayWords ? todayWords.active.map((w) => w.de).filter((de) => !status[de]) : [];
+  if (!said.length && !tried.length) {
+    box.hidden = true;
+    return;
+  }
+  const automatic = Object.values(store.get("spoken", {})).filter((s) => s.stage >= 4).length;
+  const line = (label, words) => {
+    if (!words.length) return null;
+    const p = document.createElement("p");
+    const b = document.createElement("strong");
+    b.textContent = `${label}: `;
+    p.append(b, words.join(", "));
+    return p;
+  };
+  const head = document.createElement("h3");
+  head.textContent = "Last call";
+  const total = document.createElement("p");
+  total.className = "muted";
+  total.textContent = `${automatic} word${automatic === 1 ? "" : "s"} automatic so far. Words come back after 1, 3, 7 and 21 days.`;
+  box.replaceChildren(head, ...[line("Said ✓", said), line("Practise again", tried), line("Not reached", missed)].filter(Boolean), total);
+  box.hidden = false;
+}
+
+let spokenSync = null; // the sync in flight, if any
+
+// Like syncMistakes: sends what changed here since the last sync, keeps the newer of each word.
+function syncSpoken({ keepalive = false } = {}) {
+  const link = trainerLink();
+  if (!link || spokenSync) return;
+  const startedAt = Date.now();
+  const since = store.get("spoken_synced_at", 0);
+  const words = Object.fromEntries(Object.entries(store.get("spoken", {})).filter(([, s]) => s.updatedAt >= since));
+  const body = JSON.stringify({ words });
+  spokenSync = fetch(`${link.api}/api/talkloop/spoken`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${link.token}`, "Content-Type": "application/json" },
+    body,
+    keepalive: keepalive && body.length < 60_000,
+  })
+    .then(async (res) => {
+      if (!res.ok) return;
+      const merged = (await res.json()).words ?? {};
+      const local = store.get("spoken", {});
+      for (const [de, s] of Object.entries(merged)) {
+        if (!local[de] || s.updatedAt > local[de].updatedAt) local[de] = s;
+      }
+      store.set("spoken", local);
+      store.set("spoken_synced_at", startedAt);
+    })
+    .catch(() => {})
+    .finally(() => { spokenSync = null; });
+}
+
 // The model writes these fields in this order, so coach comes first: it judges the
 // learner's message before writing its own reply and suggestions, whose words it would
 // otherwise credit to the learner. (Gemini needs propertyOrdering for that; the JSON
@@ -562,9 +715,18 @@ const TURN_SCHEMA = {
         correction: { type: "STRING" },
         mistakes: { type: "ARRAY", items: { type: "STRING", enum: Object.keys(MISTAKE_TYPES) } },
         tip: { type: "STRING" },
+        // Which of today's words the learner's message contains (see the speaking schedule).
+        used_words: {
+          type: "ARRAY",
+          items: {
+            type: "OBJECT",
+            properties: { word: { type: "STRING" }, correct: { type: "BOOLEAN" } },
+            required: ["word", "correct"],
+          },
+        },
       },
-      required: ["understood", "correction", "mistakes", "tip"],
-      propertyOrdering: ["understood", "correction", "mistakes", "tip"],
+      required: ["understood", "correction", "mistakes", "tip", "used_words"],
+      propertyOrdering: ["understood", "correction", "mistakes", "tip", "used_words"],
     },
     reply: { type: "STRING" },
     reply_translation: { type: "STRING" },
@@ -605,7 +767,7 @@ const LEVEL_GUIDE = {
   C1: "Speak as to a near-native speaker: natural, idiomatic language with nuanced words, complex sentences and all tenses and moods. Discuss abstract topics in depth and ask the learner to justify, nuance or take a stance. Besides real mistakes, also correct phrasing that is grammatical but unidiomatic.",
 };
 
-function turnSystemPrompt({ language, nativeLanguage, level, scenario, mode, tense }, targetWords = [], learnt = false, learnerMessage = "", weakSpots = []) {
+function turnSystemPrompt({ language, nativeLanguage, level, scenario, mode, tense }, targetWords = [], learnt = false, learnerMessage = "", weakSpots = [], today = null) {
   const m = MODES[mode] ?? MODES.scene;
   const persona = personaFor({ scenario, mode });
   const t = TENSES[tense];
@@ -625,7 +787,7 @@ function turnSystemPrompt({ language, nativeLanguage, level, scenario, mode, ten
     `Write reply_translation, coach.tip and nothing else in ${nativeLanguage}.`,
     learnerMessage
       ? `Fill coach first, before writing your reply. It judges only the learner's last message, which is exactly: ${JSON.stringify(learnerMessage)}. Give a correction only when that text has a real grammar or word-choice mistake${tenseMistake}; coach.correction is then only the sentence(s) with the mistake, rewritten correctly in ${language}, with no explanation (that goes in coach.tip). With every correction, list in coach.mistakes each kind of mistake it fixes: ${Object.entries(MISTAKE_TYPES).map(([k, d]) => `${k} = ${d}`).join("; ")}. Without a correction, leave coach.mistakes empty. coach.tip may praise or explain something that literally appears in that text; never credit the learner with words, tenses or grammar that are not in it, such as those in your own replies, your suggestions or practice words they did not use. If there is nothing useful to say, leave coach.tip empty.`
-      : "There is no learner message to judge yet: leave coach.correction, coach.mistakes and coach.tip empty.",
+      : "There is no learner message to judge yet: leave coach.correction, coach.mistakes, coach.tip and coach.used_words empty.",
     "Your reply is read aloud, so let your feelings show in the words: react like a real person with short interjections (for example Oh!, Ach wirklich?, Super!, Oh nein!) and use ! and ? where you mean them.",
     `Set mood to how the reply should sound: ${MOODS.join(", ")}. Use amused for fun or happy replies, surprised for amazement, angry only when the role calls for annoyance, sleepy for tiredness, whisper for secrets, and neutral otherwise.`,
   ];
@@ -655,8 +817,21 @@ function turnSystemPrompt({ language, nativeLanguage, level, scenario, mode, ten
       "Where they fit, weave one to three of these words or phrases into your reply, keep it natural, and give the learner a chance to use them too.",
     );
   }
+  // Today's words: the learner has to recall and say them, so the partner asks for them
+  // but never says them first (echoing a word just heard doesn't make it stick).
+  if (today?.words.length) {
+    const fmt = (w) => (w.en ? `${w.de} (${w.en})` : w.de);
+    const notYet = today.words.filter((w) => !today.status[w.de]?.correct);
+    const said = today.words.filter((w) => today.status[w.de]?.correct);
+    lines.push(
+      `Today's words, which the learner is practising until they can say them without thinking: ${today.words.map(fmt).join("; ")}.`,
+      ...(notYet.length ? [`Not said correctly yet: ${notYet.map((w) => w.de).join("; ")}. Get the learner to say these: ask a question on the current topic whose natural answer needs one of them, one word at a time. You may steer the conversation there with a natural bridge, but never quiz or list them, and never say, translate or hint at a word they haven't said yet: they must recall it on their own.`] : []),
+      ...(said.length ? [`Already said: ${said.map((w) => w.de).join("; ")}. Bring each up again later so the learner uses it in another form (another case, tense or sentence).`] : []),
+      ...(learnerMessage ? ["In coach.used_words, list each of today's words that the learner's last message contains in any form, written as in the list above, with correct true only if its meaning, form and article are right; a wrong use also gets a coach.correction. Leave it empty if none is in it."] : []),
+    );
+  }
   if (weakSpots.length) {
-    const clip = (t) => JSON.stringify(t.length > 120 ? `${t.slice(0, 117)}…` : t);
+    const clip =(t) => JSON.stringify(t.length > 120 ? `${t.slice(0, 117)}…` : t);
     const list = weakSpots.map((m) => `${MISTAKE_TYPES[m.type]} (recently they said ${clip(m.example.said)}; correct: ${clip(m.example.fix)})`).join("; ");
     lines.push(
       `The learner keeps making these mistakes, most frequent first: ${list}.`,
@@ -768,9 +943,11 @@ async function chatTurn(settings, history, message) {
   const mode = MODES[settings.request.mode] ?? MODES.scene;
   const userText = message.trim() || mode.opener;
   const learnt = Boolean(settings.vocab?.learnt);
-  const targetWords = settings.vocab?.enabled ? nextVocabBatch(learnt ? 8 : 12) : [];
+  const today = todayWords ? { words: todayWords.active, status: todayWords.status } : null;
+  const todaySet = new Set(today?.words.map((w) => w.de));
+  const targetWords = settings.vocab?.enabled ? nextVocabBatch(learnt ? 8 : 12).filter((w) => !todaySet.has(w.de)) : [];
   const turn = await aiJson({
-    systemInstruction: turnSystemPrompt(settings.request, targetWords, learnt, message.trim(), recurringMistakes(settings.request.language)),
+    systemInstruction: turnSystemPrompt(settings.request, targetWords, learnt, message.trim(), recurringMistakes(settings.request.language), today),
     schema: TURN_SCHEMA,
     contents: historyToContents(history, userText),
   });
@@ -1571,6 +1748,10 @@ function renderSuggestions(suggestions) {
 function renderFocusWords(words) {
   const box = $("focus");
   if (!box) return;
+  if (todayWords) {
+    renderTodayWords(box);
+    return;
+  }
   if (!words || !words.length) {
     box.hidden = true;
     box.replaceChildren();
@@ -1587,6 +1768,31 @@ function renderFocusWords(words) {
     chip.className = "focus-word";
     chip.textContent = w.de;
     chip.title = w.en;
+    box.append(chip);
+  }
+}
+
+// Today's words as their English cue: the learner recalls the German. A tap shows it
+// (and counts as a miss); a word used shows ✓ (right) or ! (try again).
+function renderTodayWords(box) {
+  const { active, status } = todayWords;
+  box.hidden = !active.length;
+  const label = document.createElement("span");
+  label.className = "focus-label";
+  label.textContent = "Say: ";
+  box.replaceChildren(label);
+  for (const w of active) {
+    const s = status[w.de];
+    const chip = document.createElement("button");
+    chip.type = "button";
+    chip.className = "focus-word today" + (s?.correct ? " said" : s?.wrong ? " tried" : "");
+    const mark = s?.correct ? "✓ " : s?.wrong ? "! " : "";
+    chip.textContent = mark + (s?.peeked || s?.correct ? `${w.en} = ${w.de}` : w.en || w.de);
+    chip.title = s?.peeked ? w.de : "Tap to see the German";
+    onTap(chip, () => {
+      peekTodayWord(w.de);
+      renderTodayWords(box);
+    });
     box.append(chip);
   }
 }
@@ -1787,6 +1993,7 @@ async function sendTurn(message) {
     state.rapport = Math.max(0, state.rapport + Math.max(-2, Math.min(2, turn.rapport_delta)));
     renderStats();
     if (message) {
+      recordUsedWords(turn.coach?.used_words);
       renderCoach(turn.coach);
       if (turn.coach?.correction) {
         const types = (turn.coach.mistakes ?? []).filter((t) => MISTAKE_TYPES[t]);
@@ -2108,6 +2315,11 @@ $("start").addEventListener("click", async () => {
     const learnt = trainerLink() ? ((await idbGet("learnt_words").catch(() => null)) ?? []) : null;
     const loaded = await loadVocabForSession(levels, learnt);
     vocab = { enabled: loaded > 0, levels, learnt: Boolean(learnt) };
+    // Linked: a few learnt words of these levels to say today (see the speaking schedule).
+    todayWords = null;
+    if (learnt) pickTodayWords(learnt.filter((w) => levels.includes(w.level)));
+  } else {
+    todayWords = null;
   }
 
   state.settings = {
@@ -2210,6 +2422,7 @@ $("trainer-form").addEventListener("submit", async (event) => {
     $("trainer-password").value = "";
     await refreshLearntWords();
     syncMistakes();
+    syncSpoken();
     renderMistakes();
   } catch (error) {
     renderTrainerLink(null, error.message === "Failed to fetch" ? "Couldn't reach the Vocab Trainer." : error.message);
@@ -2376,18 +2589,21 @@ $("end").addEventListener("click", () => {
   $("text").value = "";
   setStatus("");
   renderStats();
+  renderRecap();
+  todayWords = null;
   renderFocusWords([]);
   setBusy(false);
   leaveCall();
   $("setup").hidden = false;
   syncMistakes(); // the call is over: send its mistakes
+  syncSpoken();
 });
 
 // Voices load asynchronously in Chrome.
 if ("speechSynthesis" in window) speechSynthesis.onvoiceschanged = () => {};
 
 // With ?debug: which build this phone runs (a cached old one would explain old behaviour).
-debugLog(`Talkloop v30 · speech recognition ${Recognition ? "yes" : "no"}`);
+debugLog(`Talkloop v31 · speech recognition ${Recognition ? "yes" : "no"}`);
 refreshKeyGate();
 renderStats();
 renderBookmarks();
@@ -2407,8 +2623,12 @@ vocabMeta()
     await linkFromTrainerSession().catch(() => false);
     refreshLearntWords();
     syncMistakes();
+    syncSpoken();
   });
 // Leaving the page (closing the tab, switching apps) sends what this device recorded.
 document.addEventListener("visibilitychange", () => {
-  if (document.visibilityState === "hidden") syncMistakes({ keepalive: true });
+  if (document.visibilityState === "hidden") {
+    syncMistakes({ keepalive: true });
+    syncSpoken({ keepalive: true });
+  }
 });

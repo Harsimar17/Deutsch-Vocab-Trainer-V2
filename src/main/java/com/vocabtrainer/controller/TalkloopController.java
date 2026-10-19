@@ -49,4 +49,10 @@ public class TalkloopController {
     public Map<String, Object> mistakes(Ctx ctx, @RequestBody Map<String, Object> body) {
         return talkloop.syncMistakes(ctx, body);
     }
+
+    /** Merges a device's speaking schedule and returns the whole schedule. Needs the link too. */
+    @PostMapping("/spoken")
+    public Map<String, Object> spoken(Ctx ctx, @RequestBody Map<String, Object> body) {
+        return talkloop.syncSpoken(ctx, body);
+    }
 }

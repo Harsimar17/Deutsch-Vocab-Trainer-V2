@@ -61,8 +61,8 @@ public class WebConfig implements WebMvcConfigurer {
         registry.addInterceptor(sessionInterceptor)
                 .addPathPatterns("/api/**")
                 .excludePathPatterns("/api/vocab", "/api/auth/login", "/api/users", "/api/talkloop/words",
-                        "/api/talkloop/mistakes");
+                        "/api/talkloop/mistakes", "/api/talkloop/spoken");
         registry.addInterceptor(talkloopLinkInterceptor)
-                .addPathPatterns("/api/talkloop/words", "/api/talkloop/mistakes");
+                .addPathPatterns("/api/talkloop/words", "/api/talkloop/mistakes", "/api/talkloop/spoken");
     }
 }

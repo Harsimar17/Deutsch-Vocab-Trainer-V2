@@ -88,6 +88,7 @@ it was issued, so a session ends after 24 h without a request. Send
 | `POST /api/talkloop/link` | → `{token, expiresAt}`: a link for Talkloop (learnt words and its mistake log only), valid 180 days, never renewed |
 | `GET /api/talkloop/words` (with the link as `Bearer`, not a session) | learnt words (every card with a schedule), least secure first → `{count, words: [{de, en, cat, lvl, example, box, lapses, last}]}` |
 | `POST /api/talkloop/mistakes` (with the link) `{languages: {German: {resetAt, entries: [{type, at, said, fix}]}}}` | Talkloop's mistake log: merges what a device recorded since its last sync (newest `resetAt` wins and drops older entries; duplicates removed; newest 300 per language kept) → the whole log in the same shape. Stored in `scores/{uid}/talkloop/mistakes` |
+| `POST /api/talkloop/spoken` (with the link) `{words: {"die Haltestelle": {stage, due, uses, lastDay, updatedAt}}}` | Talkloop's speaking schedule: merges what a device changed since its last sync (per word the newest `updatedAt` wins) → the whole schedule. Stored in `scores/{uid}/talkloop/spoken` |
 
 Rounds are kept in memory (`repository/DrillRepository`, 6 h idle limit) and belong
 to the user who started them; every answer is saved to Firestore as it happens,
@@ -110,6 +111,15 @@ the same site, it finds the trainer's login in the browser and swaps it for its
 link (`POST /api/talkloop/link`) on its own, so there is nothing to connect: its
 partner uses every A1/A2 word plus the learnt B1 words, and its mistake log is
 kept here (`POST /api/talkloop/mistakes`), so it follows the learner to every device.
+
+**Today's words.** To make learnt words come without thinking, each linked call picks
+5 of them to *say*: due ones first, then words never said, least secure first. They show
+in English; the learner recalls the German (a tap shows it, but then it counts as a miss).
+The partner asks questions whose answer needs them and never says one first, and the
+coach reports which ones the learner used and whether correctly. Said correctly on a new
+day, a word moves up a stage and comes back after 1, 3, 7 and 21 days; at stage 4 it is
+automatic. A wrong use or a peek sends it back to stage 1. After the call a short recap
+shows what was said. The schedule is kept here (`POST /api/talkloop/spoken`).
 
 ## Users
 

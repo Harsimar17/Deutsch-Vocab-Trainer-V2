@@ -31,6 +31,9 @@ public class TalkloopService {
     private static final int MAX_TEXT = 300;
     private static final Pattern LANGUAGE = Pattern.compile("[\\p{L} ]{1,40}");
     private static final Pattern MISTAKE_TYPE = Pattern.compile("[a-z_]{1,40}");
+    private static final int MAX_SPOKEN_WORDS = 5000;
+    private static final int MAX_WORD = 100;
+    private static final Pattern DAY = Pattern.compile("\\d{4}-\\d{2}-\\d{2}");
 
     private final JwtService jwt;
     private final ProgressService progress;
@@ -149,6 +152,60 @@ public class TalkloopService {
             }
             return Map.of("languages", languages);
         }
+    }
+
+    /**
+     * Talkloop's speaking schedule, merged with what one device sends; the whole
+     * schedule comes back. The body and the answer are {words: {de: {stage, due, uses,
+     * lastDay, updatedAt}}}: stage 0–4 (4 = automatic), due and updatedAt in ms, lastDay
+     * the learner's day (yyyy-mm-dd) it was last said correctly. Per word the newest
+     * updatedAt wins. Malformed words are skipped.
+     */
+    @SuppressWarnings("unchecked")
+    public Map<String, Object> syncSpoken(Ctx ctx, Map<String, Object> body) {
+        if (!(body.get("words") instanceof Map<?, ?> incoming)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "words: expected an object");
+        }
+        synchronized (syncLocks[Math.floorMod(ctx.uid().hashCode(), syncLocks.length)]) {
+            Map<String, Object> stored = repo.findTalkloopSpoken(ctx);
+            Map<String, Object> words = new TreeMap<>(
+                    stored != null && stored.get("words") instanceof Map<?, ?> m ? (Map<String, Object>) m : Map.of());
+            boolean changed = false;
+            for (Map.Entry<?, ?> e : incoming.entrySet()) {
+                Map<String, Object> sent = spokenWord(e.getValue());
+                if (!(e.getKey() instanceof String de) || de.isBlank() || de.length() > MAX_WORD || sent == null
+                        || (!words.containsKey(de) && words.size() >= MAX_SPOKEN_WORDS)) {
+                    continue;
+                }
+                long have = words.get(de) instanceof Map<?, ?> h ? Srs.num(h.get("updatedAt"), 0) : -1;
+                if ((long) sent.get("updatedAt") > have) {
+                    words.put(de, sent);
+                    changed = true;
+                }
+            }
+            if (changed) { // a device that only pulls costs no write
+                repo.saveTalkloopSpoken(ctx, Map.of("words", words));
+            }
+            return Map.of("words", words);
+        }
+    }
+
+    /** A valid speaking-schedule entry, or null. */
+    private static Map<String, Object> spokenWord(Object o) {
+        if (!(o instanceof Map<?, ?> m) || !(m.get("stage") instanceof Number stage) || !(m.get("updatedAt") instanceof Number at)) {
+            return null;
+        }
+        long updatedAt = at.longValue();
+        if (stage.intValue() < 0 || stage.intValue() > 4 || updatedAt <= 0 || updatedAt > System.currentTimeMillis() + 86_400_000L) {
+            return null;
+        }
+        Map<String, Object> w = new LinkedHashMap<>();
+        w.put("stage", (long) stage.intValue());
+        w.put("due", Math.max(0, Srs.num(m.get("due"), 0)));
+        w.put("uses", Math.max(0, Srs.num(m.get("uses"), 0)));
+        w.put("lastDay", m.get("lastDay") instanceof String day && DAY.matcher(day).matches() ? day : "");
+        w.put("updatedAt", updatedAt);
+        return w;
     }
 
     /** A valid entry, with its texts cut to {@value #MAX_TEXT} characters, or null. */

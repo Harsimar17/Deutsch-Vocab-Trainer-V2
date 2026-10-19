@@ -275,6 +275,12 @@ body.in-call { overflow: hidden; }
 .focus { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-bottom: 10px; font-size: 0.85rem; }
 .focus-label { color: var(--muted); }
 .focus-word { background: var(--character); border-radius: 999px; padding: 2px 10px; }
+button.focus-word { border: 1px solid transparent; color: inherit; font: inherit; cursor: pointer; }
+.focus-word.said { border-color: var(--good); color: var(--good); }
+.focus-word.tried { border-color: var(--warn); color: var(--warn); }
+.recap { margin-bottom: 16px; padding: 10px 12px; border-radius: 10px; background: var(--character); }
+.recap h3 { margin: 0 0 6px; font-size: 1rem; }
+.recap p { margin: 4px 0; overflow-wrap: anywhere; }
 
 /* Phones */
 @media (max-width: 560px) {

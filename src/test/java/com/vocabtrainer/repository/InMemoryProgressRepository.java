@@ -28,6 +28,8 @@ public class InMemoryProgressRepository extends ProgressRepository {
     private final Map<String, Map<String, Map<String, Object>>> sentences = new ConcurrentHashMap<>();
     private final Map<String, Map<String, Object>> talkloopMistakes = new ConcurrentHashMap<>();
     private int talkloopMistakeWrites;
+    private final Map<String, Map<String, Object>> talkloopSpoken = new ConcurrentHashMap<>();
+    private int talkloopSpokenWrites;
 
     public InMemoryProgressRepository() {
         super(RestClient.create(), new AppProperties(new AppProperties.Firebase("fake", "fake-key", "http://unused"),
@@ -124,6 +126,25 @@ public class InMemoryProgressRepository extends ProgressRepository {
         rules(ctx);
         talkloopMistakes.put(ctx.uid(), copy(data));
         talkloopMistakeWrites++;
+    }
+
+    @Override
+    public synchronized Map<String, Object> findTalkloopSpoken(Ctx ctx) {
+        rules(ctx);
+        Map<String, Object> m = talkloopSpoken.get(ctx.uid());
+        return m == null ? null : copy(m);
+    }
+
+    @Override
+    public synchronized void saveTalkloopSpoken(Ctx ctx, Map<String, Object> data) {
+        rules(ctx);
+        talkloopSpoken.put(ctx.uid(), copy(data));
+        talkloopSpokenWrites++;
+    }
+
+    /** How many times the speaking schedule was written (tests: a pull alone must not write). */
+    public synchronized int talkloopSpokenWrites() {
+        return talkloopSpokenWrites;
     }
 
     /** How many times the mistake log was written (tests: a pull alone must not write). */

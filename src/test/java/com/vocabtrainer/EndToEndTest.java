@@ -454,6 +454,35 @@ class EndToEndTest {
         assertEquals(401, status(post("/api/talkloop/mistakes"), null, Map.of("languages", Map.of())));
     }
 
+    @Test
+    @SuppressWarnings("unchecked")
+    void talkloopSyncsItsSpeakingScheduleAcrossDevices() throws Exception {
+        String t = login(BEN, "ben-test-pw");
+        String link = (String) ok(post("/api/talkloop/link"), t, null).get("token");
+        long now = System.currentTimeMillis();
+
+        // The laptop records two words; the phone then sends an older and a newer version.
+        ok(post("/api/talkloop/spoken"), link, Map.of("words", Map.of(
+                "die Haltestelle", Map.of("stage", 2, "due", now + 86_400_000L, "uses", 3, "lastDay", "2026-10-20", "updatedAt", now - 5000),
+                "warum", Map.of("stage", 4, "due", now, "uses", 9, "lastDay", "2026-10-19", "updatedAt", now - 5000))));
+        Map<String, Object> words = (Map<String, Object>) ok(post("/api/talkloop/spoken"), link, Map.of("words", Map.of(
+                "die Haltestelle", Map.of("stage", 1, "updatedAt", now - 9000),
+                "warum", Map.of("stage", 1, "uses", 10, "updatedAt", now - 1000),
+                "bad", Map.of("stage", 7, "updatedAt", now),
+                "der Juni", Map.of("stage", 1, "lastDay", "<script>", "updatedAt", now)))).get("words");
+        assertEquals(2, ((Number) ((Map<String, Object>) words.get("die Haltestelle")).get("stage")).intValue());
+        assertEquals(1, ((Number) ((Map<String, Object>) words.get("warum")).get("stage")).intValue());
+        assertEquals("", ((Map<String, Object>) words.get("der Juni")).get("lastDay"));
+        assertNull(words.get("bad"));
+
+        // A pull alone costs no write; a session can't use it; a wrong shape is refused.
+        int writes = firestore.talkloopSpokenWrites();
+        assertEquals(3, ((Map<String, Object>) ok(post("/api/talkloop/spoken"), link, Map.of("words", Map.of())).get("words")).size());
+        assertEquals(writes, firestore.talkloopSpokenWrites());
+        assertEquals(401, status(post("/api/talkloop/spoken"), t, Map.of("words", Map.of())));
+        assertEquals(400, status(post("/api/talkloop/spoken"), link, Map.of("words", List.of())));
+    }
+
     @SuppressWarnings("unchecked")
     private static List<Map<String, Object>> germanEntries(Map<String, Object> answer) {
         Map<String, Object> german = (Map<String, Object>) ((Map<String, Object>) answer.get("languages")).get("German");

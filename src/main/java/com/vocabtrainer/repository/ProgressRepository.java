@@ -300,6 +300,18 @@ public class ProgressRepository {
         commit(ctx.token(), List.of(update(progressName(ctx) + "/talkloop/mistakes", data, null)));
     }
 
+    // Talkloop's speaking schedule (which learnt words were said, and when they are due
+    // again), next to the mistake log for the same reason.
+
+    public Map<String, Object> findTalkloopSpoken(Ctx ctx) {
+        Map<String, Object> doc = getDocument(ctx.token(), progressName(ctx) + "/talkloop/spoken");
+        return doc == null ? null : fieldsOf(doc);
+    }
+
+    public void saveTalkloopSpoken(Ctx ctx, Map<String, Object> data) {
+        commit(ctx.token(), List.of(update(progressName(ctx) + "/talkloop/spoken", data, null)));
+    }
+
     // ---- REST plumbing ----
     // Document names go into the URL literally: as URI *variables* their "/"
     // would be percent-encoded and Firestore would see a different path.
