@@ -11,6 +11,7 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.web.method.support.HandlerMethodArgumentResolver;
 import org.springframework.web.servlet.config.annotation.CorsRegistry;
 import org.springframework.web.servlet.config.annotation.InterceptorRegistry;
+import org.springframework.web.servlet.config.annotation.ViewControllerRegistry;
 import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 
 @Configuration
@@ -38,6 +39,13 @@ public class WebConfig implements WebMvcConfigurer {
                 .allowedHeaders("Authorization", "Content-Type", "X-GitHub-Token", "X-Gemini-Key", "X-Time-Zone")
                 .exposedHeaders(SessionInterceptor.RENEWED_TOKEN_HEADER)
                 .maxAge(3600);
+    }
+
+    /** Talkloop, the speaking practice, lives in static/talkloop: serve its page at /talkloop/. */
+    @Override
+    public void addViewControllers(ViewControllerRegistry registry) {
+        registry.addRedirectViewController("/talkloop", "/talkloop/");
+        registry.addViewController("/talkloop/").setViewName("forward:/talkloop/index.html");
     }
 
     @Override

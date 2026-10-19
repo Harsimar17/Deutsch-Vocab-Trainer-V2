@@ -1,0 +1,249 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>Talkloop</title>
+    <link rel="icon" href="favicon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="favicon.svg" />
+    <meta name="theme-color" content="#2f5fd0" />
+    <!-- ?v= makes phones fetch the new file after a change instead of a cached copy: bump it with each change. -->
+    <link rel="stylesheet" href="styles.css?v=9" />
+  </head>
+  <body>
+    <header class="topbar">
+      <h1><a href="/" class="home" title="Back to the Vocab Trainer">←</a> Talkloop</h1>
+      <div class="stats">
+        <span id="streak" title="Days in a row you practised">🔥 0</span>
+        <span id="rapport" title="How much the character likes chatting with you">♥ 0</span>
+      </div>
+    </header>
+
+    <section id="keygate" class="card" hidden>
+      <h2>Connect an AI</h2>
+      <p class="muted">
+        Talkloop runs entirely in your browser and talks to the AI you pick with your own free key.
+        Keys are stored only in this browser and are sent only to that service.
+      </p>
+      <label>Conversation AI
+        <select id="provider">
+          <option value="mistral">Mistral — best German</option>
+          <option value="gemini">Google Gemini</option>
+        </select>
+      </label>
+      <label data-provider="mistral">Mistral API key
+        <input id="mistral-key" type="password" autocomplete="off" placeholder="Paste your Mistral key" />
+        <span class="muted">Free at
+          <a href="https://console.mistral.ai/api-keys" target="_blank" rel="noopener">console.mistral.ai</a>
+          (pick the free Experiment plan).</span>
+      </label>
+      <label data-provider="mistral">Groq API key <span class="muted">(optional — used when Mistral is busy)</span>
+        <input id="groq-key" type="password" autocomplete="off" placeholder="Paste your Groq key (gsk_…)" />
+        <span class="muted">Free at
+          <a href="https://console.groq.com/keys" target="_blank" rel="noopener">console.groq.com</a>.</span>
+      </label>
+      <label>Gemini API key <span id="gemini-optional" class="muted">(optional — backup voice)</span>
+        <input id="api-key" type="password" autocomplete="off" placeholder="Paste your key (AIza… or AQ.…)" />
+        <span class="muted">Free at
+          <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">aistudio.google.com/apikey</a>.</span>
+      </label>
+      <button id="save-key" class="primary">Save</button>
+      <p id="key-status" class="status"></p>
+    </section>
+
+    <section id="setup" class="card" hidden>
+      <div id="key-saved" class="keyline" hidden>
+        <span id="key-summary" class="muted"></span>
+        <button id="change-key" type="button">Change</button>
+      </div>
+      <h2>Start a conversation</h2>
+      <div class="grid">
+        <label>Practise
+          <select id="language">
+            <option value="Spanish" data-locale="es-ES">Spanish</option>
+            <option value="French" data-locale="fr-FR">French</option>
+            <option value="German" data-locale="de-DE" selected>German</option>
+            <option value="Italian" data-locale="it-IT">Italian</option>
+            <option value="Japanese" data-locale="ja-JP">Japanese</option>
+            <option value="Portuguese" data-locale="pt-BR">Portuguese</option>
+          </select>
+        </label>
+        <label>I speak
+          <select id="native">
+            <option>English</option>
+            <option>Hindi</option>
+            <option>Punjabi</option>
+            <option>Spanish</option>
+          </select>
+        </label>
+        <label>Level
+          <select id="level">
+            <option value="A1">A1</option>
+            <option value="A2">A2</option>
+            <option value="B1">B1</option>
+            <option value="B2">B2</option>
+            <option value="C1">C1</option>
+          </select>
+        </label>
+        <label>Mode
+          <select id="mode">
+            <option value="lead">Free chat — partner leads</option>
+            <option value="interview">Interview me</option>
+            <option value="topic">Discuss a topic</option>
+            <option value="scene">Scene role-play</option>
+          </select>
+        </label>
+        <label>Tense to practise
+          <select id="tense">
+            <option value="any">Any tense — just talk</option>
+            <option value="present">Present (Präsens) — ich spiele</option>
+            <option value="perfekt">Past, spoken (Perfekt) — ich habe gespielt</option>
+            <option value="praeteritum">Past, written (Präteritum) — ich spielte</option>
+            <option value="future">Future (Futur I) — ich werde spielen</option>
+          </select>
+        </label>
+        <label>Scene
+          <select id="scenario" disabled>
+            <optgroup label="Everyday">
+              <option value="cafe">Café — order a coffee</option>
+              <option value="market">Market — shop and haggle</option>
+              <option value="restaurant">Restaurant — order and complain</option>
+              <option value="shop">Clothes shop — return a jacket</option>
+              <option value="neighbour">New neighbour — small talk</option>
+            </optgroup>
+            <optgroup label="Travel">
+              <option value="station">Train station — tickets and delays</option>
+              <option value="hotel">Hotel — lost booking</option>
+            </optgroup>
+            <optgroup label="Life admin">
+              <option value="doctor">Doctor — describe symptoms</option>
+              <option value="dentist">Dentist — book by phone</option>
+              <option value="flat">Flat viewing — meet the landlady</option>
+              <option value="office">Town hall — register your address</option>
+              <option value="job">Job interview</option>
+            </optgroup>
+          </select>
+        </label>
+      </div>
+      <p id="voice-status" class="muted voice-status" aria-live="polite"></p>
+
+      <div class="vocab">
+        <div class="vocab-head">
+          <strong>My vocabulary</strong>
+          <label class="file-btn">Import file
+            <input id="vocab-file" type="file" accept="application/json,.json" hidden />
+          </label>
+        </div>
+        <div class="trainer-link">
+          <p id="trainer-status" class="muted" aria-live="polite"></p>
+          <button type="button" id="trainer-unlink" hidden>Unlink</button>
+        </div>
+        <form id="trainer-form" class="trainer-form" hidden>
+          <input id="trainer-email" type="email" autocomplete="username" placeholder="Vocab Trainer email" required />
+          <input id="trainer-password" type="password" autocomplete="current-password" placeholder="Password" required />
+          <button type="submit" id="trainer-connect">Connect</button>
+        </form>
+        <div class="vocab-url-row">
+          <input id="vocab-url" type="url"
+                 value="https://harsimar17.github.io/Deutsch-Vocab-Helper/german_vocab.json"
+                 placeholder="https://…/vocab.json" />
+          <button type="button" id="load-url">Load from web</button>
+        </div>
+        <p id="vocab-status" class="muted"></p>
+        <label class="check">
+          <input id="use-vocab" type="checkbox" disabled checked />
+          Weave my vocab into the conversation (words up to your level)
+        </label>
+      </div>
+
+      <label class="check say-again">
+        <input id="say-again" type="checkbox" checked />
+        After a correction, say the corrected sentence before the conversation moves on
+      </label>
+
+      <button id="start" class="primary">Start</button>
+    </section>
+
+    <!-- Full-screen "phone call" while a conversation runs: caller header on top,
+         scrolling transcript in the middle, call controls pinned to the bottom. -->
+    <main id="conversation" class="call" hidden>
+      <header class="call-head">
+        <div id="call-avatar" class="avatar" aria-hidden="true"></div>
+        <div class="caller">
+          <div id="call-name" class="caller-name"></div>
+          <div class="caller-sub"><span id="call-mode"></span> · <span id="call-timer">00:00</span></div>
+        </div>
+        <div id="call-state" class="call-state">Connecting…</div>
+      </header>
+
+      <div id="call-scroll" class="call-scroll">
+        <ol id="transcript" aria-live="polite"></ol>
+        <div id="coach" class="card coach" hidden></div>
+      </div>
+
+      <footer class="call-dock">
+        <div id="focus" class="focus" hidden aria-label="Vocabulary being practised"></div>
+        <!-- Say it again: after a correction, the corrected sentence is said before the reply comes. -->
+        <div id="drill" class="drill" hidden aria-live="polite">
+          <p class="drill-label">Say it correctly:</p>
+          <p id="drill-target" class="drill-target"></p>
+          <p id="drill-feedback" class="drill-feedback"></p>
+          <div class="drill-actions">
+            <button type="button" id="drill-say" class="primary">🎤 Say it</button>
+            <button type="button" id="drill-hear">▶ Hear it</button>
+            <button type="button" id="drill-skip">Skip</button>
+          </div>
+        </div>
+        <div id="suggestions" class="chips" aria-label="Things you could say"></div>
+        <!-- What the mic has heard; until it is sent (after the pause) it can be fixed or dropped. -->
+        <div id="heard" class="heard" hidden>
+          <div id="live" class="live" aria-live="polite"></div>
+          <div class="heard-actions">
+            <button type="button" id="heard-edit">✎ Edit</button>
+            <button type="button" id="heard-delete">✕ Delete</button>
+          </div>
+        </div>
+        <p id="status" class="status"></p>
+        <form id="composer" class="composer">
+          <input id="text" autocomplete="off" placeholder="Type your reply…" />
+          <button class="primary" type="submit">Send</button>
+        </form>
+        <div class="call-controls">
+          <button type="button" id="mic" class="round mic" aria-pressed="false" title="Talk hands-free">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 14a3 3 0 0 0 3-3V5a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3Zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.92V21h2v-3.08A7 7 0 0 0 19 11h-2Z"/></svg>
+            <span class="round-label">Talk</span>
+          </button>
+          <button type="button" id="pause" class="round pause" aria-pressed="false" title="Pause the call">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path class="icon-pause" d="M7 5h3.5v14H7zM13.5 5H17v14h-3.5z"/><path class="icon-play" d="M8 5.5v13l10.5-6.5z"/></svg>
+            <span class="round-label">Pause</span>
+          </button>
+          <button type="button" id="end" class="round end" title="End the conversation">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 9c-1.6 0-3.15.25-4.6.72v3.1c0 .39-.23.74-.56.9-.98.49-1.87 1.12-2.66 1.85a.98.98 0 0 1-1.38-.01L.29 13.08a1 1 0 0 1 0-1.41C3.34 8.78 7.46 7 12 7s8.66 1.78 11.71 4.67a1 1 0 0 1 0 1.41l-2.51 2.48a.98.98 0 0 1-1.38.01 11.3 11.3 0 0 0-2.66-1.85 1 1 0 0 1-.56-.9v-3.1A15 15 0 0 0 12 9Z"/></svg>
+            <span class="round-label">End</span>
+          </button>
+        </div>
+      </footer>
+    </main>
+
+    <aside id="explorer" class="card explorer" hidden>
+      <button id="explorer-close" class="close" aria-label="Close">×</button>
+      <div id="explorer-body"></div>
+    </aside>
+
+    <section class="card">
+      <div class="card-head">
+        <h2>Your recurring mistakes</h2>
+        <button type="button" id="reset-mistakes" hidden>Reset</button>
+      </div>
+      <ul id="mistakes" class="bookmarks"></ul>
+      <p id="mistakes-sync" class="muted mistakes-sync"></p>
+    </section>
+
+    <section class="card">
+      <h2>Saved words</h2>
+      <ul id="bookmarks" class="bookmarks"></ul>
+    </section>
+
+    <script src="app.js?v=20" type="module"></script> <!-- bump with app.js changes, like styles.css above -->
+  </body>
+</html>

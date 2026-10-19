@@ -460,6 +460,15 @@ class EndToEndTest {
         return german == null ? List.of() : (List<Map<String, Object>>) german.get("entries");
     }
 
+    @Test
+    void talkloopIsServedByThisApp() throws Exception {
+        assertEquals(302, mvc.perform(get("/talkloop")).andReturn().getResponse().getStatus());
+        MvcResult page = mvc.perform(get("/talkloop/")).andReturn();
+        assertEquals(200, page.getResponse().getStatus());
+        assertEquals("/talkloop/index.html", page.getResponse().getForwardedUrl());
+        assertEquals(200, mvc.perform(get("/talkloop/app.js")).andReturn().getResponse().getStatus());
+    }
+
     // ---- separate users ----
 
     @Test

@@ -2816,22 +2816,10 @@ function TabBar({ mode, setMode, mistakeCount }) {
   );
 }
 
-// Talkloop, the speaking-practice app: opened with a link (in the #fragment, so
-// it never reaches a server) that lets it read this learner's learnt words and keep its mistake log.
-// The tab opens straight away so the popup blocker allows it; the link follows.
-const TALKLOOP_URL = /^(localhost|127\.0\.0\.1)$/.test(location.hostname)
-  ? "http://localhost:8765/" : "https://harsimar17.github.io/talkloop/";
-async function openTalkloop() {
-  const tab = window.open("", "_blank");
-  try {
-    const { token } = await api.post("/api/talkloop/link");
-    const fragment = new URLSearchParams({ "vocab-link": token, "vocab-api": API_BASE || location.origin });
-    if (tab) { tab.opener = null; tab.location.href = TALKLOOP_URL + "#" + fragment; }
-    else location.href = TALKLOOP_URL + "#" + fragment;
-  } catch (e) {
-    if (tab) tab.close();
-    api.report(e);
-  }
+// Talkloop, the speaking-practice app, is part of this app (at /talkloop/). It
+// reads this learner's learnt words and keeps its mistake log with the login session kept in this browser.
+function openTalkloop() {
+  location.href = "/talkloop/";
 }
 
 // The logged-in user as a round initial; click for their email, Talkloop and "log out".
