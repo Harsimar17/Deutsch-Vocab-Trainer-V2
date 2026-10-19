@@ -1089,31 +1089,26 @@ function voicesReady() {
 }
 
 let currentAudio = null;
+let currentSource = null;
 let currentHighlight = null;
 let speakToken = 0; // bumps on every speak/stop so a slow TTS reply can't play over a newer one
 
-// All generated speech plays through this one <audio> element. Safari only lets audio
-// play after a network wait if a tap started it first, so the element is primed on the
-// first tap and reused: once unlocked it stays unlocked, also after the mic was used.
-// (Web Audio was dropped: on iPhone the mic, a route change or a call can leave an
-// AudioContext reporting "running" with its clock frozen, so a reply never played or
-// ended. It is also muted by the ring switch, which media playback is not, so the
-// audio session no longer has to be switched back and forth around every reply.)
+// A single AudioContext, unlocked on the first user tap. Playing generated audio
+// through Web Audio is far more reliable than <audio> in Safari / on iPhone.
+let audioCtx = null;
+function getAudioCtx() {
+  if (!audioCtx) {
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (AC) audioCtx = new AC();
+  }
+  return audioCtx;
+}
+
+// One shared <audio> element. On iPhone, speech recognition takes over the audio
+// session and suspends Web Audio; an element primed inside a tap can still play then.
 const player = new Audio();
 player.setAttribute("playsinline", "");
 let playerPrimed = false;
-
-// Unload the player once a reply has finished or been stopped. On iPhone a player still
-// holding a clip keeps Safari set up for playback, and a mic opened then records silence
-// ("Listening…" with the mic on, but no words). It stays unlocked for the next reply.
-function releasePlayer() {
-  const src = player.getAttribute("src");
-  if (!src) return;
-  player.removeAttribute("src");
-  player.load();
-  if (src.startsWith("blob:")) URL.revokeObjectURL(src);
-  debugLog("player released");
-}
 
 // Runs inside every user gesture so Safari lets audio play later, after network waits.
 let speechPrimed = false;
@@ -1122,6 +1117,15 @@ function unlockAudio() {
     playerPrimed = true;
     player.src = pcmToWavUrl(new Uint8Array(480)); // 10 ms of silence
     player.play().catch(() => { playerPrimed = false; });
+  }
+  const ctx = getAudioCtx();
+  if (ctx && ctx.state !== "running") {
+    ctx.resume().catch(() => {});
+    // Safari only truly unlocks once something is started inside the gesture.
+    const blip = ctx.createBufferSource();
+    blip.buffer = ctx.createBuffer(1, 1, 22050);
+    blip.connect(ctx.destination);
+    blip.start();
   }
   // Safari's speech synthesis also needs one gesture-initiated utterance.
   if (!speechPrimed && "speechSynthesis" in window) {
@@ -1217,7 +1221,7 @@ async function speak(text, wordSpans, onDone, mood = "neutral") {
     if (token !== speakToken) return; // stopped or superseded while audio was generating
     noteVoice(wordSpans, note);
     setSpeaking(true);
-    playSpeech(audio.pcm, audio.sampleRate, wordSpans, finish, fallback);
+    playCloudAudio(audio.pcm, audio.sampleRate, wordSpans, finish, fallback);
   };
   noteVoice(wordSpans, "");
   setAudioSession("playback");
@@ -1280,39 +1284,70 @@ function startHighlight(wordSpans, elapsedFn, duration) {
   }, 80);
 }
 
-// Play 16-bit PCM through the primed <audio> element, highlighting words as it goes.
-// onFail (the browser voice) runs if the element refuses to play.
-function playSpeech(pcm, sampleRate, wordSpans, onDone, onFail) {
+async function playCloudAudio(pcm, sampleRate, wordSpans, onDone, onFail) {
   const token = speakToken;
-  const url = pcmToWavUrl(pcm, sampleRate);
-  const duration = pcm.byteLength / 2 / sampleRate;
-  const audio = player;
-  if (audio.src.startsWith("blob:")) URL.revokeObjectURL(audio.src); // an interrupted reply's audio
-  currentAudio = audio;
-  let settled = false;
-  const end = (ok, reason) => {
-    if (settled) return;
-    settled = true;
-    URL.revokeObjectURL(url);
-    // Stopped or replaced (e.g. its play() rejects only after Replay started the next one):
-    // the player and the highlight belong to the newer reply now, so leave them alone.
+  const ctx = getAudioCtx();
+  if (!ctx) {
+    playCloudAudioWav(pcm, sampleRate, wordSpans, onDone, onFail);
+    return;
+  }
+  if (ctx.state !== "running") {
+    await Promise.race([ctx.resume().catch(() => {}), new Promise((r) => setTimeout(r, 300))]);
     if (token !== speakToken) return;
+    // A still-suspended context (iPhone after the mic was used) would play silently
+    // and never end; try the primed <audio> element instead.
+    if (ctx.state !== "running") {
+      playCloudAudioWav(pcm, sampleRate, wordSpans, onDone, onFail);
+      return;
+    }
+  }
+
+  // 16-bit little-endian mono PCM -> AudioBuffer.
+  const view = new DataView(pcm.buffer, pcm.byteOffset, pcm.byteLength);
+  const samples = Math.floor(pcm.byteLength / 2);
+  const buffer = ctx.createBuffer(1, samples, sampleRate);
+  const channel = buffer.getChannelData(0);
+  for (let i = 0; i < samples; i++) channel[i] = view.getInt16(i * 2, true) / 32768;
+
+  const clear = () => {
     if (currentHighlight) { clearInterval(currentHighlight); currentHighlight = null; }
-    audio.onended = audio.onerror = null;
-    releasePlayer();
     wordSpans.forEach((span) => span.classList.remove("speaking"));
-    if (ok) onDone();
-    else onFail(reason);
   };
-  audio.onended = () => end(true);
-  audio.onerror = () => end(false, "audio could not be played");
+  const src = ctx.createBufferSource();
+  src.buffer = buffer;
+  src.connect(ctx.destination);
+  currentSource = src;
+  const startedAt = ctx.currentTime;
+  currentHighlight = startHighlight(wordSpans, () => ctx.currentTime - startedAt, buffer.duration);
+  src.onended = () => { currentSource = null; clear(); onDone(); };
+  try {
+    src.start();
+  } catch (error) {
+    currentSource = null;
+    clear();
+    onFail(error.message);
+  }
+}
+
+// Plays through the shared <audio> element, for browsers without Web Audio or
+// when the AudioContext is suspended.
+function playCloudAudioWav(pcm, sampleRate, wordSpans, onDone, onFail) {
+  const url = pcmToWavUrl(pcm, sampleRate);
+  const audio = player;
   audio.src = url;
-  audio.play().then(
-    () => {
-      if (token === speakToken && !settled) currentHighlight = startHighlight(wordSpans, () => audio.currentTime, duration);
-    },
-    (error) => end(false, error.message),
-  );
+  currentAudio = audio;
+  audio.ontimeupdate = () => {
+    if (!audio.duration || !wordSpans.length) return;
+    const i = Math.min(wordSpans.length - 1, Math.floor((audio.currentTime / audio.duration) * wordSpans.length));
+    wordSpans.forEach((span, idx) => span.classList.toggle("speaking", idx === i));
+  };
+  const clear = () => {
+    wordSpans.forEach((span) => span.classList.remove("speaking"));
+    URL.revokeObjectURL(url);
+  };
+  audio.onended = () => { clear(); onDone(); };
+  audio.onerror = () => { clear(); onFail("audio could not be played"); };
+  audio.play().catch((error) => { clear(); onFail(error.message); });
 }
 
 async function browserSpeak(text, rate, wordSpans, onDone) {
@@ -1350,15 +1385,16 @@ function stopSpeaking() {
   setSpeaking(false);
   if (currentHighlight) { clearInterval(currentHighlight); currentHighlight = null; }
   document.querySelectorAll(".word.speaking").forEach((span) => span.classList.remove("speaking"));
+  if (currentSource) {
+    try { currentSource.onended = null; currentSource.stop(); } catch { /* already stopped */ }
+    currentSource = null;
+  }
   if (currentAudio) {
-    currentAudio.onended = currentAudio.onerror = null;
+    currentAudio.onended = currentAudio.onerror = currentAudio.ontimeupdate = null;
     currentAudio.pause();
     currentAudio = null;
-    releasePlayer();
   }
-  // Only when the browser voice is in use: on iOS, cancelling the speech engine for
-  // nothing still churns the audio session the reply is about to play through.
-  if ("speechSynthesis" in window && (speechSynthesis.speaking || speechSynthesis.pending)) speechSynthesis.cancel();
+  if ("speechSynthesis" in window) speechSynthesis.cancel();
 }
 
 // ---------- transcript rendering ----------
@@ -2331,7 +2367,7 @@ $("end").addEventListener("click", () => {
 if ("speechSynthesis" in window) speechSynthesis.onvoiceschanged = () => {};
 
 // With ?debug: which build this phone runs (a cached old one would explain old behaviour).
-debugLog(`Talkloop v26 · speech recognition ${Recognition ? "yes" : "no"}`);
+debugLog(`Talkloop v27 · speech recognition ${Recognition ? "yes" : "no"}`);
 refreshKeyGate();
 renderStats();
 renderBookmarks();
