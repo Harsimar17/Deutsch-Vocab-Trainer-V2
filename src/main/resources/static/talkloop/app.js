@@ -596,6 +596,15 @@ function personaFor({ scenario, mode }) {
   return m.usesScene ? SCENARIOS[scenario] ?? SCENARIOS.cafe : PARTNER;
 }
 
+// What "at the learner's level" means, so the partner doesn't drift above it (or talk down at C1).
+const LEVEL_GUIDE = {
+  A1: "Use only very common everyday words and short main clauses of about 5–8 words, mostly in the present tense (in German, Perfekt only for very common verbs, e.g. war, hatte, habe gemacht). No subordinate clauses. Ask simple, concrete questions about the learner's life, often yes/no or either-or questions. Where it helps, repeat a key word from the learner's message.",
+  A2: "Use common everyday words and short sentences of about 6–10 words. The present, the everyday past tense (in German, Perfekt) and the simple future are fine; at most simple because/that/when clauses (in German, weil, dass, wenn). Ask concrete questions about routines, plans, past weekends and preferences.",
+  B1: "Speak naturally but plainly, in sentences of up to about 15 words. Use all common tenses, subordinate clauses (in German, e.g. weil, obwohl, dass, wenn, als) and the occasional everyday idiom. Ask the learner for opinions, reasons and short stories about experiences.",
+  B2: "Speak as to a fluent learner: natural sentences with a varied vocabulary, the conditional and the passive where they fit (in German, Konjunktiv II and Passiv), and common idioms. Ask open questions that need arguing, comparing or hypothesising.",
+  C1: "Speak as to a near-native speaker: natural, idiomatic language with nuanced words, complex sentences and all tenses and moods. Discuss abstract topics in depth and ask the learner to justify, nuance or take a stance. Besides real mistakes, also correct phrasing that is grammatical but unidiomatic.",
+};
+
 function turnSystemPrompt({ language, nativeLanguage, level, scenario, mode, tense }, targetWords = [], learnt = false, learnerMessage = "", weakSpots = []) {
   const m = MODES[mode] ?? MODES.scene;
   const persona = personaFor({ scenario, mode });
@@ -609,6 +618,7 @@ function turnSystemPrompt({ language, nativeLanguage, level, scenario, mode, ten
     `You are ${persona.character}, ${persona.setting}. Stay in character and speak only ${language}.`,
     `The learner speaks ${language} at CEFR level ${level}; their native language is ${nativeLanguage}.`,
     "Keep each reply to one or two short sentences that match the learner's level, and end with something they can respond to.",
+    ...(LEVEL_GUIDE[level] ? [`At ${level}: ${LEVEL_GUIDE[level]}`] : []),
     m.extra,
     ...(m.usesScene && persona.goal ? [`Scene goal: ${persona.goal}`] : []),
     "Speech recognition produced the learner's message, so ignore missing punctuation and obvious transcription slips.",
@@ -2377,7 +2387,7 @@ $("end").addEventListener("click", () => {
 if ("speechSynthesis" in window) speechSynthesis.onvoiceschanged = () => {};
 
 // With ?debug: which build this phone runs (a cached old one would explain old behaviour).
-debugLog(`Talkloop v29 · speech recognition ${Recognition ? "yes" : "no"}`);
+debugLog(`Talkloop v30 · speech recognition ${Recognition ? "yes" : "no"}`);
 refreshKeyGate();
 renderStats();
 renderBookmarks();
