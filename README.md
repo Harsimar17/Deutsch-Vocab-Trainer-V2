@@ -89,6 +89,7 @@ it was issued, so a session ends after 24 h without a request. Send
 | `GET /api/talkloop/words` (with the link as `Bearer`, not a session) | learnt words (every card with a schedule), least secure first → `{count, words: [{de, en, cat, lvl, example, box, lapses, last}]}` |
 | `POST /api/talkloop/mistakes` (with the link) `{languages: {German: {resetAt, entries: [{type, at, said, fix}]}}}` | Talkloop's mistake log: merges what a device recorded since its last sync (newest `resetAt` wins and drops older entries; duplicates removed; newest 300 per language kept) → the whole log in the same shape. Stored in `scores/{uid}/talkloop/mistakes` |
 | `POST /api/talkloop/spoken` (with the link) `{words: {"die Haltestelle": {stage, due, uses, lastDay, updatedAt}}}` | Talkloop's speaking schedule: merges what a device changed since its last sync (per word the newest `updatedAt` wins) → the whole schedule. Stored in `scores/{uid}/talkloop/spoken` |
+| `POST /api/talkloop/cloudflare` (with the link, + `X-Cloudflare-Account`, `X-Cloudflare-Token`) `{messages, response_format?, temperature?, max_tokens?, reasoning_effort?}` | Talkloop's Cloudflare Workers AI backup: forwards the chat request to `@cf/openai/gpt-oss-120b` with the learner's own account and token (never stored), as Cloudflare refuses calls from web pages; Cloudflare's answer and status come back as they are |
 
 Rounds are kept in memory (`repository/DrillRepository`, 6 h idle limit) and belong
 to the user who started them; every answer is saved to Firestore as it happens,
@@ -102,7 +103,9 @@ app: its files are in `src/main/resources/static/talkloop/` and it is served at
 `/talkloop/`. It still runs in the browser and talks to Mistral / Gemini / Groq
 with the learner's own keys (kept in that browser only, never sent here). Groq
 (`openai/gpt-oss-120b`, about a second per reply) is the fastest; Mistral and Groq back
-each other up when one is busy.
+each other up when one is busy. Cloudflare Workers AI (the same model, several seconds per reply) is a
+choice of its own, and with Groq it can be the backup when Groq reaches its limit; it
+goes through `POST /api/talkloop/cloudflare`.
 
 Its voice input is the browser's speech recognition as in talkloop's early
 version (`bfa9006`), except that the turn ends 1.5 s after the last words heard, final

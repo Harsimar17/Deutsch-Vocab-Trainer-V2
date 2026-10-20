@@ -100,8 +100,12 @@ function getProvider() {
   } catch {
     saved = memoryKeys.provider || "";
   }
-  if (saved === "mistral" || saved === "gemini" || saved === "groq") return saved;
+  if (saved === "mistral" || saved === "gemini" || saved === "groq" || saved === "cloudflare") return saved;
   return getKey("gemini") && !getKey("mistral") ? "gemini" : "mistral";
+}
+// Whether the chosen service has what it needs: one key, or Cloudflare's account ID and token.
+function providerReady(provider = getProvider()) {
+  return provider === "cloudflare" ? Boolean(getKey("cfAccount") && getKey("cfToken")) : Boolean(getKey(provider));
 }
 function setProvider(p) {
   memoryKeys.provider = p;
@@ -920,7 +924,12 @@ function parseModelJson(text) {
   try {
     return JSON.parse(text);
   } catch {
-    throw new Error("The model returned an unreadable response. Please try again.");
+    // Some models put a sentence or a code fence around the JSON: take the object itself.
+    try {
+      return JSON.parse(text.slice(text.indexOf("{"), text.lastIndexOf("}") + 1));
+    } catch {
+      throw new Error("The model returned an unreadable response. Please try again.");
+    }
   }
 }
 
@@ -937,14 +946,19 @@ function chatSystemContent(systemInstruction, schema) {
   return `${systemInstruction}\n\nAnswer with only a JSON object with every field of this JSON Schema:\n${JSON.stringify(strip(toJsonSchema(schema)))}`;
 }
 
-function chatRequest(service, key, { systemInstruction, schema, contents, temperature = 0.8 }, stream = false) {
-  const messages = [
+function chatMessages({ systemInstruction, schema, contents }) {
+  return [
     { role: "system", content: chatSystemContent(systemInstruction, schema) },
     ...contents.map((c) => ({
       role: c.role === "model" ? "assistant" : "user",
       content: c.parts.map((p) => p.text).join(""),
     })),
   ];
+}
+
+function chatRequest(service, key, request, stream = false) {
+  const { temperature = 0.8 } = request;
+  const messages = chatMessages(request);
   return fetch(service.url, {
     method: "POST",
     headers: { "content-type": "application/json", authorization: `Bearer ${key}` },
@@ -1016,6 +1030,32 @@ async function chatJson(request) {
 // so the whole answer is fetched at once. When a key's limit is reached (429), the next
 // backup Groq key (other accounts') takes over; when Groq is still busy, Mistral, if it has a key.
 const GROQ_BACKUPS = ["groq2", "groq3"];
+
+// Cloudflare Workers AI (the same gpt-oss-120b, a few seconds per reply) as the last backup.
+// Its API refuses calls from web pages, so the request goes through the trainer
+// (POST /api/talkloop/cloudflare, with the Talkloop link), which forwards it with the
+// learner's account ID and token; neither is stored there.
+const CLOUDFLARE = { name: "Cloudflare" };
+const hasCloudflare = () => Boolean(getKey("cfAccount") && getKey("cfToken") && trainerLink());
+function cloudflareRequest(request) {
+  const link = trainerLink();
+  return fetch(`${link.api}/api/talkloop/cloudflare`, {
+    method: "POST",
+    headers: {
+      authorization: `Bearer ${link.token}`,
+      "content-type": "application/json",
+      "x-cloudflare-account": getKey("cfAccount"),
+      "x-cloudflare-token": getKey("cfToken"),
+    },
+    body: JSON.stringify({
+      messages: chatMessages(request),
+      response_format: { type: "json_object" },
+      temperature: request.temperature ?? 0.8,
+      max_tokens: 2000,
+      reasoning_effort: "low",
+    }),
+  });
+}
 async function groqJson(request) {
   const groqKey = getKey("groq");
   const mistralKey = getKey("mistral");
@@ -1027,6 +1067,11 @@ async function groqJson(request) {
     debugLog(`Groq key at its limit: using backup key ${i + 1}`);
     res = await chatRequest(GROQ, getKey(backup), request);
   }
+  if ((res.status === 429 || res.status >= 500) && hasCloudflare()) {
+    debugLog("Groq at its limit: using Cloudflare");
+    service = CLOUDFLARE;
+    res = await cloudflareRequest(request);
+  }
   if ((res.status === 429 || res.status >= 500) && mistralKey) {
     service = MISTRAL;
     res = await chatRequest(MISTRAL, mistralKey, request);
@@ -1036,9 +1081,27 @@ async function groqJson(request) {
   return parseModelJson(data.choices?.[0]?.message?.content ?? "");
 }
 
+// Cloudflare Workers AI as the main service (through the trainer, see cloudflareRequest).
+// When it is busy or at its limit, Groq takes over if it has a key.
+async function cloudflareJson(request) {
+  if (!getKey("cfAccount") || !getKey("cfToken")) throw new Error("Add your Cloudflare account ID and API token to start.");
+  if (!trainerLink()) throw new Error("Cloudflare goes through the Vocab Trainer: log in there first.");
+  let service = CLOUDFLARE;
+  let res = await cloudflareRequest(request);
+  if ((res.status === 429 || res.status >= 500) && getKey("groq")) {
+    debugLog("Cloudflare busy: using Groq");
+    service = GROQ;
+    res = await chatRequest(GROQ, getKey("groq"), request);
+  }
+  if (!res.ok) throw await failure(res, service.name);
+  const data = await res.json().catch(() => ({}));
+  return parseModelJson(data.choices?.[0]?.message?.content ?? "");
+}
+
 function aiJson(request) {
   const provider = getProvider();
   if (provider === "groq") return groqJson(request);
+  if (provider === "cloudflare") return cloudflareJson(request);
   return provider === "mistral" ? chatJson(request) : geminiJson(request);
 }
 
@@ -1859,7 +1922,7 @@ function saveCall() {
 
 async function restoreCall() {
   const snap = store.get(CALL_KEY, null);
-  if (!snap?.settings || !snap.log?.length || Date.now() - snap.at > CALL_MAX_AGE || !getKey(getProvider())) return;
+  if (!snap?.settings || !snap.log?.length || Date.now() - snap.at > CALL_MAX_AGE || !providerReady()) return;
   const nav = performance.getEntriesByType?.("navigation")[0]?.type ?? "?";
   debugLog(`restoring the call (page ${nav}${document.wasDiscarded ? ", discarded" : ""})`);
   store.set("last_restore", { at: Date.now(), nav, discarded: Boolean(document.wasDiscarded) });
@@ -2533,7 +2596,7 @@ function renderBookmarks() {
 
 // ---------- wiring ----------
 
-const KEY_INPUTS = { mistral: "mistral-key", groq: "groq-key", groq2: "groq2-key", groq3: "groq3-key", gemini: "api-key" };
+const KEY_INPUTS = { mistral: "mistral-key", groq: "groq-key", groq2: "groq2-key", groq3: "groq3-key", cfAccount: "cf-account", cfToken: "cf-token", gemini: "api-key" };
 
 // Show only the key fields the chosen AI needs; saved keys show as a placeholder.
 function showKeyFields() {
@@ -2545,6 +2608,7 @@ function showKeyFields() {
   // Mistral and Groq back each other up: the other one's key is optional.
   $("groq-optional").hidden = provider === "groq";
   $("mistral-optional").hidden = provider === "mistral";
+  $("cf-optional").hidden = provider === "cloudflare";
   for (const [service, id] of Object.entries(KEY_INPUTS)) {
     $(id).placeholder = getKey(service) ? "Saved — leave blank to keep" : $(id).dataset.placeholder;
   }
@@ -2554,9 +2618,10 @@ $("provider").addEventListener("change", showKeyFields);
 
 function keySummary() {
   if (getProvider() === "gemini") return "✓ Using Google Gemini.";
+  if (getProvider() === "cloudflare") return getKey("groq") ? "✓ Using Cloudflare Workers AI, with Groq as backup." : "✓ Using Cloudflare Workers AI.";
   if (getProvider() === "groq") {
     const groqBackups = GROQ_BACKUPS.filter((k) => getKey(k)).length;
-    const backups = [groqBackups && (groqBackups === 1 ? "a second Groq key" : `${groqBackups} more Groq keys`), getKey("mistral") && "Mistral"].filter(Boolean);
+    const backups = [groqBackups && (groqBackups === 1 ? "a second Groq key" : `${groqBackups} more Groq keys`), getKey("cfAccount") && getKey("cfToken") && "Cloudflare", getKey("mistral") && "Mistral"].filter(Boolean);
     return backups.length ? `✓ Using Groq, with ${backups.join(" and ")} as backup.` : "✓ Using Groq.";
   }
   return getKey("groq") ? "✓ Using Mistral, with Groq as backup." : "✓ Using Mistral.";
@@ -2564,7 +2629,7 @@ function keySummary() {
 
 // Show the key box or the setup, depending on whether the chosen AI has a key saved.
 function refreshKeyGate() {
-  const haveKey = Boolean(getKey(getProvider()));
+  const haveKey = providerReady();
   $("keygate").hidden = haveKey;
   $("setup").hidden = !haveKey;
   $("key-saved").hidden = !haveKey;
@@ -2576,8 +2641,13 @@ function refreshKeyGate() {
 $("save-key").addEventListener("click", () => {
   const provider = $("provider").value;
   const typed = Object.fromEntries(Object.entries(KEY_INPUTS).map(([service, id]) => [service, $(id).value.trim()]));
-  if (!typed[provider] && !getKey(provider)) {
-    $("key-status").textContent = `Paste your ${{ mistral: "Mistral", groq: "Groq", gemini: "Gemini" }[provider]} API key first.`;
+  const missing = provider === "cloudflare"
+    ? !(typed.cfAccount || getKey("cfAccount")) || !(typed.cfToken || getKey("cfToken"))
+    : !typed[provider] && !getKey(provider);
+  if (missing) {
+    $("key-status").textContent = provider === "cloudflare"
+      ? "Paste your Cloudflare account ID and API token first."
+      : `Paste your ${{ mistral: "Mistral", groq: "Groq", gemini: "Gemini" }[provider]} API key first.`;
     return;
   }
   for (const [service, value] of Object.entries(typed)) {
@@ -2913,7 +2983,7 @@ $("end").addEventListener("click", () => {
 if ("speechSynthesis" in window) speechSynthesis.onvoiceschanged = () => {};
 
 // With ?debug: which build this phone runs (a cached old one would explain old behaviour).
-debugLog(`Talkloop v43 · speech recognition ${Recognition ? "yes" : "no"}`);
+debugLog(`Talkloop v45 · speech recognition ${Recognition ? "yes" : "no"}`);
 refreshKeyGate();
 renderStats();
 renderBookmarks();

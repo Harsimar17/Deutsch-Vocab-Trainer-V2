@@ -480,6 +480,12 @@ class EndToEndTest {
         assertEquals(3, ((Map<String, Object>) ok(post("/api/talkloop/spoken"), link, Map.of("words", Map.of())).get("words")).size());
         assertEquals(writes, firestore.talkloopSpokenWrites());
         assertEquals(401, status(post("/api/talkloop/spoken"), t, Map.of("words", Map.of())));
+        // The Cloudflare route is Talkloop's too: a session or nobody can't use it, and the link
+        // is checked before anything is forwarded (a malformed request stops at 400).
+        Map<String, Object> chat = Map.of("messages", List.of(Map.of("role", "user", "content", "Hallo")));
+        assertEquals(401, status(post("/api/talkloop/cloudflare"), t, chat));
+        assertEquals(401, status(post("/api/talkloop/cloudflare"), null, chat));
+        assertEquals(400, status(post("/api/talkloop/cloudflare"), link, chat));
         assertEquals(400, status(post("/api/talkloop/spoken"), link, Map.of("words", List.of())));
     }
 
