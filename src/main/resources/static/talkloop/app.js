@@ -100,7 +100,7 @@ function getProvider() {
   } catch {
     saved = memoryKeys.provider || "";
   }
-  if (saved === "mistral" || saved === "gemini") return saved;
+  if (saved === "mistral" || saved === "gemini" || saved === "groq") return saved;
   return getKey("gemini") && !getKey("mistral") ? "gemini" : "mistral";
 }
 function setProvider(p) {
@@ -624,8 +624,21 @@ function spokenMissed(de) {
 
 // Which of today's words the model means: it may drop or change the article.
 const bareWord = (s) => normalizeSpeech(s).replace(/^(der|die|das) /, "");
+// A card can hold alternatives ("zuerst / dann / danach", "dort / da"): each one counts.
+const wordForms = (de) => [bareWord(de), ...de.split(/\s*[/;]\s*/).map(bareWord)].filter(Boolean);
+const isTodayWord = (w, word) => wordForms(w.de).includes(bareWord(word ?? ""));
 function findTodayWord(word) {
-  return todayWords?.active.find((w) => bareWord(w.de) === bareWord(word ?? ""));
+  return todayWords?.active.find((w) => isTodayWord(w, word));
+}
+
+// Whether a text contains a word or one of its alternatives (at a word start, so "gut"
+// isn't found in "Mut"); a verb also by its stem, so "umtauschen" is caught in "umtauschst".
+function saysWord(text, de) {
+  const hay = ` ${normalizeSpeech(text ?? "")}`;
+  return wordForms(de).some((word) => {
+    const stem = / /.test(word) || word.length < 7 ? null : word.replace(/e?n$/, "");
+    return hay.includes(` ${word}`) || Boolean(stem && hay.includes(` ${stem}`));
+  });
 }
 
 // The coach's used_words for the learner's last message.
@@ -852,8 +865,10 @@ function turnSystemPrompt({ language, nativeLanguage, level, scenario, mode, ten
             ? `Current situation: ${JSON.stringify(today.situation)}. Continue it from where the conversation left off.`
             : "No situation yet: start one.",
           `Ask first for the words not said yet${notYet.length ? ` (${notYet.map((w) => w.de).join("; ")})` : ""}, one per step, choosing the one that fits the next moment best. ${neverSay}`,
+          // Spelled out: faster models (Groq) otherwise tend to say the word in the question.
+          "Most important rule: your reply must NOT contain the word you are asking for, in any form, nor a translation of it, until the learner has said it correctly. Refer to it only as \"das Wort auf deinem Bildschirm\" and describe the moment so that this word is the natural thing to say. Wrong: \"Das Handy sieht schrecklich aus. Sag einen Satz mit diesem Wort.\" Right: \"Das Display ist kaputt und voller Kratzer. Wie findest du das Handy? Nutze das Wort auf deinem Bildschirm.\"",
           ...(said.length ? [`Already said once: ${said.map((w) => w.de).join("; ")}. Bring each back at a later moment of the situation (or in the next one) that needs it in another form, e.g. another tense or person, so the learner builds a new sentence rather than repeating the old one.`] : []),
-          "If the learner's sentence doesn't use the word asked for, or uses it wrongly, ask for the same word once more in the next turn.",
+          "If the learner's sentence doesn't use the word asked for, or uses it wrongly, ask for the same word once more in the next turn, again without saying it (if they used it wrongly, coach.correction shows them the right form).",
         ]
         : [
           ...(notYet.length ? [`Not said correctly yet: ${notYet.map((w) => w.de).join("; ")}. Get the learner to say these: ask a question on the current topic whose natural answer needs one of them, one word at a time. You may steer the conversation there with a natural bridge, but never quiz or list them. ${neverSay}`] : []),
@@ -973,8 +988,27 @@ async function chatJson(request) {
   return parseModelJson(data.choices?.[0]?.message?.content ?? "");
 }
 
+// Groq as the main service: about a second per reply (measured 1.1–1.5 s for a whole turn),
+// so the whole answer is fetched at once. When it is busy, Mistral takes over if it has a key.
+async function groqJson(request) {
+  const groqKey = getKey("groq");
+  const mistralKey = getKey("mistral");
+  if (!groqKey) throw new Error("Add your Groq API key to start.");
+  let service = GROQ;
+  let res = await chatRequest(GROQ, groqKey, request);
+  if ((res.status === 429 || res.status >= 500) && mistralKey) {
+    service = MISTRAL;
+    res = await chatRequest(MISTRAL, mistralKey, request);
+  }
+  if (!res.ok) throw await failure(res, service.name);
+  const data = await res.json().catch(() => ({}));
+  return parseModelJson(data.choices?.[0]?.message?.content ?? "");
+}
+
 function aiJson(request) {
-  return getProvider() === "mistral" ? chatJson(request) : geminiJson(request);
+  const provider = getProvider();
+  if (provider === "groq") return groqJson(request);
+  return provider === "mistral" ? chatJson(request) : geminiJson(request);
 }
 
 async function geminiJson({ systemInstruction, schema, contents, onPartial, temperature = 0.8 }) {
@@ -1027,8 +1061,9 @@ async function chatTurn(settings, history, message) {
   const targetWords = settings.vocab?.enabled && !mode.drill ? nextVocabBatch(learnt ? 8 : 12).filter((w) => !todaySet.has(w.de)) : [];
   const startedAt = performance.now();
   let voiced = false;
-  const turn = await aiJson({
-    systemInstruction: turnSystemPrompt(settings.request, targetWords, learnt, message.trim(), recurringMistakes(settings.request.language), today),
+  const systemInstruction = turnSystemPrompt(settings.request, targetWords, learnt, message.trim(), recurringMistakes(settings.request.language), today);
+  let turn = await aiJson({
+    systemInstruction,
     schema: TURN_SCHEMA,
     // A drill is short, plain and only needs the last few turns: less to read and write, so
     // replies come sooner, and a low temperature keeps its questions sensible.
@@ -1047,6 +1082,20 @@ async function chatTurn(settings, history, message) {
     },
   });
   debugLog(`whole answer after ${((performance.now() - startedAt) / 1000).toFixed(1)}s`);
+  // A drill reply that says the word it asks for gives the answer away (Groq does this when
+  // it asks again), so it is written once more with that pointed out. Costs about a second.
+  const asked = mode.drill && today?.words.find((w) => !today.status[w.de]?.correct && isTodayWord(w, turn.next_word));
+  if (asked && saysWord(turn.reply, asked.de)) {
+    debugLog(`reply said "${asked.de}": asking again`);
+    const again = await aiJson({
+      systemInstruction: `${systemInstruction}\nYour last draft of this reply contained the word "${asked.de}" itself, which gives the answer away. Write the reply again without that word in any form; refer to it only as "das Wort auf deinem Bildschirm".`,
+      schema: TURN_SCHEMA,
+      contents: historyToContents(history.slice(-DRILL_HISTORY), userText),
+      temperature: 0.4,
+    }).catch(() => null);
+    if (again && !saysWord(again.reply, asked.de)) turn = again;
+    debugLog(`answer after ${((performance.now() - startedAt) / 1000).toFixed(1)}s`);
+  }
   turn.focusWords = targetWords;
   // Suggested answers would give the drill's word away.
   if (mode.drill) turn.suggestions = [];
@@ -2396,9 +2445,12 @@ const KEY_INPUTS = { mistral: "mistral-key", groq: "groq-key", gemini: "api-key"
 function showKeyFields() {
   const provider = $("provider").value;
   for (const el of document.querySelectorAll("#keygate [data-provider]")) {
-    el.hidden = el.dataset.provider !== provider;
+    el.hidden = !el.dataset.provider.split(" ").includes(provider);
   }
   $("gemini-optional").hidden = provider === "gemini";
+  // Mistral and Groq back each other up: the other one's key is optional.
+  $("groq-optional").hidden = provider === "groq";
+  $("mistral-optional").hidden = provider === "mistral";
   for (const [service, id] of Object.entries(KEY_INPUTS)) {
     $(id).placeholder = getKey(service) ? "Saved — leave blank to keep" : $(id).dataset.placeholder;
   }
@@ -2408,6 +2460,7 @@ $("provider").addEventListener("change", showKeyFields);
 
 function keySummary() {
   if (getProvider() === "gemini") return "✓ Using Google Gemini.";
+  if (getProvider() === "groq") return getKey("mistral") ? "✓ Using Groq, with Mistral as backup." : "✓ Using Groq.";
   return getKey("groq") ? "✓ Using Mistral, with Groq as backup." : "✓ Using Mistral.";
 }
 
@@ -2426,7 +2479,7 @@ $("save-key").addEventListener("click", () => {
   const provider = $("provider").value;
   const typed = Object.fromEntries(Object.entries(KEY_INPUTS).map(([service, id]) => [service, $(id).value.trim()]));
   if (!typed[provider] && !getKey(provider)) {
-    $("key-status").textContent = `Paste your ${provider === "mistral" ? "Mistral" : "Gemini"} API key first.`;
+    $("key-status").textContent = `Paste your ${{ mistral: "Mistral", groq: "Groq", gemini: "Gemini" }[provider]} API key first.`;
     return;
   }
   for (const [service, value] of Object.entries(typed)) {
@@ -2759,7 +2812,7 @@ $("end").addEventListener("click", () => {
 if ("speechSynthesis" in window) speechSynthesis.onvoiceschanged = () => {};
 
 // With ?debug: which build this phone runs (a cached old one would explain old behaviour).
-debugLog(`Talkloop v37 · speech recognition ${Recognition ? "yes" : "no"}`);
+debugLog(`Talkloop v38 · speech recognition ${Recognition ? "yes" : "no"}`);
 refreshKeyGate();
 renderStats();
 renderBookmarks();

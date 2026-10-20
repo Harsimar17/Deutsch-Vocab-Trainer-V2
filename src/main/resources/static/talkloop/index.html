@@ -28,16 +28,17 @@
       <label>Conversation AI
         <select id="provider">
           <option value="mistral">Mistral — best German</option>
+          <option value="groq">Groq — fastest</option>
           <option value="gemini">Google Gemini</option>
         </select>
       </label>
-      <label data-provider="mistral">Mistral API key
+      <label data-provider="mistral groq">Mistral API key <span id="mistral-optional" class="muted">(optional — used when Groq is busy)</span>
         <input id="mistral-key" type="password" autocomplete="off" placeholder="Paste your Mistral key" />
         <span class="muted">Free at
           <a href="https://console.mistral.ai/api-keys" target="_blank" rel="noopener">console.mistral.ai</a>
           (pick the free Experiment plan).</span>
       </label>
-      <label data-provider="mistral">Groq API key <span class="muted">(optional — used when Mistral is busy)</span>
+      <label data-provider="mistral groq">Groq API key <span id="groq-optional" class="muted">(optional — used when Mistral is busy)</span>
         <input id="groq-key" type="password" autocomplete="off" placeholder="Paste your Groq key (gsk_…)" />
         <span class="muted">Free at
           <a href="https://console.groq.com/keys" target="_blank" rel="noopener">console.groq.com</a>.</span>
@@ -246,6 +247,6 @@
       <ul id="bookmarks" class="bookmarks"></ul>
     </section>
 
-    <script src="app.js?v=37" type="module"></script> <!-- bump with app.js changes, like styles.css above -->
+    <script src="app.js?v=38" type="module"></script> <!-- bump with app.js changes, like styles.css above -->
   </body>
 </html>

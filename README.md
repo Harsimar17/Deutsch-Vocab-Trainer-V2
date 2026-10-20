@@ -100,7 +100,9 @@ Talkloop, the voice-conversation partner (formerly its own site,
 [Harsimar17/talkloop](https://github.com/Harsimar17/talkloop)), is part of this
 app: its files are in `src/main/resources/static/talkloop/` and it is served at
 `/talkloop/`. It still runs in the browser and talks to Mistral / Gemini / Groq
-with the learner's own keys (kept in that browser only, never sent here).
+with the learner's own keys (kept in that browser only, never sent here). Groq
+(`openai/gpt-oss-120b`, about a second per reply) is the fastest; Mistral and Groq back
+each other up when one is busy.
 
 Its voice input is the browser's speech recognition as in talkloop's early
 version (`bfa9006`), except that the turn ends 1.5 s after the last words heard, final
