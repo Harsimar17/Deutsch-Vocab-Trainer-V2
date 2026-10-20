@@ -15,7 +15,7 @@ const state = {
   drill: null, // { target, said, turn } while the learner says a correction again before the reply
 };
 
-const SILENCE_MS = 2500; // how long a pause ends your turn in hands-free mode
+const SILENCE_MS = 1500; // how long a pause ends your turn in hands-free mode
 
 // ---------- persistence (per-browser conveniences only) ----------
 const store = {
@@ -728,16 +728,17 @@ const TURN_SCHEMA = {
       required: ["understood", "correction", "mistakes", "tip", "used_words"],
       propertyOrdering: ["understood", "correction", "mistakes", "tip", "used_words"],
     },
+    // How the reply is spoken (the open-source German voice has a recording per mood).
+    // Before the reply, so the voice can start on it while the rest is still being written.
+    mood: { type: "STRING", enum: MOODS },
     reply: { type: "STRING" },
     reply_translation: { type: "STRING" },
     suggestions: { type: "ARRAY", items: { type: "STRING" } },
     rapport_delta: { type: "INTEGER" },
     conversation_finished: { type: "BOOLEAN" },
-    // How the reply is spoken (the open-source German voice has a recording per mood).
-    mood: { type: "STRING", enum: MOODS },
   },
-  required: ["coach", "reply", "reply_translation", "suggestions", "rapport_delta", "conversation_finished", "mood"],
-  propertyOrdering: ["coach", "reply", "reply_translation", "suggestions", "rapport_delta", "conversation_finished", "mood"],
+  required: ["coach", "mood", "reply", "reply_translation", "suggestions", "rapport_delta", "conversation_finished"],
+  propertyOrdering: ["coach", "mood", "reply", "reply_translation", "suggestions", "rapport_delta", "conversation_finished"],
 };
 
 const WORD_SCHEMA = {
@@ -862,7 +863,7 @@ function parseModelJson(text) {
 }
 
 // One request to an OpenAI-compatible chat API (Mistral, Groq). Returns the fetch Response.
-function chatRequest(service, key, { systemInstruction, schema, contents }) {
+function chatRequest(service, key, { systemInstruction, schema, contents }, stream = false) {
   const messages = [
     {
       role: "system",
@@ -881,27 +882,62 @@ function chatRequest(service, key, { systemInstruction, schema, contents }) {
       messages,
       response_format: { type: "json_object" },
       temperature: 0.8,
+      ...(stream ? { stream: true } : {}),
       ...service.extra,
     }),
   });
+}
+
+// Reads a streamed (server-sent events) answer, calling onData with each event's JSON.
+async function readSse(res, onData) {
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  for (;;) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    let end;
+    while ((end = buffer.indexOf("\n")) >= 0) {
+      const line = buffer.slice(0, end).trim();
+      buffer = buffer.slice(end + 1);
+      if (!line.startsWith("data:")) continue;
+      const data = line.slice(5).trim();
+      if (!data || data === "[DONE]") continue;
+      try { onData(JSON.parse(data)); } catch { /* a keep-alive or partial line */ }
+    }
+  }
+}
+
+async function failure(res, serviceName) {
+  const data = await res.json().catch(() => ({}));
+  const message = data.error?.message ?? data.message ?? data.detail ?? `Request failed (${res.status})`;
+  return new Error(`${serviceName ? `${serviceName}: ` : ""}${typeof message === "string" ? message : JSON.stringify(message)}`);
 }
 
 async function chatJson(request) {
   const mistralKey = getKey("mistral");
   const groqKey = getKey("groq");
   if (!mistralKey) throw new Error("Add your Mistral API key to start.");
+  // With onPartial, Mistral streams its answer so the reply can be voiced before the rest is written.
+  const stream = typeof request.onPartial === "function";
   let service = MISTRAL;
-  let res = await chatRequest(MISTRAL, mistralKey, request);
+  let res = await chatRequest(MISTRAL, mistralKey, request, stream);
   // Mistral's free tier is rate-limited (429) and sometimes overloaded (5xx); Groq takes over.
   if ((res.status === 429 || res.status >= 500) && groqKey) {
     service = GROQ;
     res = await chatRequest(GROQ, groqKey, request);
   }
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok) {
-    const message = data.error?.message ?? data.message ?? data.detail ?? `Request failed (${res.status})`;
-    throw new Error(`${service.name}: ${typeof message === "string" ? message : JSON.stringify(message)}`);
+  if (!res.ok) throw await failure(res, service.name);
+  if (stream && service === MISTRAL) {
+    let text = "";
+    await readSse(res, (event) => {
+      const delta = event.choices?.[0]?.delta?.content;
+      if (delta) request.onPartial((text += delta));
+    });
+    return parseModelJson(text);
   }
+  const data = await res.json().catch(() => ({}));
   return parseModelJson(data.choices?.[0]?.message?.content ?? "");
 }
 
@@ -909,11 +945,13 @@ function aiJson(request) {
   return getProvider() === "mistral" ? chatJson(request) : geminiJson(request);
 }
 
-async function geminiJson({ systemInstruction, schema, contents }) {
+async function geminiJson({ systemInstruction, schema, contents, onPartial }) {
   const key = getKey("gemini");
   if (!key) throw new Error("Add your Gemini API key to start.");
+  const stream = typeof onPartial === "function";
+  const method = stream ? "streamGenerateContent?alt=sse&" : "generateContent?";
   const request = (model) =>
-    fetch(`${API_BASE}/${model}:generateContent?key=${encodeURIComponent(key)}`, {
+    fetch(`${API_BASE}/${model}:${method}key=${encodeURIComponent(key)}`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
@@ -925,9 +963,17 @@ async function geminiJson({ systemInstruction, schema, contents }) {
   let res = await request(CONV_MODEL);
   // When one model is overloaded (503) or out of free quota (429), the other usually isn't.
   if (res.status === 503 || res.status === 429) res = await request(CONV_FALLBACK_MODEL);
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data.error?.message ?? `Request failed (${res.status})`);
-  return parseModelJson(data.candidates?.[0]?.content?.parts?.map((p) => p.text).join("") ?? "");
+  if (!res.ok) throw await failure(res);
+  const textOf = (data) => data.candidates?.[0]?.content?.parts?.map((p) => p.text ?? "").join("") ?? "";
+  if (stream) {
+    let text = "";
+    await readSse(res, (event) => {
+      const delta = textOf(event);
+      if (delta) onPartial((text += delta));
+    });
+    return parseModelJson(text);
+  }
+  return parseModelJson(textOf(await res.json().catch(() => ({}))));
 }
 
 function historyToContents(history, userText) {
@@ -946,11 +992,25 @@ async function chatTurn(settings, history, message) {
   const today = todayWords ? { words: todayWords.active, status: todayWords.status } : null;
   const todaySet = new Set(today?.words.map((w) => w.de));
   const targetWords = settings.vocab?.enabled ? nextVocabBatch(learnt ? 8 : 12).filter((w) => !todaySet.has(w.de)) : [];
+  const startedAt = performance.now();
+  let voiced = false;
   const turn = await aiJson({
     systemInstruction: turnSystemPrompt(settings.request, targetWords, learnt, message.trim(), recurringMistakes(settings.request.language), today),
     schema: TURN_SCHEMA,
     contents: historyToContents(history, userText),
+    // As soon as the reply is written, the voice starts on it while the translation and
+    // suggestions are still coming.
+    onPartial: (text) => {
+      if (voiced) return;
+      const mood = partialString(text, "mood");
+      const reply = mood === null ? null : partialString(text, "reply");
+      if (reply === null) return;
+      voiced = true;
+      debugLog(`reply written after ${((performance.now() - startedAt) / 1000).toFixed(1)}s`);
+      prepareVoice(reply, mood);
+    },
   });
+  debugLog(`whole answer after ${((performance.now() - startedAt) / 1000).toFixed(1)}s`);
   turn.focusWords = targetWords;
   // In open modes the conversation never ends on its own.
   if (!mode.endable) turn.conversation_finished = false;
@@ -1092,6 +1152,7 @@ function startListening() {
   recognizer.continuous = true;
 
   let finalText = "";
+  let heard = ""; // final + latest interim text: sent if stopping never turns the tail final
   let silenceTimer = null;
   const armSilence = () => {
     clearTimeout(silenceTimer);
@@ -1106,8 +1167,11 @@ function startListening() {
       if (result.isFinal) finalText += result[0].transcript + " ";
       else interim += result[0].transcript;
     }
-    showHeard((finalText + interim).trim());
-    if (finalText.trim()) armSilence();
+    heard = (finalText + interim).trim();
+    showHeard(heard);
+    // Count the pause from the last words heard, final or not: iPhone marks words final
+    // late, which added its own wait on top. Stopping makes the browser finalise them.
+    if (heard) armSilence();
   };
   recognizer.onerror = (event) => {
     if (event.error === "no-speech") setStatus("I'm listening… take your time.");
@@ -1116,11 +1180,11 @@ function startListening() {
   };
   recognizer.onend = () => {
     clearTimeout(silenceTimer);
-    debugLog(`mic end, heard "${finalText.trim().slice(0, 40)}"`);
+    debugLog(`mic end, heard "${finalText.trim().slice(0, 40)}"${heard !== finalText.trim() ? " (+ unfinalised tail)" : ""}`);
     recognizer = null;
     setMic(false);
     showHeard("");
-    afterListening(finalText.trim());
+    afterListening(heard.length > finalText.trim().length ? heard : finalText.trim());
   };
   if (DEBUG) for (const type of ["audiostart", "soundstart", "speechstart", "audioend"]) recognizer.addEventListener(type, () => debugLog(`mic ${type}`));
   recognizer.start();
@@ -1329,6 +1393,31 @@ for (const type of ["click", "touchend", "keydown"]) {
 
 // Generated audio by text, so Replay and Listen don't spend another TTS request.
 const ttsCache = new Map();
+const pendingTts = new Map(); // voice being prepared while the answer streams in, by cache key
+
+// A string field of a JSON object that is still being written, once its closing quote is in.
+function partialString(json, field) {
+  const m = json.match(new RegExp(`"${field}"\\s*:\\s*"((?:[^"\\\\]|\\\\.)*)"`));
+  if (!m) return null;
+  try { return JSON.parse(`"${m[1]}"`); } catch { return null; }
+}
+
+const voiceRate = () => (["A1", "A2"].includes(state.settings.level) ? 0.9 : 1);
+
+// Start the on-device voice on a reply before the whole answer is in; speak() picks it up.
+function prepareVoice(text, mood) {
+  const locale = state.settings.locale;
+  const key = `${locale}|${mood}|${text}`;
+  if (!hasPiperVoice(locale) || !piperLoaded(locale) || ttsCache.has(key) || pendingTts.has(key)) return;
+  const pending = piperSpeak(text, locale, { speed: voiceRate(), mood })
+    .then((audio) => {
+      rememberTts(key, { audio, note: "" });
+      return audio;
+    })
+    .finally(() => pendingTts.delete(key));
+  pending.catch(() => {}); // a failure is handled when speak() makes its own attempt
+  pendingTts.set(key, pending);
+}
 const TTS_CACHE_MAX = 60;
 function rememberTts(text, audio) {
   ttsCache.set(text, audio);
@@ -1391,7 +1480,7 @@ async function speak(text, wordSpans, onDone, mood = "neutral") {
   stopSpeaking();
   const token = speakToken;
   const locale = state.settings.locale;
-  const rate = ["A1", "A2"].includes(state.settings.level) ? 0.9 : 1;
+  const rate = voiceRate();
   // Make sure the done callback fires exactly once, whichever path plays.
   let done = false;
   const finish = () => {
@@ -1419,6 +1508,13 @@ async function speak(text, wordSpans, onDone, mood = "neutral") {
 
   const cached = ttsCache.get(`${locale}|${mood}|${text}`);
   if (cached) return play(cached.audio, cached.note);
+  // Already being prepared while the answer streamed in: wait for that instead of starting over.
+  const pending = pendingTts.get(`${locale}|${mood}|${text}`);
+  if (pending) {
+    const audio = await pending.catch(() => null);
+    if (token !== speakToken) return;
+    if (audio) return play(audio, "");
+  }
 
   // 1. Piper, once it's loaded. A reply never waits for a download: until the voice is
   //    ready, it starts loading and this reply uses the next voice. If it's already
@@ -2603,7 +2699,7 @@ $("end").addEventListener("click", () => {
 if ("speechSynthesis" in window) speechSynthesis.onvoiceschanged = () => {};
 
 // With ?debug: which build this phone runs (a cached old one would explain old behaviour).
-debugLog(`Talkloop v31 · speech recognition ${Recognition ? "yes" : "no"}`);
+debugLog(`Talkloop v34 · speech recognition ${Recognition ? "yes" : "no"}`);
 refreshKeyGate();
 renderStats();
 renderBookmarks();

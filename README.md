@@ -103,8 +103,8 @@ app: its files are in `src/main/resources/static/talkloop/` and it is served at
 with the learner's own keys (kept in that browser only, never sent here).
 
 Its voice input is the browser's speech recognition as in talkloop's early
-version (`bfa9006`): only results the browser marks final count, and a 2.5 s
-pause after them ends the turn. What it hears shows with Edit and Delete.
+version (`bfa9006`), except that the turn ends 1.5 s after the last words heard, final
+or not (stopping makes the browser finalise them). What it hears shows with Edit and Delete.
 
 Open it from the user menu (**practise in Talkloop**) or at `/talkloop/`. Being
 the same site, it finds the trainer's login in the browser and swaps it for its
