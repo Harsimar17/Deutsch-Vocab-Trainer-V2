@@ -1544,7 +1544,7 @@ function prepareVoice(text, mood) {
   pending.catch(() => {}); // a failure is handled when speak() makes its own attempt
   pendingTts.set(key, pending);
 }
-const TTS_CACHE_MAX = 60;
+const TTS_CACHE_MAX = 20; // decoded voice clips kept for Replay; fewer keeps a long call light on a phone
 function rememberTts(text, audio) {
   ttsCache.set(text, audio);
   if (ttsCache.size > TTS_CACHE_MAX) ttsCache.delete(ttsCache.keys().next().value);
@@ -1836,7 +1836,59 @@ function wordify(container, text, sentence) {
   return spans;
 }
 
-function addCharacterMessage(turn) {
+// ---------- surviving a reload ----------
+// A phone browser may reload the page mid-call (to free memory, or after the screen was
+// locked), which used to drop the whole conversation back to the setup screen. So the call
+// is saved after every message and restored when the page loads again; End clears it.
+const CALL_KEY = "call_snapshot";
+const CALL_MAX_AGE = 3 * 60 * 60 * 1000; // an older call is not resumed
+let callLog = []; // [{ you: text } | { reply, reply_translation, mood }] as shown
+
+function saveCall() {
+  if (!state.settings) return;
+  store.set(CALL_KEY, {
+    at: Date.now(),
+    settings: state.settings,
+    history: state.history,
+    rapport: state.rapport,
+    log: callLog,
+    // Only the next few waiting words: the rest would make every save large.
+    today: todayWords ? { ...todayWords, waiting: todayWords.waiting.slice(0, 50) } : null,
+  });
+}
+
+async function restoreCall() {
+  const snap = store.get(CALL_KEY, null);
+  if (!snap?.settings || !snap.log?.length || Date.now() - snap.at > CALL_MAX_AGE || !getKey(getProvider())) return;
+  const nav = performance.getEntriesByType?.("navigation")[0]?.type ?? "?";
+  debugLog(`restoring the call (page ${nav}${document.wasDiscarded ? ", discarded" : ""})`);
+  store.set("last_restore", { at: Date.now(), nav, discarded: Boolean(document.wasDiscarded) });
+  state.settings = snap.settings;
+  state.history = snap.history ?? [];
+  state.rapport = snap.rapport ?? 0;
+  todayWords = snap.today;
+  callLog = [];
+  const { vocab } = state.settings;
+  if (vocab?.enabled) {
+    const learnt = vocab.learnt ? ((await idbGet("learnt_words").catch(() => null)) ?? []) : null;
+    await loadVocabForSession(vocab.levels, learnt).catch(() => 0);
+  }
+  $("setup").hidden = true;
+  $("keygate").hidden = true;
+  enterCall();
+  if (todayWords?.situation) $("call-mode").textContent = `Sentence drill · ${todayWords.situation}`;
+  for (const entry of snap.log) {
+    if ("you" in entry) addLearnerMessage(entry.you);
+    else addCharacterMessage(entry, { silent: true });
+  }
+  renderStats();
+  renderFocusWords([]);
+  setStatus("Your conversation is back after the page reloaded. Tap the mic or type to go on.");
+}
+
+function addCharacterMessage(turn, { silent = false } = {}) {
+  callLog.push({ reply: turn.reply, reply_translation: turn.reply_translation, mood: turn.mood });
+  saveCall();
   const li = document.createElement("li");
   li.className = "msg character";
   const who = document.createElement("span");
@@ -1866,6 +1918,7 @@ function addCharacterMessage(turn) {
   li.append(who, line, translation, tools);
   $("transcript").append(li);
   scrollCallToBottom();
+  if (silent) return; // restored after a reload: shown, not spoken again
   // A reply that arrives while the call is paused is spoken on resume.
   if (state.paused) {
     pendingReply = { text: turn.reply, spans, mood: turn.mood };
@@ -1882,6 +1935,8 @@ function maybeResumeListening() {
 }
 
 function addLearnerMessage(text) {
+  callLog.push({ you: text });
+  saveCall();
   const li = document.createElement("li");
   li.className = "msg learner";
   const who = document.createElement("span");
@@ -2594,6 +2649,7 @@ $("start").addEventListener("click", async () => {
   $("setup").hidden = true;
   // Start hands-free, so the mic opens once the opening line is spoken — no tap needed.
   state.handsFree = Boolean(Recognition);
+  callLog = [];
   enterCall();
   // The on-device voice is the default: get it ready while the first reply loads.
   if (hasPiperVoice(state.settings.locale)) {
@@ -2843,6 +2899,8 @@ $("end").addEventListener("click", () => {
   renderStats();
   renderRecap();
   todayWords = null;
+  callLog = [];
+  store.set(CALL_KEY, null); // ended on purpose: nothing to resume
   renderFocusWords([]);
   setBusy(false);
   leaveCall();
@@ -2855,11 +2913,12 @@ $("end").addEventListener("click", () => {
 if ("speechSynthesis" in window) speechSynthesis.onvoiceschanged = () => {};
 
 // With ?debug: which build this phone runs (a cached old one would explain old behaviour).
-debugLog(`Talkloop v42 · speech recognition ${Recognition ? "yes" : "no"}`);
+debugLog(`Talkloop v43 · speech recognition ${Recognition ? "yes" : "no"}`);
 refreshKeyGate();
 renderStats();
 renderBookmarks();
 renderMistakes();
+restoreCall().catch((error) => console.warn("Couldn't restore the call:", error));
 // Get the voice ready while the learner picks their settings, so the first reply doesn't wait.
 preloadSelectedVoice();
 // Show any already-imported vocab; if none, fetch the default URL in the background.
