@@ -278,6 +278,7 @@ body.in-call { overflow: hidden; }
 button.focus-word { border: 1px solid transparent; color: inherit; font: inherit; cursor: pointer; }
 .focus-word.said { border-color: var(--good); color: var(--good); }
 .focus-word.tried { border-color: var(--warn); color: var(--warn); }
+.focus-word.current { background: var(--accent); color: var(--accent-text); border-color: var(--accent); font-weight: 600; }
 .recap { margin-bottom: 16px; padding: 10px 12px; border-radius: 10px; background: var(--character); }
 .recap h3 { margin: 0 0 6px; font-size: 1rem; }
 .recap p { margin: 4px 0; overflow-wrap: anywhere; }

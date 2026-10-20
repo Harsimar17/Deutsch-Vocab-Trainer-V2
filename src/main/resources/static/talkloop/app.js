@@ -203,6 +203,16 @@ const MODES = {
     opener: "(Pick a light, everyday topic suited to the learner's level — food, travel, films, weekend plans — introduce it in one line and ask the learner what they think.)",
     extra: "Have a back-and-forth discussion about an everyday topic at the learner's level. Share a short opinion, then ask what they think. Keep it flowing and never end: always set conversation_finished to false.",
   },
+  // Sentence making with the learner's own words: one word per turn, a short situation,
+  // one sentence from the learner, a quick check, the next word (see the speaking schedule).
+  sentences: {
+    label: "Sentence drill — my learnt words",
+    usesScene: false,
+    endable: false,
+    drill: true,
+    opener: "(Greet the learner in one short line, then give the first word's situation.)",
+    extra: "This is a sentence drill, not a chat. Each turn, pick one of today's words and set up a short, concrete everyday situation in one or two sentences that the learner can only answer naturally with a sentence using that word, then ask them to say one full sentence about it. React to their sentence in a few words (praise or a brief reaction, no small talk), then move straight on to the next word's situation. Never end: always set conversation_finished to false.",
+  },
   scene: {
     label: "Scene role-play",
     usesScene: true,
@@ -568,12 +578,16 @@ function localDay(t = Date.now()) {
 
 // Due words first (the least secure first), then words never said, in the trainer's
 // order (least secure first). Words not yet due, automatic ones included, wait.
-function pickTodayWords(learnt) {
+// A drill (evenIfNotDue) then goes on with the rest, the soonest due first, so it never runs dry.
+function pickTodayWords(learnt, { evenIfNotDue = false } = {}) {
   const spoken = store.get("spoken", {});
   const now = Date.now();
   const due = learnt.filter((w) => spoken[w.de] && spoken[w.de].due <= now)
     .sort((a, b) => spoken[a.de].stage - spoken[b.de].stage || spoken[a.de].due - spoken[b.de].due);
-  const order = [...due, ...learnt.filter((w) => !spoken[w.de])];
+  const later = evenIfNotDue
+    ? learnt.filter((w) => spoken[w.de] && spoken[w.de].due > now).sort((a, b) => spoken[a.de].due - spoken[b.de].due)
+    : [];
+  const order = [...due, ...learnt.filter((w) => !spoken[w.de]), ...later];
   todayWords = { active: order.slice(0, TODAY_WORDS), waiting: order.slice(TODAY_WORDS), status: {} };
 }
 
@@ -736,9 +750,11 @@ const TURN_SCHEMA = {
     suggestions: { type: "ARRAY", items: { type: "STRING" } },
     rapport_delta: { type: "INTEGER" },
     conversation_finished: { type: "BOOLEAN" },
+    // Which of today's words the reply asks for (its chip is highlighted), or "".
+    next_word: { type: "STRING" },
   },
-  required: ["coach", "mood", "reply", "reply_translation", "suggestions", "rapport_delta", "conversation_finished"],
-  propertyOrdering: ["coach", "mood", "reply", "reply_translation", "suggestions", "rapport_delta", "conversation_finished"],
+  required: ["coach", "mood", "reply", "reply_translation", "suggestions", "rapport_delta", "conversation_finished", "next_word"],
+  propertyOrdering: ["coach", "mood", "reply", "reply_translation", "suggestions", "rapport_delta", "conversation_finished", "next_word"],
 };
 
 const WORD_SCHEMA = {
@@ -824,10 +840,20 @@ function turnSystemPrompt({ language, nativeLanguage, level, scenario, mode, ten
     const fmt = (w) => (w.en ? `${w.de} (${w.en})` : w.de);
     const notYet = today.words.filter((w) => !today.status[w.de]?.correct);
     const said = today.words.filter((w) => today.status[w.de]?.correct);
+    const neverSay = "Never say, translate or hint at a word they haven't said yet: they must recall it on their own (the app shows them its meaning).";
     lines.push(
       `Today's words, which the learner is practising until they can say them without thinking: ${today.words.map(fmt).join("; ")}.`,
-      ...(notYet.length ? [`Not said correctly yet: ${notYet.map((w) => w.de).join("; ")}. Get the learner to say these: ask a question on the current topic whose natural answer needs one of them, one word at a time. You may steer the conversation there with a natural bridge, but never quiz or list them, and never say, translate or hint at a word they haven't said yet: they must recall it on their own.`] : []),
-      ...(said.length ? [`Already said: ${said.map((w) => w.de).join("; ")}. Bring each up again later so the learner uses it in another form (another case, tense or sentence).`] : []),
+      ...(m.drill
+        ? [
+          `Ask for the words not said yet first${notYet.length ? ` (${notYet.map((w) => w.de).join("; ")})` : ""}, one per turn. ${neverSay}`,
+          ...(said.length ? [`Already said once: ${said.map((w) => w.de).join("; ")}. When one comes back, set up a different situation that needs another form (another tense, case, person or a subordinate clause), so the learner builds a new sentence rather than repeating the old one.`] : []),
+          "If the learner's sentence doesn't use the word asked for, or uses it wrongly, ask for the same word once more in the next turn.",
+        ]
+        : [
+          ...(notYet.length ? [`Not said correctly yet: ${notYet.map((w) => w.de).join("; ")}. Get the learner to say these: ask a question on the current topic whose natural answer needs one of them, one word at a time. You may steer the conversation there with a natural bridge, but never quiz or list them. ${neverSay}`] : []),
+          ...(said.length ? [`Already said: ${said.map((w) => w.de).join("; ")}. Bring each up again later so the learner uses it in another form (another case, tense or sentence).`] : []),
+        ]),
+      "Set next_word to the word from this list (written as in the list) that your reply asks the learner to use, or leave it empty.",
       ...(learnerMessage ? ["In coach.used_words, list each of today's words that the learner's last message contains in any form, written as in the list above, with correct true only if its meaning, form and article are right; a wrong use also gets a coach.correction. Leave it empty if none is in it."] : []),
     );
   }
@@ -991,7 +1017,8 @@ async function chatTurn(settings, history, message) {
   const learnt = Boolean(settings.vocab?.learnt);
   const today = todayWords ? { words: todayWords.active, status: todayWords.status } : null;
   const todaySet = new Set(today?.words.map((w) => w.de));
-  const targetWords = settings.vocab?.enabled ? nextVocabBatch(learnt ? 8 : 12).filter((w) => !todaySet.has(w.de)) : [];
+  // A drill is only about today's words: no background words to weave in.
+  const targetWords = settings.vocab?.enabled && !mode.drill ? nextVocabBatch(learnt ? 8 : 12).filter((w) => !todaySet.has(w.de)) : [];
   const startedAt = performance.now();
   let voiced = false;
   const turn = await aiJson({
@@ -1877,13 +1904,17 @@ function renderTodayWords(box) {
   label.className = "focus-label";
   label.textContent = "Say: ";
   box.replaceChildren(label);
-  for (const w of active) {
+  // The word being asked for comes first, highlighted, and shows only its cue (even if said
+  // before), so it is recalled again rather than read off the chip.
+  const current = todayWords.current;
+  for (const w of [...active].sort((a, b) => (b.de === current) - (a.de === current))) {
     const s = status[w.de];
+    const isCurrent = w.de === current;
     const chip = document.createElement("button");
     chip.type = "button";
-    chip.className = "focus-word today" + (s?.correct ? " said" : s?.wrong ? " tried" : "");
+    chip.className = "focus-word today" + (s?.correct ? " said" : s?.wrong ? " tried" : "") + (isCurrent ? " current" : "");
     const mark = s?.correct ? "✓ " : s?.wrong ? "! " : "";
-    chip.textContent = mark + (s?.peeked || s?.correct ? `${w.en} = ${w.de}` : w.en || w.de);
+    chip.textContent = mark + (s?.peeked || (s?.correct && !isCurrent) ? `${w.en} = ${w.de}` : w.en || w.de);
     chip.title = s?.peeked ? w.de : "Tap to see the German";
     onTap(chip, () => {
       peekTodayWord(w.de);
@@ -2097,6 +2128,8 @@ async function sendTurn(message) {
         renderMistakes();
       }
     }
+    // The word the reply asks for: its chip is highlighted.
+    if (todayWords) todayWords.current = findTodayWord(turn.next_word)?.de ?? null;
     if (!state.paused) setStatus("");
     // After a correction the reply waits until the learner has said the fix.
     if (message && state.settings.sayAgain && drillable(turn.coach?.correction, message)) startDrill(turn, message);
@@ -2413,9 +2446,19 @@ $("start").addEventListener("click", async () => {
     vocab = { enabled: loaded > 0, levels, learnt: Boolean(learnt) };
     // Linked: a few learnt words of these levels to say today (see the speaking schedule).
     todayWords = null;
-    if (learnt) pickTodayWords(learnt.filter((w) => levels.includes(w.level)));
+    const drill = Boolean(MODES[mode]?.drill);
+    if (learnt) pickTodayWords(learnt.filter((w) => levels.includes(w.level)), { evenIfNotDue: drill });
+    // Not linked: the drill takes the imported words of these levels instead.
+    else if (drill) pickTodayWords(shuffled(((await idbGet("vocab_words").catch(() => null)) ?? []).filter((w) => levels.includes(w.level))), { evenIfNotDue: true });
   } else {
     todayWords = null;
+  }
+  if (MODES[mode]?.drill && !todayWords?.active.length) {
+    $("vocab-status").textContent = useVocab
+      ? "The sentence drill has no words to practise yet: learn some in the Vocab Trainer, or come back when some are due."
+      : "The sentence drill practises your vocabulary: tick “Weave my vocab into the conversation” first.";
+    $("vocab-status").scrollIntoView({ block: "center", behavior: "smooth" });
+    return;
   }
 
   state.settings = {
@@ -2699,7 +2742,7 @@ $("end").addEventListener("click", () => {
 if ("speechSynthesis" in window) speechSynthesis.onvoiceschanged = () => {};
 
 // With ?debug: which build this phone runs (a cached old one would explain old behaviour).
-debugLog(`Talkloop v34 · speech recognition ${Recognition ? "yes" : "no"}`);
+debugLog(`Talkloop v35 · speech recognition ${Recognition ? "yes" : "no"}`);
 refreshKeyGate();
 renderStats();
 renderBookmarks();

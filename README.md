@@ -121,6 +121,15 @@ day, a word moves up a stage and comes back after 1, 3, 7 and 21 days; at stage 
 automatic. A wrong use or a peek sends it back to stage 1. After the call a short recap
 shows what was said. The schedule is kept here (`POST /api/talkloop/spoken`).
 
+**Sentence drill** (mode *Sentence drill — my learnt words*): sentence making instead
+of a chat. Each turn the partner sets up a short situation that needs one of today's
+words (its chip is highlighted, showing only the English) and the learner says one full
+sentence with it; the coach checks it (with *Say it again* on a mistake) and the next
+word follows. A word comes back once more in a different situation that needs another
+form, then on its 1/3/7/21-day schedule. The drill never runs dry: after the due and
+new words it goes on with the ones due soonest. Without the trainer linked it uses the
+imported words of the chosen level.
+
 ## Users
 
 Create a user from Postman (or curl). The call needs no key, so anyone who
