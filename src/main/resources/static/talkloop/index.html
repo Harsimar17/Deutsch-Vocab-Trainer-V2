@@ -23,12 +23,13 @@
       <h2>Connect an AI</h2>
       <p class="muted">
         Talkloop runs entirely in your browser and talks to the AI you pick with your own free key.
-        Keys are stored only in this browser and are sent only to that service.
+        Keys are stored only in this browser and are sent only to that service (the Cloudflare backup goes through the Vocab Trainer, which forwards it without storing it).
       </p>
       <label>Conversation AI
         <select id="provider">
           <option value="mistral">Mistral — best German</option>
           <option value="groq">Groq — fastest</option>
+          <option value="cloudflare">Cloudflare Workers AI</option>
           <option value="gemini">Google Gemini</option>
         </select>
       </label>
@@ -48,6 +49,10 @@
       </label>
       <label data-provider="groq">Second backup Groq key <span class="muted">(optional — a third account's key, used when the first two reach their limits)</span>
         <input id="groq3-key" type="password" autocomplete="off" placeholder="Paste a third Groq key (gsk_…)" />
+      </label>
+      <label data-provider="groq cloudflare">Cloudflare Workers AI <span id="cf-optional" class="muted">(optional — backup when Groq reaches its limit)</span> <span class="muted">needs the Vocab Trainer link</span>
+        <input id="cf-account" type="text" autocomplete="off" spellcheck="false" placeholder="Cloudflare account ID (32 characters)" />
+        <input id="cf-token" type="password" autocomplete="off" placeholder="Cloudflare API token with Workers AI access" />
       </label>
       <label>Gemini API key <span id="gemini-optional" class="muted">(optional — backup voice)</span>
         <input id="api-key" type="password" autocomplete="off" placeholder="Paste your key (AIza… or AQ.…)" />
@@ -253,6 +258,6 @@
       <ul id="bookmarks" class="bookmarks"></ul>
     </section>
 
-    <script src="app.js?v=43" type="module"></script> <!-- bump with app.js changes, like styles.css above -->
+    <script src="app.js?v=45" type="module"></script> <!-- bump with app.js changes, like styles.css above -->
   </body>
 </html>

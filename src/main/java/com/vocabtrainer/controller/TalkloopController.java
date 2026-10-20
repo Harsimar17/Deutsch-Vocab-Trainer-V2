@@ -5,12 +5,15 @@ import java.util.Map;
 import com.vocabtrainer.model.Ctx;
 import com.vocabtrainer.security.JwtService;
 import com.vocabtrainer.security.SessionInterceptor;
+import com.vocabtrainer.service.CloudflareAiProxy;
 import com.vocabtrainer.service.TalkloopService;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.server.ResponseStatusException;
@@ -25,9 +28,11 @@ import org.springframework.web.server.ResponseStatusException;
 public class TalkloopController {
 
     private final TalkloopService talkloop;
+    private final CloudflareAiProxy cloudflare;
 
-    public TalkloopController(TalkloopService talkloop) {
+    public TalkloopController(TalkloopService talkloop, CloudflareAiProxy cloudflare) {
         this.talkloop = talkloop;
+        this.cloudflare = cloudflare;
     }
 
     @PostMapping("/link")
@@ -48,6 +53,22 @@ public class TalkloopController {
     @PostMapping("/mistakes")
     public Map<String, Object> mistakes(Ctx ctx, @RequestBody Map<String, Object> body) {
         return talkloop.syncMistakes(ctx, body);
+    }
+
+    /**
+     * Forwards a chat request to Cloudflare Workers AI with the learner's own account ID and
+     * token (sent per request, never stored), as Cloudflare refuses calls from web pages.
+     * Needs the link, so only Talkloop's own users can use it.
+     */
+    @PostMapping("/cloudflare")
+    public ResponseEntity<String> cloudflare(HttpServletRequest request,
+                                             @RequestHeader(value = "X-Cloudflare-Account", required = false) String account,
+                                             @RequestHeader(value = "X-Cloudflare-Token", required = false) String token,
+                                             @RequestBody Map<String, Object> body) {
+        if (!(request.getAttribute(SessionInterceptor.SESSION_ATTRIBUTE) instanceof JwtService.Session)) {
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "not linked");
+        }
+        return cloudflare.chat(account, token, body);
     }
 
     /** Merges a device's speaking schedule and returns the whole schedule. Needs the link too. */
