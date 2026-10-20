@@ -989,13 +989,19 @@ async function chatJson(request) {
 }
 
 // Groq as the main service: about a second per reply (measured 1.1–1.5 s for a whole turn),
-// so the whole answer is fetched at once. When it is busy, Mistral takes over if it has a key.
+// so the whole answer is fetched at once. When the key's limit is reached (429), the backup
+// Groq key (another account's) takes over; when Groq is still busy, Mistral, if it has a key.
 async function groqJson(request) {
   const groqKey = getKey("groq");
+  const backupKey = getKey("groq2");
   const mistralKey = getKey("mistral");
   if (!groqKey) throw new Error("Add your Groq API key to start.");
   let service = GROQ;
   let res = await chatRequest(GROQ, groqKey, request);
+  if (res.status === 429 && backupKey) {
+    debugLog("Groq key at its limit: using the backup key");
+    res = await chatRequest(GROQ, backupKey, request);
+  }
   if ((res.status === 429 || res.status >= 500) && mistralKey) {
     service = MISTRAL;
     res = await chatRequest(MISTRAL, mistralKey, request);
@@ -2439,7 +2445,7 @@ function renderBookmarks() {
 
 // ---------- wiring ----------
 
-const KEY_INPUTS = { mistral: "mistral-key", groq: "groq-key", gemini: "api-key" };
+const KEY_INPUTS = { mistral: "mistral-key", groq: "groq-key", groq2: "groq2-key", gemini: "api-key" };
 
 // Show only the key fields the chosen AI needs; saved keys show as a placeholder.
 function showKeyFields() {
@@ -2460,7 +2466,10 @@ $("provider").addEventListener("change", showKeyFields);
 
 function keySummary() {
   if (getProvider() === "gemini") return "✓ Using Google Gemini.";
-  if (getProvider() === "groq") return getKey("mistral") ? "✓ Using Groq, with Mistral as backup." : "✓ Using Groq.";
+  if (getProvider() === "groq") {
+    const backups = [getKey("groq2") && "a second Groq key", getKey("mistral") && "Mistral"].filter(Boolean);
+    return backups.length ? `✓ Using Groq, with ${backups.join(" and ")} as backup.` : "✓ Using Groq.";
+  }
   return getKey("groq") ? "✓ Using Mistral, with Groq as backup." : "✓ Using Mistral.";
 }
 
@@ -2812,7 +2821,7 @@ $("end").addEventListener("click", () => {
 if ("speechSynthesis" in window) speechSynthesis.onvoiceschanged = () => {};
 
 // With ?debug: which build this phone runs (a cached old one would explain old behaviour).
-debugLog(`Talkloop v38 · speech recognition ${Recognition ? "yes" : "no"}`);
+debugLog(`Talkloop v39 · speech recognition ${Recognition ? "yes" : "no"}`);
 refreshKeyGate();
 renderStats();
 renderBookmarks();

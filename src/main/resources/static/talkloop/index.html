@@ -43,6 +43,9 @@
         <span class="muted">Free at
           <a href="https://console.groq.com/keys" target="_blank" rel="noopener">console.groq.com</a>.</span>
       </label>
+      <label data-provider="groq">Backup Groq key <span class="muted">(optional — another account's key, used when the first one reaches its limit)</span>
+        <input id="groq2-key" type="password" autocomplete="off" placeholder="Paste a second Groq key (gsk_…)" />
+      </label>
       <label>Gemini API key <span id="gemini-optional" class="muted">(optional — backup voice)</span>
         <input id="api-key" type="password" autocomplete="off" placeholder="Paste your key (AIza… or AQ.…)" />
         <span class="muted">Free at
@@ -247,6 +250,6 @@
       <ul id="bookmarks" class="bookmarks"></ul>
     </section>
 
-    <script src="app.js?v=38" type="module"></script> <!-- bump with app.js changes, like styles.css above -->
+    <script src="app.js?v=39" type="module"></script> <!-- bump with app.js changes, like styles.css above -->
   </body>
 </html>
