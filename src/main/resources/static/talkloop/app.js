@@ -888,6 +888,34 @@ function toJsonSchema(s) {
   return out;
 }
 
+// A turn with every field present and of the right type. Groq and Mistral only promise
+// JSON, not this shape: a missing coach or reply used to stop the turn with "Cannot read
+// properties of undefined".
+function normalizeTurn(raw) {
+  const t = raw && typeof raw === "object" ? raw : {};
+  const c = t.coach && typeof t.coach === "object" ? t.coach : {};
+  const str = (v) => (typeof v === "string" ? v : "");
+  const list = (v) => (Array.isArray(v) ? v : []);
+  return {
+    ...t,
+    coach: {
+      understood: c.understood !== false,
+      correction: str(c.correction),
+      mistakes: list(c.mistakes).filter((m) => typeof m === "string"),
+      tip: str(c.tip),
+      used_words: list(c.used_words).filter((u) => u && typeof u === "object"),
+    },
+    mood: MOODS.includes(t.mood) ? t.mood : "neutral",
+    reply: str(t.reply).trim(),
+    reply_translation: str(t.reply_translation),
+    suggestions: list(t.suggestions).filter((s) => typeof s === "string"),
+    rapport_delta: Number.isFinite(t.rapport_delta) ? t.rapport_delta : 0,
+    conversation_finished: t.conversation_finished === true,
+    next_word: str(t.next_word),
+    situation: str(t.situation),
+  };
+}
+
 function parseModelJson(text) {
   try {
     return JSON.parse(text);
@@ -1065,13 +1093,15 @@ async function chatTurn(settings, history, message) {
   const startedAt = performance.now();
   let voiced = false;
   const systemInstruction = turnSystemPrompt(settings.request, targetWords, learnt, message.trim(), recurringMistakes(settings.request.language), today);
-  let turn = await aiJson({
+  // A drill is short, plain and only needs the last few turns: less to read and write, so
+  // replies come sooner, and a low temperature keeps its questions sensible.
+  const contents = historyToContents(mode.drill ? history.slice(-DRILL_HISTORY) : history, userText);
+  const temperature = mode.drill ? { temperature: 0.4 } : {};
+  let turn = normalizeTurn(await aiJson({
     systemInstruction,
     schema: TURN_SCHEMA,
-    // A drill is short, plain and only needs the last few turns: less to read and write, so
-    // replies come sooner, and a low temperature keeps its questions sensible.
-    contents: historyToContents(mode.drill ? history.slice(-DRILL_HISTORY) : history, userText),
-    ...(mode.drill ? { temperature: 0.4 } : {}),
+    contents,
+    ...temperature,
     // As soon as the reply is written, the voice starts on it while the translation and
     // suggestions are still coming.
     onPartial: (text) => {
@@ -1083,7 +1113,13 @@ async function chatTurn(settings, history, message) {
       debugLog(`reply written after ${((performance.now() - startedAt) / 1000).toFixed(1)}s`);
       prepareVoice(reply, mood);
     },
-  });
+  }));
+  // An answer without a reply is asked for once more rather than shown as an error.
+  if (!turn.reply) {
+    debugLog("answer had no reply: asking again");
+    turn = normalizeTurn(await aiJson({ systemInstruction, schema: TURN_SCHEMA, contents, ...temperature }));
+    if (!turn.reply) throw new Error("The AI's answer came back incomplete. Please send that again.");
+  }
   debugLog(`whole answer after ${((performance.now() - startedAt) / 1000).toFixed(1)}s`);
   // A drill reply that says the word it asks for gives the answer away (Groq does this when
   // it asks again), so it is written once more with that pointed out. Costs about a second.
@@ -1093,10 +1129,10 @@ async function chatTurn(settings, history, message) {
     const again = await aiJson({
       systemInstruction: `${systemInstruction}\nYour last draft of this reply contained the word "${asked.de}" itself, which gives the answer away. Write the reply again without that word in any form; refer to it only as "das Wort auf deinem Bildschirm".`,
       schema: TURN_SCHEMA,
-      contents: historyToContents(history.slice(-DRILL_HISTORY), userText),
+      contents,
       temperature: 0.4,
-    }).catch(() => null);
-    if (again && !saysWord(again.reply, asked.de)) turn = again;
+    }).then(normalizeTurn).catch(() => null);
+    if (again?.reply && !saysWord(again.reply, asked.de)) turn = again;
     debugLog(`answer after ${((performance.now() - startedAt) / 1000).toFixed(1)}s`);
   }
   turn.focusWords = targetWords;
@@ -2819,7 +2855,7 @@ $("end").addEventListener("click", () => {
 if ("speechSynthesis" in window) speechSynthesis.onvoiceschanged = () => {};
 
 // With ?debug: which build this phone runs (a cached old one would explain old behaviour).
-debugLog(`Talkloop v41 · speech recognition ${Recognition ? "yes" : "no"}`);
+debugLog(`Talkloop v42 · speech recognition ${Recognition ? "yes" : "no"}`);
 refreshKeyGate();
 renderStats();
 renderBookmarks();
