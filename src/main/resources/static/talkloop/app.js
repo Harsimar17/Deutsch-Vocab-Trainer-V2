@@ -478,6 +478,8 @@ const MISTAKE_TYPES = {
   other: "other",
 };
 const MISTAKE_HALF_LIFE_DAYS = 7; // a mistake counts half as much a week later
+// The same kinds, as briefly as the prompt needs them (it is sent with every turn).
+const PROMPT_MISTAKES = "case_article (der/den/dem, ein/einen, gender), verb_position (verb second; last after weil/dass/wenn), perfekt_auxiliary (haben/sein), participle, separable_verb, verb_ending, adjective_ending, preposition, negation (nicht/kein), plural, word_choice, tense, other";
 
 function recordMistakes(language, types, said, fix) {
   const log = store.get("mistakes", {});
@@ -807,48 +809,36 @@ function turnSystemPrompt({ language, nativeLanguage, level, scenario, mode, ten
   // In tense practice, an answer in another tense is a mistake too: it gets a correction,
   // so the learner says it again in the tense being practised.
   const tenseMistake = t
-    ? ` or does not use ${t.short} where your question called for it (then coach.correction is the learner's message rewritten in ${t.short}, keeping their meaning and words; if it is only a fragment, make it the short full sentence they most likely meant, and list tense in coach.mistakes)`
+    ? ` or doesn't use ${t.short} where your question called for it (then rewrite their message in ${t.short}, keeping their meaning and words, as the short full sentence they meant if it is a fragment, and list tense)`
     : "";
+  // Every line is sent with every turn, so the rules are kept short (each word costs tokens
+  // against the AI's daily limit); none of them was dropped when they were shortened.
   const lines = [
-    `You are ${persona.character}, ${persona.setting}. Stay in character and speak only ${language}.`,
-    `The learner speaks ${language} at CEFR level ${level}; their native language is ${nativeLanguage}.`,
-    "Keep each reply to one or two short sentences that match the learner's level, and end with something they can respond to.",
+    `You are ${persona.character}, ${persona.setting}. Stay in character; speak only ${language}.`,
+    `Learner: ${language} at CEFR ${level}, native ${nativeLanguage}. Reply in one or two short sentences at their level, ending with something they can answer.`,
     ...(LEVEL_GUIDE[level] ? [`At ${level}: ${LEVEL_GUIDE[level]}`] : []),
     m.extra,
     ...(m.usesScene && persona.goal ? [`Scene goal: ${persona.goal}`] : []),
-    "Speech recognition produced the learner's message, so ignore missing punctuation and obvious transcription slips.",
-    `Write reply_translation, coach.tip and nothing else in ${nativeLanguage}.`,
+    "The learner's message comes from speech recognition: ignore missing punctuation and obvious transcription slips.",
+    `Write reply_translation and coach.tip in ${nativeLanguage}; everything else in ${language}.`,
     learnerMessage
-      ? `Fill coach first, before writing your reply. It judges only the learner's last message, which is exactly: ${JSON.stringify(learnerMessage)}. Give a correction only when that text has a real grammar or word-choice mistake${tenseMistake}; coach.correction is then only the sentence(s) with the mistake, rewritten correctly in ${language}, with no explanation (that goes in coach.tip). With every correction, list in coach.mistakes each kind of mistake it fixes: ${Object.entries(MISTAKE_TYPES).map(([k, d]) => `${k} = ${d}`).join("; ")}. Without a correction, leave coach.mistakes empty. coach.tip may praise or explain something that literally appears in that text; never credit the learner with words, tenses or grammar that are not in it, such as those in your own replies, your suggestions or practice words they did not use. If there is nothing useful to say, leave coach.tip empty.`
-      : "There is no learner message to judge yet: leave coach.correction, coach.mistakes, coach.tip and coach.used_words empty.",
-    "Your reply is read aloud, so let your feelings show in the words: react like a real person with short interjections (for example Oh!, Ach wirklich?, Super!, Oh nein!) and use ! and ? where you mean them.",
-    `Set mood to how the reply should sound: ${MOODS.join(", ")}. Use amused for fun or happy replies, surprised for amazement, angry only when the role calls for annoyance, sleepy for tiredness, whisper for secrets, and neutral otherwise.`,
+      ? `Fill coach first. It judges only the learner's last message: ${JSON.stringify(learnerMessage)}. coach.correction: only if it has a real grammar or word-choice mistake${tenseMistake}, the faulty sentence(s) rewritten correctly, no explanation; then coach.mistakes lists each kind it fixes (${PROMPT_MISTAKES}); otherwise leave both empty. coach.tip: one short sentence praising or explaining something literally in that message (never credit words or grammar it doesn't contain), or empty.`
+      : "No learner message yet: leave coach.correction, coach.mistakes, coach.tip and coach.used_words empty.",
+    "Your reply is read aloud: sound like a real person, with short interjections (Oh!, Ach wirklich?, Super!) and ! or ? where you mean them.",
+    `mood: ${MOODS.join("|")}; amused for fun replies, surprised for amazement, angry only if the role calls for it, sleepy, whisper for secrets, else neutral.`,
   ];
   if (t) {
-    lines.push(
-      `The learner wants to practise ${t.form}. Use this tense yourself wherever it fits, and keep steering the conversation so that the natural answer to your question needs it: ask about ${t.ask}. Your very first question, right after the greeting, should already need this tense. Stay in your role while doing so.`,
-      "Write the suggestions in this tense.",
-      "A message in another tense, or with this tense formed wrongly (wrong auxiliary, wrong participle or ending), always gets a coach.correction in this tense, even when it is otherwise correct German; never only a tip. When their message does use it correctly, say so briefly in coach.tip.",
-    );
+    lines.push(`Tense practice: ${t.form}. Use it yourself and, from your very first question on, ask things whose natural answer needs it (about ${t.ask}); write the suggestions in it too. A message in another tense, or with this tense formed wrongly, always gets a coach.correction in this tense, never only a tip; when it is right, say so briefly in coach.tip.`);
   }
   // The conversation comes first: words are brought in only where they fit the topic, never
   // by jumping to a new one (that made replies hop from work to politics in one line).
-  const stayOnTopic = "The conversation comes first: every reply follows on from what the learner just said and stays on the current topic. Use a word from this list only where it fits that topic naturally; never change the topic or ask an unrelated question to bring a word in. If none fit, use none: the list stays mostly the same over the next turns, so the chance will come. When the topic has run its course, you may move to a new one where some of the words fit, with a natural bridge from the old one.";
+  const stayOnTopic = "Conversation first: follow on from what the learner said and stay on topic. Use a listed word only where it fits naturally; never change topic or ask something unrelated to bring one in (the list stays for the next turns). When a topic runs dry, bridge naturally to one where some fit.";
   if (targetWords.length && learnt) {
     const list = targetWords.map((w) => (w.en ? `${w.de} (${w.en})` : w.de)).join("; ");
-    lines.push(
-      `The learner already knows these words but now needs to practise using them when speaking: ${list}.`,
-      stayOnTopic,
-      "Otherwise speak as you normally would: you are not limited to these words. Where one fits, use it in your reply, or ask a question on the current topic whose natural answer needs it, so the learner gets to use it too. Never list or quiz the words.",
-      "Only when the learner's message actually contains one of these words, check it: if it is right, say so briefly in coach.tip; if the meaning, article or form is wrong, give the fix in coach.correction.",
-    );
+    lines.push(`Words the learner knows and should practise saying: ${list}. ${stayOnTopic} You are not limited to them: where one fits, use it or ask a question whose natural answer needs it; never list or quiz them. If the learner's message contains one, praise it briefly in coach.tip, or fix a wrong meaning, article or form in coach.correction.`);
   } else if (targetWords.length) {
     const list = targetWords.map((w) => (w.en ? `${w.de} (${w.en})` : w.de)).join("; ");
-    lines.push(
-      `The learner is practising this vocabulary: ${list}.`,
-      stayOnTopic,
-      "Where they fit, weave one to three of these words or phrases into your reply, keep it natural, and give the learner a chance to use them too.",
-    );
+    lines.push(`Vocabulary being practised: ${list}. ${stayOnTopic} Where they fit, weave one to three into your reply naturally so the learner can use them too.`);
   }
   // Today's words: the learner has to recall and say them, so the partner asks for them
   // but never says them first (echoing a word just heard doesn't make it stick).
@@ -856,35 +846,32 @@ function turnSystemPrompt({ language, nativeLanguage, level, scenario, mode, ten
     const fmt = (w) => (w.en ? `${w.de} (${w.en})` : w.de);
     const notYet = today.words.filter((w) => !today.status[w.de]?.correct);
     const said = today.words.filter((w) => today.status[w.de]?.correct);
-    const neverSay = "Never say, translate or hint at a word they haven't said yet: they must recall it on their own (the app shows them its meaning).";
+    const neverSay = "Never say, translate or hint at one the learner hasn't said yet: they must recall it (the app shows its meaning).";
     lines.push(
-      `Today's words, which the learner is practising until they can say them without thinking: ${today.words.map(fmt).join("; ")}.`,
+      `Today's words, to be said until automatic: ${today.words.map(fmt).join("; ")}.`,
       ...(m.drill
         ? [
           today.situation
             ? `Current situation: ${JSON.stringify(today.situation)}. Continue it from where the conversation left off.`
             : "No situation yet: start one.",
-          `Ask first for the words not said yet${notYet.length ? ` (${notYet.map((w) => w.de).join("; ")})` : ""}, one per step, choosing the one that fits the next moment best. ${neverSay}`,
+          `Ask first for words not said yet${notYet.length ? ` (${notYet.map((w) => w.de).join("; ")})` : ""}, one per step, the one fitting the next moment best. ${neverSay}`,
           // Spelled out: faster models (Groq) otherwise tend to say the word in the question.
           "Most important rule: your reply must NOT contain the word you are asking for, in any form, nor a translation of it, until the learner has said it correctly. Refer to it only as \"das Wort auf deinem Bildschirm\" and describe the moment so that this word is the natural thing to say. Wrong: \"Das Handy sieht schrecklich aus. Sag einen Satz mit diesem Wort.\" Right: \"Das Display ist kaputt und voller Kratzer. Wie findest du das Handy? Nutze das Wort auf deinem Bildschirm.\"",
-          ...(said.length ? [`Already said once: ${said.map((w) => w.de).join("; ")}. Bring each back at a later moment of the situation (or in the next one) that needs it in another form, e.g. another tense or person, so the learner builds a new sentence rather than repeating the old one.`] : []),
-          "If the learner's sentence doesn't use the word asked for, or uses it wrongly, ask for the same word once more in the next turn, again without saying it (if they used it wrongly, coach.correction shows them the right form).",
+          ...(said.length ? [`Already said once: ${said.map((w) => w.de).join("; ")}. Bring each back at a later moment needing another form (tense, person), so they build a new sentence.`] : []),
+          "If their sentence misses the word asked for or uses it wrongly, ask for it again next turn, still without saying it.",
         ]
         : [
-          ...(notYet.length ? [`Not said correctly yet: ${notYet.map((w) => w.de).join("; ")}. Get the learner to say these: ask a question on the current topic whose natural answer needs one of them, one word at a time. You may steer the conversation there with a natural bridge, but never quiz or list them. ${neverSay}`] : []),
-          ...(said.length ? [`Already said: ${said.map((w) => w.de).join("; ")}. Bring each up again later so the learner uses it in another form (another case, tense or sentence).`] : []),
+          ...(notYet.length ? [`Not said yet: ${notYet.map((w) => w.de).join("; ")}. Get the learner to say them, one at a time, with a question on the current topic whose natural answer needs one (bridge naturally; never quiz or list). ${neverSay}`] : []),
+          ...(said.length ? [`Already said: ${said.map((w) => w.de).join("; ")}. Bring each back later in another form.`] : []),
         ]),
-      "Set next_word to the word from this list (written as in the list) that your reply asks the learner to use, or leave it empty.",
-      ...(learnerMessage ? ["In coach.used_words, list each of today's words that the learner's last message contains in any form, written as in the list above, with correct true only if its meaning, form and article are right; a wrong use also gets a coach.correction. Leave it empty if none is in it."] : []),
+      "next_word: the word from this list (as written) your reply asks for, else empty.",
+      ...(learnerMessage ? ["coach.used_words: list every one of today's words that appears in the learner's last message, in any form (write it as in the list), with correct true only if its meaning, form and article are right; empty only if none appears. A wrong use also gets a coach.correction."] : []),
     );
   }
   if (weakSpots.length) {
-    const clip =(t) => JSON.stringify(t.length > 120 ? `${t.slice(0, 117)}…` : t);
-    const list = weakSpots.map((m) => `${MISTAKE_TYPES[m.type]} (recently they said ${clip(m.example.said)}; correct: ${clip(m.example.fix)})`).join("; ");
-    lines.push(
-      `The learner keeps making these mistakes, most frequent first: ${list}.`,
-      "Deliberately set up chances to get them right: about every second question, ask something on the current topic whose natural answer needs one of these structures, taking them in turn. Stay natural and in your role, never say that you are testing them, and don't explain grammar in your reply; the coach handles corrections.",
-    );
+    const clip = (t) => JSON.stringify(t.length > 120 ? `${t.slice(0, 117)}…` : t);
+    const list = weakSpots.map((m) => `${MISTAKE_TYPES[m.type]} (said ${clip(m.example.said)}; correct ${clip(m.example.fix)})`).join("; ");
+    lines.push(`Recurring mistakes, most frequent first: ${list}. About every second question, ask something on the current topic whose natural answer needs one of these, in turn; stay natural, never say you're testing, don't explain grammar (the coach corrects).`);
   }
   return lines.join("\n");
 }
@@ -910,12 +897,21 @@ function parseModelJson(text) {
 }
 
 // One request to an OpenAI-compatible chat API (Mistral, Groq). Returns the fetch Response.
+// The answer format for chat APIs, which get it as text: the JSON Schema without its
+// "required" lists (every field is required, said once instead), which repeated each field
+// name on every turn.
+function chatSystemContent(systemInstruction, schema) {
+  const strip = ({ required, properties, items, ...rest }) => ({
+    ...rest,
+    ...(properties ? { properties: Object.fromEntries(Object.entries(properties).map(([k, v]) => [k, strip(v)])) } : {}),
+    ...(items ? { items: strip(items) } : {}),
+  });
+  return `${systemInstruction}\n\nAnswer with only a JSON object with every field of this JSON Schema:\n${JSON.stringify(strip(toJsonSchema(schema)))}`;
+}
+
 function chatRequest(service, key, { systemInstruction, schema, contents, temperature = 0.8 }, stream = false) {
   const messages = [
-    {
-      role: "system",
-      content: `${systemInstruction}\n\nAnswer with only a JSON object that matches this JSON Schema:\n${JSON.stringify(toJsonSchema(schema))}`,
-    },
+    { role: "system", content: chatSystemContent(systemInstruction, schema) },
     ...contents.map((c) => ({
       role: c.role === "model" ? "assistant" : "user",
       content: c.parts.map((p) => p.text).join(""),
@@ -2821,7 +2817,7 @@ $("end").addEventListener("click", () => {
 if ("speechSynthesis" in window) speechSynthesis.onvoiceschanged = () => {};
 
 // With ?debug: which build this phone runs (a cached old one would explain old behaviour).
-debugLog(`Talkloop v39 · speech recognition ${Recognition ? "yes" : "no"}`);
+debugLog(`Talkloop v40 · speech recognition ${Recognition ? "yes" : "no"}`);
 refreshKeyGate();
 renderStats();
 renderBookmarks();
