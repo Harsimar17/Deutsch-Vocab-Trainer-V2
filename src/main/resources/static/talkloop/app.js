@@ -203,16 +203,6 @@ const MODES = {
     opener: "(Pick a light, everyday topic suited to the learner's level — food, travel, films, weekend plans — introduce it in one line and ask the learner what they think.)",
     extra: "Have a back-and-forth discussion about an everyday topic at the learner's level. Share a short opinion, then ask what they think. Keep it flowing and never end: always set conversation_finished to false.",
   },
-  // Sentence making with the learner's own words: one word per turn, a short situation,
-  // one sentence from the learner, a quick check, the next word (see the speaking schedule).
-  sentences: {
-    label: "Sentence drill — my learnt words",
-    usesScene: false,
-    endable: false,
-    drill: true,
-    opener: "(Greet the learner in one short line, say which situation you are starting, and give its first step.)",
-    extra: "This is a sentence drill played out as one realistic everyday situation, like a short story the learner lives through (for example: moving into a new flat, a day at work, planning a trip, a visit to the doctor). Choose a situation in which as many of today's words as possible would naturally come up, and tell the learner in one short line what it is. Then go through it step by step, in order: each turn, describe the next logical moment of the situation in one or two short, simple sentences and ask the learner what they do, say or think there, in one full sentence using the word that fits that moment (the app shows the learner its meaning). Every step must follow sensibly from the previous one and from what the learner said, so the whole drill reads like one coherent story where every sentence makes sense. When none of the remaining words fits the situation any more, start a new one and say so (Neue Situation: …); never force a word into a moment where a real person wouldn't use it. React to the learner's sentence in a few words, no small talk. Set situation to a short title (2–5 words, in the language being practised) of the current situation. Leave suggestions empty and keep reply_translation short. Never end: always set conversation_finished to false.",
-  },
   scene: {
     label: "Scene role-play",
     usesScene: true,
@@ -568,8 +558,7 @@ function mergeMistakes(merged, startedAt) {
 const TODAY_WORDS = 5;
 const SPOKEN_DAYS = [1, 3, 7, 21]; // due again this many days after reaching stage 1..4
 const AUTOMATIC_RECHECK_DAYS = 60; // an automatic word said correctly again
-const DONE_AFTER = 2;
-const DRILL_HISTORY = 6; // messages a sentence drill sends back to the model (3 exchanges) // correct uses in one call before a word makes room for the next
+const DONE_AFTER = 2; // correct uses in one call before a word makes room for the next
 let todayWords = null; // { active, waiting, status: {de: {correct, wrong, peeked}} } during a linked call
 
 function localDay(t = Date.now()) {
@@ -579,16 +568,12 @@ function localDay(t = Date.now()) {
 
 // Due words first (the least secure first), then words never said, in the trainer's
 // order (least secure first). Words not yet due, automatic ones included, wait.
-// A drill (evenIfNotDue) then goes on with the rest, the soonest due first, so it never runs dry.
-function pickTodayWords(learnt, { evenIfNotDue = false } = {}) {
+function pickTodayWords(learnt) {
   const spoken = store.get("spoken", {});
   const now = Date.now();
   const due = learnt.filter((w) => spoken[w.de] && spoken[w.de].due <= now)
     .sort((a, b) => spoken[a.de].stage - spoken[b.de].stage || spoken[a.de].due - spoken[b.de].due);
-  const later = evenIfNotDue
-    ? learnt.filter((w) => spoken[w.de] && spoken[w.de].due > now).sort((a, b) => spoken[a.de].due - spoken[b.de].due)
-    : [];
-  const order = [...due, ...learnt.filter((w) => !spoken[w.de]), ...later];
+  const order = [...due, ...learnt.filter((w) => !spoken[w.de])];
   todayWords = { active: order.slice(0, TODAY_WORDS), waiting: order.slice(TODAY_WORDS), status: {} };
 }
 
@@ -751,13 +736,9 @@ const TURN_SCHEMA = {
     suggestions: { type: "ARRAY", items: { type: "STRING" } },
     rapport_delta: { type: "INTEGER" },
     conversation_finished: { type: "BOOLEAN" },
-    // Which of today's words the reply asks for (its chip is highlighted), or "".
-    next_word: { type: "STRING" },
-    // The sentence drill's current situation, kept by the app so it stays coherent, or "".
-    situation: { type: "STRING" },
   },
-  required: ["coach", "mood", "reply", "reply_translation", "suggestions", "rapport_delta", "conversation_finished", "next_word", "situation"],
-  propertyOrdering: ["coach", "mood", "reply", "reply_translation", "suggestions", "rapport_delta", "conversation_finished", "next_word", "situation"],
+  required: ["coach", "mood", "reply", "reply_translation", "suggestions", "rapport_delta", "conversation_finished"],
+  propertyOrdering: ["coach", "mood", "reply", "reply_translation", "suggestions", "rapport_delta", "conversation_finished"],
 };
 
 const WORD_SCHEMA = {
@@ -843,23 +824,10 @@ function turnSystemPrompt({ language, nativeLanguage, level, scenario, mode, ten
     const fmt = (w) => (w.en ? `${w.de} (${w.en})` : w.de);
     const notYet = today.words.filter((w) => !today.status[w.de]?.correct);
     const said = today.words.filter((w) => today.status[w.de]?.correct);
-    const neverSay = "Never say, translate or hint at a word they haven't said yet: they must recall it on their own (the app shows them its meaning).";
     lines.push(
       `Today's words, which the learner is practising until they can say them without thinking: ${today.words.map(fmt).join("; ")}.`,
-      ...(m.drill
-        ? [
-          today.situation
-            ? `Current situation: ${JSON.stringify(today.situation)}. Continue it from where the conversation left off.`
-            : "No situation yet: start one.",
-          `Ask first for the words not said yet${notYet.length ? ` (${notYet.map((w) => w.de).join("; ")})` : ""}, one per step, choosing the one that fits the next moment best. ${neverSay}`,
-          ...(said.length ? [`Already said once: ${said.map((w) => w.de).join("; ")}. Bring each back at a later moment of the situation (or in the next one) that needs it in another form, e.g. another tense or person, so the learner builds a new sentence rather than repeating the old one.`] : []),
-          "If the learner's sentence doesn't use the word asked for, or uses it wrongly, ask for the same word once more in the next turn.",
-        ]
-        : [
-          ...(notYet.length ? [`Not said correctly yet: ${notYet.map((w) => w.de).join("; ")}. Get the learner to say these: ask a question on the current topic whose natural answer needs one of them, one word at a time. You may steer the conversation there with a natural bridge, but never quiz or list them. ${neverSay}`] : []),
-          ...(said.length ? [`Already said: ${said.map((w) => w.de).join("; ")}. Bring each up again later so the learner uses it in another form (another case, tense or sentence).`] : []),
-        ]),
-      "Set next_word to the word from this list (written as in the list) that your reply asks the learner to use, or leave it empty.",
+      ...(notYet.length ? [`Not said correctly yet: ${notYet.map((w) => w.de).join("; ")}. Get the learner to say these: ask a question on the current topic whose natural answer needs one of them, one word at a time. You may steer the conversation there with a natural bridge, but never quiz or list them, and never say, translate or hint at a word they haven't said yet: they must recall it on their own.`] : []),
+      ...(said.length ? [`Already said: ${said.map((w) => w.de).join("; ")}. Bring each up again later so the learner uses it in another form (another case, tense or sentence).`] : []),
       ...(learnerMessage ? ["In coach.used_words, list each of today's words that the learner's last message contains in any form, written as in the list above, with correct true only if its meaning, form and article are right; a wrong use also gets a coach.correction. Leave it empty if none is in it."] : []),
     );
   }
@@ -895,7 +863,7 @@ function parseModelJson(text) {
 }
 
 // One request to an OpenAI-compatible chat API (Mistral, Groq). Returns the fetch Response.
-function chatRequest(service, key, { systemInstruction, schema, contents, temperature = 0.8 }, stream = false) {
+function chatRequest(service, key, { systemInstruction, schema, contents }, stream = false) {
   const messages = [
     {
       role: "system",
@@ -913,7 +881,7 @@ function chatRequest(service, key, { systemInstruction, schema, contents, temper
       model: service.model,
       messages,
       response_format: { type: "json_object" },
-      temperature,
+      temperature: 0.8,
       ...(stream ? { stream: true } : {}),
       ...service.extra,
     }),
@@ -977,7 +945,7 @@ function aiJson(request) {
   return getProvider() === "mistral" ? chatJson(request) : geminiJson(request);
 }
 
-async function geminiJson({ systemInstruction, schema, contents, onPartial, temperature = 0.8 }) {
+async function geminiJson({ systemInstruction, schema, contents, onPartial }) {
   const key = getKey("gemini");
   if (!key) throw new Error("Add your Gemini API key to start.");
   const stream = typeof onPartial === "function";
@@ -989,7 +957,7 @@ async function geminiJson({ systemInstruction, schema, contents, onPartial, temp
       body: JSON.stringify({
         systemInstruction: { parts: [{ text: systemInstruction }] },
         contents,
-        generationConfig: { responseMimeType: "application/json", responseSchema: schema, temperature },
+        generationConfig: { responseMimeType: "application/json", responseSchema: schema, temperature: 0.8 },
       }),
     });
   let res = await request(CONV_MODEL);
@@ -1021,19 +989,15 @@ async function chatTurn(settings, history, message) {
   const mode = MODES[settings.request.mode] ?? MODES.scene;
   const userText = message.trim() || mode.opener;
   const learnt = Boolean(settings.vocab?.learnt);
-  const today = todayWords ? { words: todayWords.active, status: todayWords.status, situation: todayWords.situation } : null;
+  const today = todayWords ? { words: todayWords.active, status: todayWords.status } : null;
   const todaySet = new Set(today?.words.map((w) => w.de));
-  // A drill is only about today's words: no background words to weave in.
-  const targetWords = settings.vocab?.enabled && !mode.drill ? nextVocabBatch(learnt ? 8 : 12).filter((w) => !todaySet.has(w.de)) : [];
+  const targetWords = settings.vocab?.enabled ? nextVocabBatch(learnt ? 8 : 12).filter((w) => !todaySet.has(w.de)) : [];
   const startedAt = performance.now();
   let voiced = false;
   const turn = await aiJson({
     systemInstruction: turnSystemPrompt(settings.request, targetWords, learnt, message.trim(), recurringMistakes(settings.request.language), today),
     schema: TURN_SCHEMA,
-    // A drill is short, plain and only needs the last few turns: less to read and write, so
-    // replies come sooner, and a low temperature keeps its questions sensible.
-    contents: historyToContents(mode.drill ? history.slice(-DRILL_HISTORY) : history, userText),
-    ...(mode.drill ? { temperature: 0.4 } : {}),
+    contents: historyToContents(history, userText),
     // As soon as the reply is written, the voice starts on it while the translation and
     // suggestions are still coming.
     onPartial: (text) => {
@@ -1048,8 +1012,6 @@ async function chatTurn(settings, history, message) {
   });
   debugLog(`whole answer after ${((performance.now() - startedAt) / 1000).toFixed(1)}s`);
   turn.focusWords = targetWords;
-  // Suggested answers would give the drill's word away.
-  if (mode.drill) turn.suggestions = [];
   // In open modes the conversation never ends on its own.
   if (!mode.endable) turn.conversation_finished = false;
   return { turn, userText };
@@ -1915,17 +1877,13 @@ function renderTodayWords(box) {
   label.className = "focus-label";
   label.textContent = "Say: ";
   box.replaceChildren(label);
-  // The word being asked for comes first, highlighted, and shows only its cue (even if said
-  // before), so it is recalled again rather than read off the chip.
-  const current = todayWords.current;
-  for (const w of [...active].sort((a, b) => (b.de === current) - (a.de === current))) {
+  for (const w of active) {
     const s = status[w.de];
-    const isCurrent = w.de === current;
     const chip = document.createElement("button");
     chip.type = "button";
-    chip.className = "focus-word today" + (s?.correct ? " said" : s?.wrong ? " tried" : "") + (isCurrent ? " current" : "");
+    chip.className = "focus-word today" + (s?.correct ? " said" : s?.wrong ? " tried" : "");
     const mark = s?.correct ? "✓ " : s?.wrong ? "! " : "";
-    chip.textContent = mark + (s?.peeked || (s?.correct && !isCurrent) ? `${w.en} = ${w.de}` : w.en || w.de);
+    chip.textContent = mark + (s?.peeked || s?.correct ? `${w.en} = ${w.de}` : w.en || w.de);
     chip.title = s?.peeked ? w.de : "Tap to see the German";
     onTap(chip, () => {
       peekTodayWord(w.de);
@@ -2138,14 +2096,6 @@ async function sendTurn(message) {
         recordMistakes(state.settings.request.language, types.length ? [...new Set(types)] : ["other"], message, turn.coach.correction);
         renderMistakes();
       }
-    }
-    // The word the reply asks for: its chip is highlighted.
-    if (todayWords) todayWords.current = findTodayWord(turn.next_word)?.de ?? null;
-    // The drill's situation is kept here and sent back each turn (only the last few turns
-    // are), so the story stays coherent; the header shows it.
-    if (todayWords && MODES[state.settings.request.mode]?.drill && turn.situation?.trim()) {
-      todayWords.situation = turn.situation.trim().slice(0, 80);
-      $("call-mode").textContent = `Sentence drill · ${todayWords.situation}`;
     }
     if (!state.paused) setStatus("");
     // After a correction the reply waits until the learner has said the fix.
@@ -2463,19 +2413,9 @@ $("start").addEventListener("click", async () => {
     vocab = { enabled: loaded > 0, levels, learnt: Boolean(learnt) };
     // Linked: a few learnt words of these levels to say today (see the speaking schedule).
     todayWords = null;
-    const drill = Boolean(MODES[mode]?.drill);
-    if (learnt) pickTodayWords(learnt.filter((w) => levels.includes(w.level)), { evenIfNotDue: drill });
-    // Not linked: the drill takes the imported words of these levels instead.
-    else if (drill) pickTodayWords(shuffled(((await idbGet("vocab_words").catch(() => null)) ?? []).filter((w) => levels.includes(w.level))), { evenIfNotDue: true });
+    if (learnt) pickTodayWords(learnt.filter((w) => levels.includes(w.level)));
   } else {
     todayWords = null;
-  }
-  if (MODES[mode]?.drill && !todayWords?.active.length) {
-    $("vocab-status").textContent = useVocab
-      ? "The sentence drill has no words to practise yet: learn some in the Vocab Trainer, or come back when some are due."
-      : "The sentence drill practises your vocabulary: tick “Weave my vocab into the conversation” first.";
-    $("vocab-status").scrollIntoView({ block: "center", behavior: "smooth" });
-    return;
   }
 
   state.settings = {
@@ -2759,7 +2699,7 @@ $("end").addEventListener("click", () => {
 if ("speechSynthesis" in window) speechSynthesis.onvoiceschanged = () => {};
 
 // With ?debug: which build this phone runs (a cached old one would explain old behaviour).
-debugLog(`Talkloop v37 · speech recognition ${Recognition ? "yes" : "no"}`);
+debugLog(`Talkloop v34 · speech recognition ${Recognition ? "yes" : "no"}`);
 refreshKeyGate();
 renderStats();
 renderBookmarks();
