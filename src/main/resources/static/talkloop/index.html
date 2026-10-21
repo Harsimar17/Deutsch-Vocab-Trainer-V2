@@ -33,6 +33,10 @@
           <option value="gemini">Google Gemini</option>
         </select>
       </label>
+      <label class="check">
+        <input id="grammar-check" type="checkbox" checked />
+        Double-check my grammar with LanguageTool <span class="muted">(free, no key; catches mistakes the AI misses)</span>
+      </label>
       <label data-provider="mistral groq">Mistral API key <span id="mistral-optional" class="muted">(optional — used when Groq is busy)</span>
         <input id="mistral-key" type="password" autocomplete="off" placeholder="Paste your Mistral key" />
         <span class="muted">Free at
@@ -258,6 +262,6 @@
       <ul id="bookmarks" class="bookmarks"></ul>
     </section>
 
-    <script src="app.js?v=45" type="module"></script> <!-- bump with app.js changes, like styles.css above -->
+    <script src="app.js?v=46" type="module"></script> <!-- bump with app.js changes, like styles.css above -->
   </body>
 </html>
