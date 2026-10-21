@@ -8,7 +8,7 @@
     <link rel="apple-touch-icon" href="favicon.svg" />
     <meta name="theme-color" content="#2f5fd0" />
     <!-- ?v= makes phones fetch the new file after a change instead of a cached copy: bump it with each change. -->
-    <link rel="stylesheet" href="styles.css?v=13" />
+    <link rel="stylesheet" href="styles.css?v=15" />
   </head>
   <body>
     <header class="topbar">
@@ -190,6 +190,7 @@
         <div class="caller">
           <div id="call-name" class="caller-name"></div>
           <div class="caller-sub"><span id="call-mode"></span> · <span id="call-timer">00:00</span></div>
+          <div id="call-topic" class="caller-topic" hidden></div>
         </div>
         <div id="call-state" class="call-state">Connecting…</div>
       </header>
@@ -262,6 +263,6 @@
       <ul id="bookmarks" class="bookmarks"></ul>
     </section>
 
-    <script src="app.js?v=46" type="module"></script> <!-- bump with app.js changes, like styles.css above -->
+    <script src="app.js?v=48" type="module"></script> <!-- bump with app.js changes, like styles.css above -->
   </body>
 </html>
