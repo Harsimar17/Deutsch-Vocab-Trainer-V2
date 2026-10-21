@@ -184,6 +184,42 @@ const SCENARIOS = {
 // A general partner used by the AI-led modes (not tied to a scene).
 const PARTNER = { character: "Mika", setting: "a warm, patient native-speaker conversation partner and language buddy" };
 
+// Topics for "Discuss a topic": each has two sides, so there is something to have an opinion
+// on and give reasons for. A1/A2 get everyday choices; B1 and up also get bigger questions.
+const TOPICS = {
+  easy: [
+    "Lieber Kaffee oder lieber Tee?",
+    "Wohnen in der Stadt oder auf dem Land",
+    "Sommer oder Winter: Welche Jahreszeit ist besser?",
+    "Hund oder Katze als Haustier",
+    "Mit dem Auto oder mit dem Fahrrad zur Arbeit",
+    "Zu Hause kochen oder im Restaurant essen",
+    "Urlaub am Meer oder in den Bergen",
+    "Früh aufstehen oder lange schlafen",
+    "Allein wohnen oder in einer WG",
+    "Ein Buch lesen oder einen Film sehen",
+  ],
+  harder: [
+    "Homeoffice oder Büro: Was ist besser?",
+    "Sind soziale Medien gut oder schlecht für Freundschaften?",
+    "Sollten Kinder schon in der Grundschule ein Handy haben?",
+    "Fleisch essen oder vegetarisch leben",
+    "Sollte man Autos in der Innenstadt verbieten?",
+    "Online einkaufen oder im Laden?",
+    "Wie lernt man eine Fremdsprache am besten?",
+    "Macht Geld glücklich?",
+    "Eine Vier-Tage-Woche: eine gute Idee?",
+    "Reisen mit dem Flugzeug oder mit dem Zug",
+  ],
+};
+
+// A random topic for the level, not the one used last time.
+function pickTopic(level, last = "") {
+  const pool = ["A1", "A2"].includes(level) ? TOPICS.easy : [...TOPICS.harder, ...TOPICS.easy.slice(0, 3)];
+  const fresh = pool.filter((t) => t !== last);
+  return fresh[Math.floor(Math.random() * fresh.length)];
+}
+
 // Conversation modes. Open modes never end on their own — they run until you quit.
 const MODES = {
   lead: {
@@ -204,8 +240,9 @@ const MODES = {
     label: "Discuss a topic",
     usesScene: false,
     endable: false,
-    opener: "(Pick a light, everyday topic suited to the learner's level — food, travel, films, weekend plans — introduce it in one line and ask the learner what they think.)",
-    extra: "Have a back-and-forth discussion about an everyday topic at the learner's level. Share a short opinion, then ask what they think. Keep it flowing and never end: always set conversation_finished to false.",
+    topics: true, // the app picks the topic (see pickTopic): left to itself the AI chose weather and picnics
+    opener: (topic) => `(Today's topic: "${topic}". In one or two short sentences, name this topic and give your own opinion on it, then ask the learner what they think and why. Go straight to the topic: no weather, no greeting chat, no plans of your own.)`,
+    extra: "You and the learner are discussing one topic, like two people with different opinions: the topic is named in the first message. Stay on it. Each turn: react to what the learner said, add a short opinion, reason or example of your own, then ask one question that makes them give a reason, an example or a comparison (Warum? Was würdest du tun? Und wie ist das bei dir?). Keep the opinion you gave in your first message: you may add to it or soften it, but never switch to the other side. Where the learner holds the other view, disagree politely, so they have to defend it. Don't change to small talk or another topic until this one is clearly used up (about eight exchanges); then say so in a few words and name a new topic the same way. Never end: always set conversation_finished to false.",
   },
   // Sentence making with the learner's own words: one word per turn, a short situation,
   // one sentence from the learner, a quick check, the next word (see the speaking schedule).
@@ -1147,7 +1184,16 @@ function historyToContents(history, userText) {
 
 async function chatTurn(settings, history, message) {
   const mode = MODES[settings.request.mode] ?? MODES.scene;
-  const userText = message.trim() || mode.opener;
+  let userText = message.trim();
+  if (!userText) {
+    // The opening turn: in "Discuss a topic" the app has chosen the topic.
+    if (mode.topics) {
+      const topic = settings.topic ?? pickTopic(settings.request.level, store.get("last_topic", ""));
+      userText = mode.opener(topic);
+    } else {
+      userText = mode.opener;
+    }
+  }
   const learnt = Boolean(settings.vocab?.learnt);
   const today = todayWords ? { words: todayWords.active, status: todayWords.status, situation: todayWords.situation } : null;
   const todaySet = new Set(today?.words.map((w) => w.de));
@@ -2292,6 +2338,10 @@ function enterCall() {
   $("call-mode").textContent = (mode.usesScene
     ? `${$("scenario").selectedOptions[0].textContent.split(" — ")[0]} · ${request.language}`
     : `${mode.label.split(" — ")[0]} · ${request.language}`) + (tense ? ` · ${tense.short}` : "");
+  // The topic being discussed, under the name (also after a reload: it is part of the saved call).
+  const topic = state.settings.topic ?? "";
+  $("call-topic").textContent = topic ? `Topic: ${topic}` : "";
+  $("call-topic").hidden = !topic;
   document.body.classList.add("in-call");
   $("conversation").hidden = false;
   startCallTimer();
@@ -2771,6 +2821,12 @@ $("start").addEventListener("click", async () => {
       tense: $("tense").value,
     },
   };
+  // "Discuss a topic": the topic is chosen now, so the header can show it and the opening
+  // turn (chatTurn) uses it.
+  if (MODES[mode]?.topics) {
+    state.settings.topic = pickTopic(state.settings.level, store.get("last_topic", ""));
+    store.set("last_topic", state.settings.topic);
+  }
   bumpStreak();
   renderStats();
   $("setup").hidden = true;
@@ -3040,7 +3096,7 @@ $("end").addEventListener("click", () => {
 if ("speechSynthesis" in window) speechSynthesis.onvoiceschanged = () => {};
 
 // With ?debug: which build this phone runs (a cached old one would explain old behaviour).
-debugLog(`Talkloop v46 · speech recognition ${Recognition ? "yes" : "no"}`);
+debugLog(`Talkloop v48 · speech recognition ${Recognition ? "yes" : "no"}`);
 refreshKeyGate();
 renderStats();
 renderBookmarks();

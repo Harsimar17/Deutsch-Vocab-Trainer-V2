@@ -107,6 +107,11 @@ each other up when one is busy. Cloudflare Workers AI (the same model, several s
 choice of its own, and with Groq it can be the backup when Groq reaches its limit; it
 goes through `POST /api/talkloop/cloudflare`.
 
+**Discuss a topic.** The app picks a topic with two sides (everyday choices at A1/A2,
+bigger questions from B1, never the one used last time) when the call starts and shows it
+under the partner's name. The partner states its own opinion on it, keeps that opinion, and
+keeps asking the learner for reasons and examples instead of drifting into small talk.
+
 **Second grammar check.** With *Double-check my grammar with LanguageTool* on (the
 default), each sentence the learner says is also checked by LanguageTool's free public API
 (no key; it runs while the AI answers, so there is no extra wait). When the AI's coach gave

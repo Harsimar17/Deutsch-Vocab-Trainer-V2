@@ -162,6 +162,9 @@ body.in-call { overflow: hidden; }
 .caller { flex: 1; min-width: 0; }
 .caller-name { font-weight: 700; font-size: 1.1rem; line-height: 1.2; }
 .caller-sub { font-size: 0.8rem; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* "Discuss a topic": the topic being discussed, up to three lines. */
+.caller-topic { margin-top: 2px; font-size: 0.85rem; font-weight: 600; line-height: 1.25; overflow-wrap: anywhere; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; overflow: hidden; }
+.caller-topic[hidden] { display: none; }
 #call-timer { font-variant-numeric: tabular-nums; }
 .call-state {
   flex: none;
@@ -303,6 +306,7 @@ button.focus-word { border: 1px solid transparent; color: inherit; font: inherit
   body.typing .call-head { padding-top: max(6px, env(safe-area-inset-top)); padding-bottom: 6px; }
   body.typing .avatar { width: 32px; height: 32px; font-size: 0.95rem; }
   body.typing .caller-name { font-size: 0.95rem; }
+  body.typing .caller-topic { -webkit-line-clamp: 1; font-size: 0.8rem; }
   body.typing .call-scroll { padding-top: 8px; padding-bottom: 8px; }
   body.typing .coach { padding: 8px 12px; font-size: 0.85rem; cursor: pointer; }
   body.typing .coach:not(.expanded) p:not(:first-child) { display: none; }
