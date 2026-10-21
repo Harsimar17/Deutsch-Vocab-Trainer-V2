@@ -2323,6 +2323,57 @@ if (window.visualViewport) {
 }
 
 // ---------- conversation turns ----------
+// ---------- second grammar check (LanguageTool) ----------
+// Every AI now and then misses a mistake in the learner's sentence. LanguageTool's free
+// public API (no key, ~20 checks a minute per device) checks it too, alongside the AI so
+// it costs no extra wait; when the AI's coach gave no correction but LanguageTool finds a
+// grammar mistake or a misspelt word, that becomes the correction. Its style, comma and
+// capital-letter hints are ignored (speech has none), and so are its "did you mean…" guesses.
+const LANGUAGETOOL = "https://api.languagetool.org/v2/check";
+const grammarCheckOn = () => store.get("grammar_check", true);
+
+function languageToolCheck(text, locale) {
+  // Form-encoded, so the browser sends it without a preflight (LanguageTool allows any origin).
+  return fetch(LANGUAGETOOL, {
+    method: "POST",
+    headers: { "content-type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({ text, language: locale }),
+  })
+    .then((res) => (res.ok ? res.json() : null))
+    .then((data) => (data?.matches ?? []).filter((m) => m.rule?.category?.id === "GRAMMAR" || m.rule?.issueType === "misspelling"))
+    .catch(() => null); // offline or at its limit: the AI's coach alone, as before
+}
+
+// The kind of mistake, from LanguageTool's rule, for the mistake log.
+function languageToolMistake(m, said) {
+  const id = m.rule?.id ?? "";
+  if (/HILFSVERB/.test(id)) return "perfekt_auxiliary";
+  if (/PRAEP|AGREEMENT|KONGRUENZ|ARTIKEL|GENUS|DE_CASE/.test(id)) return "case_article";
+  if (m.rule?.issueType === "misspelling" && /^ge/i.test(said.slice(m.offset, m.offset + m.length))) return "participle";
+  return "other";
+}
+
+// When the AI found nothing, LanguageTool's fixes (each first suggestion, applied from the
+// end so the offsets stay right) become the coach's correction.
+async function addGrammarCheck(turn, said, check) {
+  if (!check || turn.coach.correction) return;
+  const matches = await Promise.race([check, sleep(2500).then(() => null)]);
+  const fixes = (matches ?? []).filter((m) => m.replacements?.[0]?.value);
+  if (!fixes.length) return;
+  let corrected = said;
+  let end = Infinity;
+  for (const m of [...fixes].sort((a, b) => b.offset - a.offset)) {
+    if (m.offset + m.length > end) continue; // overlaps the one after it
+    corrected = corrected.slice(0, m.offset) + m.replacements[0].value + corrected.slice(m.offset + m.length);
+    end = m.offset;
+  }
+  if (corrected === said) return;
+  debugLog(`grammar check: ${fixes.length} fix(es) the AI missed`);
+  turn.coach.correction = corrected;
+  turn.coach.mistakes = [...new Set(fixes.map((m) => languageToolMistake(m, said)))];
+  turn.coach.tip = `Grammar check: ${fixes.map((m) => m.shortMessage || m.message).join(" ")}`;
+}
+
 async function sendTurn(message) {
   if (state.busy || state.finished) return;
   if (message) addLearnerMessage(message);
@@ -2330,7 +2381,10 @@ async function sendTurn(message) {
   setStatus(`${state.settings.characterName} is thinking…`);
   const slowHint = setTimeout(() => setStatus("Still thinking… longer replies take a moment."), 6000);
   try {
+    // Started together with the AI, so the second check adds no wait.
+    const check = message && grammarCheckOn() ? languageToolCheck(message, state.settings.locale) : null;
     const { turn, userText } = await chatTurn(state.settings, state.history, message);
+    if (message) await addGrammarCheck(turn, message, check);
     state.history.push({ role: "user", content: message || userText });
     state.history.push({ role: "assistant", content: turn.reply });
 
@@ -2615,6 +2669,9 @@ function showKeyFields() {
 }
 for (const id of Object.values(KEY_INPUTS)) $(id).dataset.placeholder = $(id).placeholder;
 $("provider").addEventListener("change", showKeyFields);
+// The LanguageTool switch is saved as soon as it changes (on unless switched off).
+$("grammar-check").checked = grammarCheckOn();
+$("grammar-check").addEventListener("change", () => store.set("grammar_check", $("grammar-check").checked));
 
 function keySummary() {
   if (getProvider() === "gemini") return "✓ Using Google Gemini.";
@@ -2983,7 +3040,7 @@ $("end").addEventListener("click", () => {
 if ("speechSynthesis" in window) speechSynthesis.onvoiceschanged = () => {};
 
 // With ?debug: which build this phone runs (a cached old one would explain old behaviour).
-debugLog(`Talkloop v45 · speech recognition ${Recognition ? "yes" : "no"}`);
+debugLog(`Talkloop v46 · speech recognition ${Recognition ? "yes" : "no"}`);
 refreshKeyGate();
 renderStats();
 renderBookmarks();

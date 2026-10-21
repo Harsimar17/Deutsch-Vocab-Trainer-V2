@@ -107,6 +107,13 @@ each other up when one is busy. Cloudflare Workers AI (the same model, several s
 choice of its own, and with Groq it can be the backup when Groq reaches its limit; it
 goes through `POST /api/talkloop/cloudflare`.
 
+**Second grammar check.** With *Double-check my grammar with LanguageTool* on (the
+default), each sentence the learner says is also checked by LanguageTool's free public API
+(no key; it runs while the AI answers, so there is no extra wait). When the AI's coach gave
+no correction but LanguageTool finds a grammar mistake or a misspelt word, that becomes the
+correction, with *Say it again* as usual. Its style, comma and capital-letter hints and its
+"did you mean…" guesses are ignored. It doesn't catch word order; that stays the AI's job.
+
 Its voice input is the browser's speech recognition as in talkloop's early
 version (`bfa9006`), except that the turn ends 1.5 s after the last words heard, final
 or not (stopping makes the browser finalise them). What it hears shows with Edit and Delete.
