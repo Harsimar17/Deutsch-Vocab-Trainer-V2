@@ -9,6 +9,7 @@ const state = {
   rapport: 0,
   busy: false,
   finished: false,
+  autoSend: true, // per chat: true sends what you said after a pause; false collects it in the text box until you tap Send
   handsFree: false, // when true, the mic listens, auto-sends on a pause, and resumes after each reply
   speaking: false,
   paused: false, // call on hold: no voice, no mic, timer stopped
@@ -1460,6 +1461,13 @@ function afterListening(spoken) {
     // Saying the corrected sentence: check it; hands-free listens again after a miss.
     if (isSkipCommand(spoken)) endDrill();
     else if (!checkDrill(spoken)) maybeResumeListening();
+  } else if (spoken && !state.autoSend) {
+    // Manual send: collect what was said in the text box and keep listening for more.
+    // It goes out when the Send button is tapped.
+    const input = $("text");
+    input.value = `${input.value.trim()} ${spoken}`.trim();
+    setStatus("Tap Send when you're done.");
+    maybeResumeListening();
   } else if (spoken) {
     // Hands-free: send straight away. Listening resumes after the reply is spoken.
     sendTurn(spoken);
@@ -2012,6 +2020,8 @@ async function resumeCall(snap, { note, refreshWords = false } = {}) {
     state.rapport = snap.rapport ?? 0;
     chatId = snap.chatId ?? snap.id ?? null;
     chatStarted = snap.started ?? snap.at;
+    state.autoSend = true; // each chat starts on auto-send (the switch in the call changes it for that chat only)
+    $("auto-send").checked = true;
     todayWords = snap.today ?? null;
     callLog = [];
     const { vocab } = state.settings;
@@ -2936,6 +2946,8 @@ $("start").addEventListener("click", async () => {
   $("setup").hidden = true;
   // Start hands-free, so the mic opens once the opening line is spoken — no tap needed.
   state.handsFree = Boolean(Recognition);
+  state.autoSend = true; // each chat starts on auto-send; the toggle in the call changes it for that chat only
+  $("auto-send").checked = true;
   callLog = [];
   enterCall();
   // The on-device voice is the default: get it ready while the first reply loads.
@@ -3058,9 +3070,12 @@ $("say-again").addEventListener("change", () => store.set("say_again", $("say-ag
 function submitComposer() {
   // A reply is still loading (or the call is finished/on hold): keep what's typed.
   if (state.busy || state.finished || state.paused) return;
-  const text = $("text").value.trim();
+  // Manual send: words still being heard count too; the mic stops so they are not sent twice.
+  const unsent = !state.autoSend && recognizer ? $("live").textContent.trim() : "";
+  const text = `${$("text").value.trim()} ${unsent}`.trim();
   if (!text) return;
   $("text").value = "";
+  if (unsent) { dropNextResult = true; recognizer.abort(); showHeard(""); }
   if (state.drill) {
     checkDrill(text); // typing the corrected sentence also counts
     return;
@@ -3173,6 +3188,13 @@ $("text").addEventListener("keydown", (event) => {
   insertUmlaut(ch, { capital: event.shiftKey });
 });
 
+$("auto-send").addEventListener("change", () => {
+  state.autoSend = $("auto-send").checked;
+  setStatus(state.autoSend ? "Auto-send on: I'll send when you pause." : "Auto-send off: tap Send when you're done.");
+  // Turning auto-send back on sends what was collected while it was off.
+  if (state.autoSend && $("text").value.trim() && !recognizer) submitComposer();
+});
+
 $("mic").addEventListener("click", () => {
   if (state.handsFree || $("mic").getAttribute("aria-pressed") === "true") {
     stopListening();
@@ -3268,7 +3290,7 @@ $("end").addEventListener("click", () => {
 if ("speechSynthesis" in window) speechSynthesis.onvoiceschanged = () => {};
 
 // With ?debug: which build this phone runs (a cached old one would explain old behaviour).
-debugLog(`Talkloop v50 · speech recognition ${Recognition ? "yes" : "no"}`);
+debugLog(`Talkloop v51 · speech recognition ${Recognition ? "yes" : "no"}`);
 refreshKeyGate();
 renderStats();
 renderBookmarks();
