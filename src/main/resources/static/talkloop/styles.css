@@ -330,3 +330,5 @@ button.focus-word { border: 1px solid transparent; color: inherit; font: inherit
   }
 }
 #keygate label { margin-bottom: 12px; }
+
+.auto-send { align-self: flex-start; }
