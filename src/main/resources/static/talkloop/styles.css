@@ -110,6 +110,10 @@ select, input { min-height: 44px; } /* comfortable touch targets; 16px font avoi
 .heard-actions button { min-height: 34px; padding: 4px 10px; font-size: 0.85rem; }
 
 .composer { display: flex; gap: 8px; }
+/* Keys for letters an English keyboard lacks, above the typing box. */
+.umlauts { display: flex; gap: 6px; margin-bottom: 6px; }
+.umlauts button { min-width: 40px; min-height: 34px; padding: 2px 10px; font-size: 1.05rem; line-height: 1; }
+.umlauts button[aria-pressed="true"] { background: var(--accent); color: var(--accent-text); border-color: transparent; }
 .composer input { flex: 1; min-width: 0; }
 
 .status { color: var(--muted); font-size: 0.85rem; margin: 0; }
@@ -282,6 +286,13 @@ button.focus-word { border: 1px solid transparent; color: inherit; font: inherit
 .focus-word.said { border-color: var(--good); color: var(--good); }
 .focus-word.tried { border-color: var(--warn); color: var(--warn); }
 .focus-word.current { background: var(--accent); color: var(--accent-text); border-color: var(--accent); font-weight: 600; }
+/* Saved "Discuss a topic" chats, under the Start button. */
+.chats { margin-top: 16px; }
+.chats summary { cursor: pointer; font-weight: 600; }
+.chat-list { list-style: none; margin: 8px 0 0; padding: 0; }
+.chat-item { display: flex; gap: 8px; margin-bottom: 6px; }
+.chat-open { flex: 1; min-width: 0; text-align: left; font-size: 0.9rem; overflow-wrap: anywhere; }
+.chat-del { flex: none; min-width: 40px; }
 .recap { margin-bottom: 16px; padding: 10px 12px; border-radius: 10px; background: var(--character); }
 .recap h3 { margin: 0 0 6px; font-size: 1rem; }
 .recap p { margin: 4px 0; overflow-wrap: anywhere; }

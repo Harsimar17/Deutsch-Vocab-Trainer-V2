@@ -213,10 +213,14 @@ const TOPICS = {
   ],
 };
 
-// A random topic for the level, not the one used last time.
-function pickTopic(level, last = "") {
+// A random topic for the level that the learner hasn't had yet: `recent` lists the topics
+// of earlier chats, newest first. Once every topic has been used, any but the last three.
+function pickTopic(level, recent = []) {
   const pool = ["A1", "A2"].includes(level) ? TOPICS.easy : [...TOPICS.harder, ...TOPICS.easy.slice(0, 3)];
-  const fresh = pool.filter((t) => t !== last);
+  const used = Array.isArray(recent) ? recent : [recent].filter(Boolean);
+  let fresh = pool.filter((t) => !used.includes(t));
+  if (!fresh.length) fresh = pool.filter((t) => !used.slice(0, 3).includes(t));
+  if (!fresh.length) fresh = pool;
   return fresh[Math.floor(Math.random() * fresh.length)];
 }
 
@@ -902,7 +906,13 @@ function turnSystemPrompt({ language, nativeLanguage, level, scenario, mode, ten
           "If their sentence misses the word asked for or uses it wrongly, ask for it again next turn, still without saying it.",
         ]
         : [
-          ...(notYet.length ? [`Not said yet: ${notYet.map((w) => w.de).join("; ")}. Get the learner to say them, one at a time, with a question on the current topic whose natural answer needs one (bridge naturally; never quiz or list). ${neverSay}`] : []),
+          ...(notYet.length
+            ? [m.topics
+              // In a topic chat the topic is fixed: a word is asked for only where it is the
+              // natural thing to say about it, otherwise the discussion just goes on.
+              ? `Not said yet: ${notYet.map((w) => w.de).join("; ")}. Only where one of these is the natural thing to say about the current topic, ask a question whose answer needs it, without naming it. If none fits at this point, ask for none and keep discussing the topic: never change the topic or bridge to another one to bring a word in, and don't force a word in. ${neverSay}`
+              : `Not said yet: ${notYet.map((w) => w.de).join("; ")}. Get the learner to say them, one at a time, with a question on the current topic whose natural answer needs one (bridge naturally; never quiz or list). ${neverSay}`]
+            : []),
           ...(said.length ? [`Already said: ${said.map((w) => w.de).join("; ")}. Bring each back later in another form.`] : []),
         ]),
       "next_word: the word from this list (as written) your reply asks for, else empty.",
@@ -1188,7 +1198,7 @@ async function chatTurn(settings, history, message) {
   if (!userText) {
     // The opening turn: in "Discuss a topic" the app has chosen the topic.
     if (mode.topics) {
-      const topic = settings.topic ?? pickTopic(settings.request.level, store.get("last_topic", ""));
+      const topic = settings.topic ?? pickTopic(settings.request.level, recentTopics());
       userText = mode.opener(topic);
     } else {
       userText = mode.opener;
@@ -1230,16 +1240,20 @@ async function chatTurn(settings, history, message) {
     if (!turn.reply) throw new Error("The AI's answer came back incomplete. Please send that again.");
   }
   debugLog(`whole answer after ${((performance.now() - startedAt) / 1000).toFixed(1)}s`);
-  // A drill reply that says the word it asks for gives the answer away (Groq does this when
-  // it asks again), so it is written once more with that pointed out. Costs about a second.
-  const asked = mode.drill && today?.words.find((w) => !today.status[w.de]?.correct && isTodayWord(w, turn.next_word));
+  // A reply that says the word it asks for gives the answer away (a drill on Groq does this
+  // when it asks again; in a topic chat some models name the word while asking about it), so
+  // it is written once more with that pointed out. Costs about a second.
+  const asked = (mode.drill || mode.topics) && today?.words.find((w) => !today.status[w.de]?.correct && isTodayWord(w, turn.next_word));
   if (asked && saysWord(turn.reply, asked.de)) {
     debugLog(`reply said "${asked.de}": asking again`);
+    const how = mode.drill
+      ? 'refer to it only as "das Wort auf deinem Bildschirm"'
+      : "ask the same kind of question in other words, so that the learner has to find the word, or ask for no word at all";
     const again = await aiJson({
-      systemInstruction: `${systemInstruction}\nYour last draft of this reply contained the word "${asked.de}" itself, which gives the answer away. Write the reply again without that word in any form; refer to it only as "das Wort auf deinem Bildschirm".`,
+      systemInstruction: `${systemInstruction}\nYour last draft of this reply contained the word "${asked.de}" itself, which gives the answer away. Write the reply again without that word in any form; ${how}.`,
       schema: TURN_SCHEMA,
       contents,
-      temperature: 0.4,
+      ...(mode.drill ? { temperature: 0.4 } : {}),
     }).then(normalizeTurn).catch(() => null);
     if (again?.reply && !saysWord(again.reply, asked.de)) turn = again;
     debugLog(`answer after ${((performance.now() - startedAt) / 1000).toFixed(1)}s`);
@@ -1953,17 +1967,78 @@ const CALL_KEY = "call_snapshot";
 const CALL_MAX_AGE = 3 * 60 * 60 * 1000; // an older call is not resumed
 let callLog = []; // [{ you: text } | { reply, reply_translation, mood }] as shown
 
+// ---------- topic chats ----------
+// Every "Discuss a topic" call is also kept as a chat (a topic and what was said), so it can
+// be read or carried on later, and a new chat picks a topic that no saved chat has had.
+// The words come from the speaking schedule as in any call: when a chat is reopened on a
+// later day, it gets a fresh batch of the words that are due.
+const CHATS_KEY = "topic_chats";
+const MAX_CHATS = 20;
+let chatId = null;
+let chatStarted = 0;
+let restoringCall = false; // while a saved call is put back, saving is paused
+
+const topicChats = () => store.get(CHATS_KEY, []);
+// Topics of the saved chats, newest first, then the last one used.
+const recentTopics = () => [...topicChats().map((c) => c.topic), store.get("last_topic", "")].filter(Boolean);
+
 function saveCall() {
-  if (!state.settings) return;
-  store.set(CALL_KEY, {
+  if (!state.settings || restoringCall) return;
+  const snap = {
     at: Date.now(),
+    chatId,
+    started: chatStarted,
     settings: state.settings,
     history: state.history,
     rapport: state.rapport,
     log: callLog,
     // Only the next few waiting words: the rest would make every save large.
     today: todayWords ? { ...todayWords, waiting: todayWords.waiting.slice(0, 50) } : null,
-  });
+  };
+  store.set(CALL_KEY, snap);
+  if (chatId && state.settings.topic && callLog.length) {
+    const chats = topicChats().filter((c) => c.id !== chatId);
+    chats.unshift({ ...snap, id: chatId, topic: state.settings.topic });
+    store.set(CHATS_KEY, chats.slice(0, MAX_CHATS));
+  }
+}
+
+// Puts a saved call back on screen: after a page reload, or when a chat is reopened.
+async function resumeCall(snap, { note, refreshWords = false } = {}) {
+  restoringCall = true;
+  try {
+    state.settings = snap.settings;
+    state.history = snap.history ?? [];
+    state.rapport = snap.rapport ?? 0;
+    chatId = snap.chatId ?? snap.id ?? null;
+    chatStarted = snap.started ?? snap.at;
+    todayWords = snap.today ?? null;
+    callLog = [];
+    const { vocab } = state.settings;
+    let learnt = null;
+    if (vocab?.enabled) {
+      learnt = vocab.learnt ? ((await idbGet("learnt_words").catch(() => null)) ?? []) : null;
+      await loadVocabForSession(vocab.levels, learnt).catch(() => 0);
+    }
+    // A chat reopened on a later day: the schedule has moved on, so today's words are picked again.
+    if (refreshWords && learnt && localDay(snap.at) !== localDay()) {
+      pickTodayWords(learnt.filter((w) => vocab.levels.includes(w.level)));
+    }
+    $("setup").hidden = true;
+    $("keygate").hidden = true;
+    enterCall();
+    if (todayWords?.situation) $("call-mode").textContent = `Sentence drill · ${todayWords.situation}`;
+    for (const entry of snap.log) {
+      if ("you" in entry) addLearnerMessage(entry.you);
+      else addCharacterMessage(entry, { silent: true });
+    }
+  } finally {
+    restoringCall = false;
+  }
+  saveCall();
+  renderStats();
+  renderFocusWords([]);
+  setStatus(note);
 }
 
 async function restoreCall() {
@@ -1972,27 +2047,53 @@ async function restoreCall() {
   const nav = performance.getEntriesByType?.("navigation")[0]?.type ?? "?";
   debugLog(`restoring the call (page ${nav}${document.wasDiscarded ? ", discarded" : ""})`);
   store.set("last_restore", { at: Date.now(), nav, discarded: Boolean(document.wasDiscarded) });
-  state.settings = snap.settings;
-  state.history = snap.history ?? [];
-  state.rapport = snap.rapport ?? 0;
-  todayWords = snap.today;
-  callLog = [];
-  const { vocab } = state.settings;
-  if (vocab?.enabled) {
-    const learnt = vocab.learnt ? ((await idbGet("learnt_words").catch(() => null)) ?? []) : null;
-    await loadVocabForSession(vocab.levels, learnt).catch(() => 0);
+  await resumeCall(snap, { note: "Your conversation is back after the page reloaded. Tap the mic or type to go on." });
+}
+
+async function openChat(id) {
+  const chat = topicChats().find((c) => c.id === id);
+  if (!chat) return;
+  await resumeCall(chat, { note: "Chat reopened. Tap the mic or type to go on.", refreshWords: true });
+}
+
+function deleteChat(id) {
+  store.set(CHATS_KEY, topicChats().filter((c) => c.id !== id));
+  renderChats();
+}
+
+// The list on the setup screen, newest first.
+function renderChats() {
+  const chats = topicChats();
+  $("chats").hidden = chats.length === 0;
+  $("chats-summary").textContent = `Topic chats (${chats.length})`;
+  const list = $("chat-list");
+  list.replaceChildren();
+  for (const chat of chats) {
+    const li = document.createElement("li");
+    li.className = "chat-item";
+    const open = document.createElement("button");
+    open.type = "button";
+    open.className = "chat-open";
+    const title = document.createElement("strong");
+    title.textContent = chat.topic;
+    const meta = document.createElement("span");
+    meta.className = "muted";
+    const said = chat.log.filter((e) => "you" in e).length;
+    const when = new Date(chat.at).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+    meta.textContent = `${said} message${said === 1 ? "" : "s"} from you · ${when}`;
+    open.append(title, document.createElement("br"), meta);
+    open.addEventListener("click", () => openChat(chat.id));
+    const del = document.createElement("button");
+    del.type = "button";
+    del.className = "chat-del";
+    del.setAttribute("aria-label", "Delete this chat");
+    del.textContent = "×";
+    del.addEventListener("click", () => {
+      if (confirm("Delete this chat?")) deleteChat(chat.id);
+    });
+    li.append(open, del);
+    list.append(li);
   }
-  $("setup").hidden = true;
-  $("keygate").hidden = true;
-  enterCall();
-  if (todayWords?.situation) $("call-mode").textContent = `Sentence drill · ${todayWords.situation}`;
-  for (const entry of snap.log) {
-    if ("you" in entry) addLearnerMessage(entry.you);
-    else addCharacterMessage(entry, { silent: true });
-  }
-  renderStats();
-  renderFocusWords([]);
-  setStatus("Your conversation is back after the page reloaded. Tap the mic or type to go on.");
 }
 
 function addCharacterMessage(turn, { silent = false } = {}) {
@@ -2823,9 +2924,12 @@ $("start").addEventListener("click", async () => {
   };
   // "Discuss a topic": the topic is chosen now, so the header can show it and the opening
   // turn (chatTurn) uses it.
+  chatId = null;
   if (MODES[mode]?.topics) {
-    state.settings.topic = pickTopic(state.settings.level, store.get("last_topic", ""));
+    state.settings.topic = pickTopic(state.settings.level, recentTopics());
     store.set("last_topic", state.settings.topic);
+    chatId = String(Date.now()); // a new chat; it is saved with the first message
+    chatStarted = Date.now();
   }
   bumpStreak();
   renderStats();
@@ -3003,6 +3107,72 @@ onTap($("composer").querySelector("button[type='submit']"), () => {
   if (keepKeyboard) $("text").focus();
 }, { click: false });
 
+// ---------- umlaut keys ----------
+// For a keyboard without umlauts, three ways to type them in the reply box: the keys above it,
+// a quote mark before a vowel ("a -> ä, "o -> ö, "u -> ü, "s -> ß, capitals too; a phone
+// turns " into “ or ” first, so those count), and Alt+A / O / U / S on a physical keyboard.
+// Backspace right after a quote-vowel conversion gives back the quote and the letter.
+const UMLAUT_OF = { a: "ä", o: "ö", u: "ü", s: "ß", A: "Ä", O: "Ö", U: "Ü" };
+const UMLAUT_KEY_CODES = { KeyA: "ä", KeyO: "ö", KeyU: "ü", KeyS: "ß" };
+let umlautShift = false; // the next key from the row is a capital
+let lastUmlaut = null; // { at, original } while the caret is right after a converted letter
+
+function renderUmlautKeys() {
+  for (const key of document.querySelectorAll("#umlauts [data-char]")) {
+    const ch = key.dataset.char;
+    key.textContent = umlautShift && ch !== "ß" ? ch.toUpperCase() : ch;
+  }
+  $("umlaut-shift").setAttribute("aria-pressed", String(umlautShift));
+}
+
+// Puts a letter into the reply box at the caret, as a capital after a shift or at a sentence start.
+function insertUmlaut(ch, { capital = false } = {}) {
+  const input = $("text");
+  if (input.disabled) return;
+  const start = input.selectionStart ?? input.value.length;
+  const end = input.selectionEnd ?? start;
+  const atSentenceStart = /(^|[.!?]\s+)$/.test(input.value.slice(0, start));
+  const out = ch !== "ß" && (capital || umlautShift || atSentenceStart) ? ch.toUpperCase() : ch;
+  input.focus(); // the typing layout and keyboard come up as for any typing
+  input.setRangeText(out, start, end, "end");
+  umlautShift = false;
+  renderUmlautKeys();
+  input.dispatchEvent(new Event("input", { bubbles: true }));
+}
+
+for (const key of document.querySelectorAll("#umlauts [data-char]")) onTap(key, () => insertUmlaut(key.dataset.char));
+onTap($("umlaut-shift"), () => {
+  umlautShift = !umlautShift;
+  renderUmlautKeys();
+});
+
+$("text").addEventListener("input", (event) => {
+  lastUmlaut = null;
+  if (event.isComposing) return;
+  const input = $("text");
+  const caret = input.selectionStart;
+  if (caret !== input.selectionEnd || caret < 2) return;
+  const typed = input.value.slice(caret - 2, caret);
+  if (!/^[\"“”„][aousAOU]$/.test(typed)) return;
+  input.setRangeText(UMLAUT_OF[typed[1]], caret - 2, caret, "end");
+  lastUmlaut = { at: caret - 1, original: typed };
+});
+$("text").addEventListener("beforeinput", (event) => {
+  const input = $("text");
+  if (event.inputType !== "deleteContentBackward" || !lastUmlaut) return;
+  if (input.selectionStart !== input.selectionEnd || input.selectionStart !== lastUmlaut.at) return;
+  event.preventDefault(); // undo the conversion instead of deleting the letter
+  input.setRangeText(lastUmlaut.original, lastUmlaut.at - 1, lastUmlaut.at, "end");
+  lastUmlaut = null;
+});
+$("text").addEventListener("keydown", (event) => {
+  const ch = UMLAUT_KEY_CODES[event.code];
+  // Not with Ctrl: AltGr is Ctrl+Alt, and keyboards that have AltGr letters type their own.
+  if (!ch || !event.altKey || event.ctrlKey || event.metaKey) return;
+  event.preventDefault();
+  insertUmlaut(ch, { capital: event.shiftKey });
+});
+
 $("mic").addEventListener("click", () => {
   if (state.handsFree || $("mic").getAttribute("aria-pressed") === "true") {
     stopListening();
@@ -3083,11 +3253,13 @@ $("end").addEventListener("click", () => {
   renderRecap();
   todayWords = null;
   callLog = [];
+  chatId = null; // the chat stays saved in the list
   store.set(CALL_KEY, null); // ended on purpose: nothing to resume
   renderFocusWords([]);
   setBusy(false);
   leaveCall();
   $("setup").hidden = false;
+  renderChats();
   syncMistakes(); // the call is over: send its mistakes
   syncSpoken();
 });
@@ -3096,11 +3268,12 @@ $("end").addEventListener("click", () => {
 if ("speechSynthesis" in window) speechSynthesis.onvoiceschanged = () => {};
 
 // With ?debug: which build this phone runs (a cached old one would explain old behaviour).
-debugLog(`Talkloop v48 · speech recognition ${Recognition ? "yes" : "no"}`);
+debugLog(`Talkloop v50 · speech recognition ${Recognition ? "yes" : "no"}`);
 refreshKeyGate();
 renderStats();
 renderBookmarks();
 renderMistakes();
+renderChats();
 restoreCall().catch((error) => console.warn("Couldn't restore the call:", error));
 // Get the voice ready while the learner picks their settings, so the first reply doesn't wait.
 preloadSelectedVoice();
