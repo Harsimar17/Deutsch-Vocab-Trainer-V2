@@ -112,6 +112,21 @@ bigger questions from B1, never the one used last time) when the call starts and
 under the partner's name. The partner states its own opinion on it, keeps that opinion, and
 keeps asking the learner for reasons and examples instead of drifting into small talk.
 
+Each topic call is also kept as a **chat** (kept in the browser, the newest 20): a list
+*Topic chats* under the Start button shows them, and opening one brings back its messages
+so it can be read or carried on. A new chat avoids every topic a saved chat already had,
+and once all are used, any but the last three. The words come from the speaking schedule
+as in any linked call (due words first, then new ones): the partner asks for one only where
+it is the natural thing to say about the topic, never names it first (a reply that does is
+written again), and a chat reopened on a later day gets a fresh batch of the words that
+are due then.
+
+**Typing umlauts.** For a keyboard without them, the reply box has three ways: a row of
+keys above it (**ä ö ü ß** and a **⇧** for capitals; a letter at the start of a sentence is
+a capital anyway), a quote mark before a vowel (`"a` gives ä, `"o` ö, `"u` ü, `"s` ß, capitals
+too; Backspace straight after gives the quote and the letter back), and **Alt+A / O / U / S**
+on a physical keyboard (Shift for a capital; AltGr combinations are left alone).
+
 **Second grammar check.** With *Double-check my grammar with LanguageTool* on (the
 default), each sentence the learner says is also checked by LanguageTool's free public API
 (no key; it runs while the AI answers, so there is no extra wait). When the AI's coach gave

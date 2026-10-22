@@ -8,7 +8,7 @@
     <link rel="apple-touch-icon" href="favicon.svg" />
     <meta name="theme-color" content="#2f5fd0" />
     <!-- ?v= makes phones fetch the new file after a change instead of a cached copy: bump it with each change. -->
-    <link rel="stylesheet" href="styles.css?v=16" />
+    <link rel="stylesheet" href="styles.css?v=18" />
   </head>
   <body>
     <header class="topbar">
@@ -180,6 +180,12 @@
       </label>
 
       <button id="start" class="primary">Start</button>
+
+      <details id="chats" class="chats" hidden>
+        <summary id="chats-summary">Topic chats</summary>
+        <p class="muted">Every “Discuss a topic” chat is saved here. Open one to read it or carry on; a new chat always picks a topic you haven't had yet.</p>
+        <ul id="chat-list" class="chat-list"></ul>
+      </details>
     </section>
 
     <!-- Full-screen "phone call" while a conversation runs: caller header on top,
@@ -228,6 +234,13 @@
           <input id="auto-send" type="checkbox" checked />
           Auto-send when I pause <span class="muted">(off: tap Send when done)</span>
         </label>
+        <div id="umlauts" class="umlauts" role="group" aria-label="Umlaut keys">
+          <button type="button" data-char="ä" title="ä: tap, or type &quot;a, or Alt+A">ä</button>
+          <button type="button" data-char="ö" title="ö: tap, or type &quot;o, or Alt+O">ö</button>
+          <button type="button" data-char="ü" title="ü: tap, or type &quot;u, or Alt+U">ü</button>
+          <button type="button" data-char="ß" title="ß: tap, or type &quot;s, or Alt+S">ß</button>
+          <button type="button" id="umlaut-shift" aria-pressed="false" title="Capital letter for the next one (a sentence start is capital anyway)">⇧</button>
+        </div>
         <form id="composer" class="composer">
           <input id="text" autocomplete="off" placeholder="Type your reply…" />
           <button class="primary" type="submit">Send</button>
@@ -268,6 +281,6 @@
       <ul id="bookmarks" class="bookmarks"></ul>
     </section>
 
-    <script src="app.js?v=49" type="module"></script> <!-- bump with app.js changes, like styles.css above -->
+    <script src="app.js?v=51" type="module"></script> <!-- bump with app.js changes, like styles.css above -->
   </body>
 </html>
