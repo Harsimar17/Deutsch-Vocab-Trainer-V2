@@ -2299,6 +2299,7 @@ function renderTodayWords(box) {
 }
 
 // Small note under a message saying the browser voice played, and why (empty clears it).
+let lastVoiceNote = ""; // the reason last shown under a reply; it is only shown again when it changes
 function noteVoice(wordSpans, text) {
   const li = wordSpans[0]?.closest("li");
   if (!li) return;
@@ -2307,6 +2308,8 @@ function noteVoice(wordSpans, text) {
     note?.remove();
     return;
   }
+  if (text === lastVoiceNote) return; // the same reason again: no need under every reply
+  lastVoiceNote = text;
   if (!note) {
     note = document.createElement("div");
     note.className = "voice-note";
@@ -2453,11 +2456,15 @@ function enterCall() {
   const topic = state.settings.topic ?? "";
   $("call-topic").textContent = topic ? `Topic: ${topic}` : "";
   $("call-topic").hidden = !topic;
+  $("call-topic").classList.remove("expanded"); // on a phone it is one line; a tap shows all of it
+  lastVoiceNote = "";
   document.body.classList.add("in-call");
   $("conversation").hidden = false;
   startCallTimer();
   updateCallState();
 }
+
+$("call-topic").addEventListener("click", () => $("call-topic").classList.toggle("expanded"));
 
 function leaveCall() {
   clearInterval(callTimer);
@@ -3290,7 +3297,7 @@ $("end").addEventListener("click", () => {
 if ("speechSynthesis" in window) speechSynthesis.onvoiceschanged = () => {};
 
 // With ?debug: which build this phone runs (a cached old one would explain old behaviour).
-debugLog(`Talkloop v51 · speech recognition ${Recognition ? "yes" : "no"}`);
+debugLog(`Talkloop v52 · speech recognition ${Recognition ? "yes" : "no"}`);
 refreshKeyGate();
 renderStats();
 renderBookmarks();
