@@ -319,16 +319,44 @@ button.focus-word { border: 1px solid transparent; color: inherit; font: inherit
   body.typing .caller-name { font-size: 0.95rem; }
   body.typing .caller-topic { -webkit-line-clamp: 1; font-size: 0.8rem; }
   body.typing .call-scroll { padding-top: 8px; padding-bottom: 8px; }
-  body.typing .coach { padding: 8px 12px; font-size: 0.85rem; cursor: pointer; }
-  body.typing .coach:not(.expanded) p:not(:first-child) { display: none; }
-  body.typing .coach:not(.expanded) p:first-child {
+  .coach { padding: 8px 12px; font-size: 0.85rem; cursor: pointer; }
+  .coach:not(.expanded) p:not(:first-child) { display: none; }
+  .coach:not(.expanded) p:first-child {
     display: -webkit-box;
     -webkit-box-orient: vertical;
     -webkit-line-clamp: 2;
     overflow: hidden;
   }
-  body.typing .coach:not(.expanded):has(p + p)::after { content: "Tap for more"; display: block; font-size: 0.75rem; color: var(--muted); }
+  .coach:not(.expanded):has(p + p)::after { content: "Tap for more"; display: block; font-size: 0.75rem; color: var(--muted); }
   body.typing .chips button { min-height: 34px; padding: 4px 12px; font-size: 0.85rem; }
+  /* A tighter call screen: on a phone the conversation is the point, and the controls around
+     it had taken more than half of it. Smaller buttons and rows; the umlaut keys only while
+     typing and the auto-send switch only while not (they are never needed together). */
+  .call-head { gap: 10px; padding: max(8px, env(safe-area-inset-top)) 12px 8px; }
+  .avatar { width: 38px; height: 38px; font-size: 1.05rem; }
+  .caller-name { font-size: 1rem; }
+  .caller-topic { -webkit-line-clamp: 1; font-size: 0.8rem; cursor: pointer; }
+  .caller-topic.expanded { -webkit-line-clamp: 4; } /* tap the topic to read all of it */
+  .call-state { padding: 1px 8px; font-size: 0.75rem; }
+  .msg { padding: 8px 12px; }
+  .msg .tools { margin-top: 4px; gap: 6px; }
+  .msg .tools button { min-height: 28px; padding: 1px 9px; font-size: 0.75rem; }
+  .call-dock { gap: 6px; padding-top: 6px; padding-bottom: max(8px, env(safe-area-inset-bottom)); }
+  .call-controls { gap: 28px; padding-top: 0; }
+  .round { gap: 0; }
+  .round-label { display: none; }
+  .round svg { width: 50px; height: 50px; padding: 13px; }
+  .chips button { min-height: 34px; padding: 4px 12px; font-size: 0.85rem; }
+  .drill { padding: 8px 10px; }
+  .drill .drill-target { font-size: 1rem; margin: 0 0 4px; }
+  .drill-actions button { min-height: 34px; padding: 4px 10px; font-size: 0.85rem; }
+  .auto-send { font-size: 0.85rem; margin: 0; }
+  .auto-send .muted { display: none; }
+  .umlauts { display: none; margin-bottom: 0; }
+  body.typing .umlauts { display: flex; }
+  body.typing .auto-send { display: none; }
+  .umlauts button { min-height: 32px; }
+
   /* Word explorer becomes a bottom sheet so it never covers the composer awkwardly */
   /* Its bottom edge follows the visible area (see --vvh/--vvtop in app.js), so with the
      keyboard up the sheet sits just above it instead of hiding behind it. */

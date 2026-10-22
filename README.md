@@ -121,6 +121,14 @@ it is the natural thing to say about the topic, never names it first (a reply th
 written again), and a chat reopened on a later day gets a fresh batch of the words that
 are due then.
 
+**A compact call screen on phones** (screens up to 560 px wide; larger screens are unchanged):
+smaller call buttons without their text labels, a one-line header (tap the topic to read all
+of it), smaller word chips, correction box and message buttons, the coach's explanation
+collapsed to its first lines (tap for the rest), the umlaut keys shown only while typing
+and the auto-send switch only while not typing, and the "Browser voice…" note shown once
+instead of under every reply. At 375 × 812 the conversation went from 33% to 48% of the
+screen while a correction is shown, and 62% without one.
+
 **Typing umlauts.** For a keyboard without them, the reply box has three ways: a row of
 keys above it (**ä ö ü ß** and a **⇧** for capitals; a letter at the start of a sentence is
 a capital anyway), a quote mark before a vowel (`"a` gives ä, `"o` ö, `"u` ü, `"s` ß, capitals
