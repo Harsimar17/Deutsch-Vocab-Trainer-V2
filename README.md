@@ -112,6 +112,13 @@ bigger questions from B1, never the one used last time) when the call starts and
 under the partner's name. The partner states its own opinion on it, keeps that opinion, and
 keeps asking the learner for reasons and examples instead of drifting into small talk.
 
+To keep a topic chat from circling, every turn the partner is told the topic again, shown the
+questions it already asked (never to be asked again) and given a new angle on the topic to ask
+about (own experience, an advantage, a disadvantage, how it was years ago or elsewhere, the
+opposite view, advice to a friend, daily life, what to change). A word of today's words that
+was asked about without the learner saying it rests for five turns and is asked about once more
+at most in that chat, instead of coming back in every question.
+
 Each topic call is also kept as a **chat** (kept in the browser, the newest 20): a list
 *Topic chats* under the Start button shows them, and opening one brings back its messages
 so it can be read or carried on. A new chat avoids every topic a saved chat already had,
