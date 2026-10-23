@@ -214,6 +214,35 @@ const TOPICS = {
   ],
 };
 
+// "Discuss a topic" kept asking the same question (and drifted to other subjects) because the
+// AI had nothing but the chat to go by. So each turn it is told the topic again, shown the
+// questions it already asked, and given a new angle on the topic to ask about.
+const TOPIC_ANGLES = [
+  "the learner's own experience with it",
+  "one concrete advantage, with an example",
+  "one concrete disadvantage or risk",
+  "how it is different in another country or was different years ago",
+  "what someone with the opposite view would say, and whether the learner agrees",
+  "what the learner would do or advise a friend in a specific situation",
+  "how it affects the learner's daily life or the people around them",
+  "what the learner would change about it if they could",
+];
+function topicHints(history, topic = "") {
+  const replies = history.filter((m) => m.role === "assistant").map((m) => m.content);
+  // The last question of each of the last few replies.
+  const asked = replies.slice(-6).map((r) => (r.match(/[^.!?]*\?/g) ?? []).pop()?.trim()).filter(Boolean);
+  // The opening turn has its own instructions; the angles start with the second.
+  return { topic, asked, angle: replies.length ? TOPIC_ANGLES[replies.length % TOPIC_ANGLES.length] : null };
+}
+
+// A word already asked about in this chat without the learner saying it rests for a few turns
+// and is asked about once more at most: asking again at once is what made the same question
+// come back whatever the learner answered. `asked` maps a word to the turns that asked for it.
+function wordResting(asked, de, turn) {
+  const turns = asked?.[de] ?? [];
+  return turns.length >= 2 || (turns.length === 1 && turn - turns[0] < 5);
+}
+
 // A random topic for the level that the learner hasn't had yet: `recent` lists the topics
 // of earlier chats, newest first. Once every topic has been used, any but the last three.
 function pickTopic(level, recent = []) {
@@ -247,7 +276,7 @@ const MODES = {
     endable: false,
     topics: true, // the app picks the topic (see pickTopic): left to itself the AI chose weather and picnics
     opener: (topic) => `(Today's topic: "${topic}". In one or two short sentences, name this topic and give your own opinion on it, then ask the learner what they think and why. Go straight to the topic: no weather, no greeting chat, no plans of your own.)`,
-    extra: "You and the learner are discussing one topic, like two people with different opinions: the topic is named in the first message. Stay on it. Each turn: react to what the learner said, add a short opinion, reason or example of your own, then ask one question that makes them give a reason, an example or a comparison (Warum? Was würdest du tun? Und wie ist das bei dir?). Keep the opinion you gave in your first message: you may add to it or soften it, but never switch to the other side. Where the learner holds the other view, disagree politely, so they have to defend it. Don't change to small talk or another topic until this one is clearly used up (about eight exchanges); then say so in a few words and name a new topic the same way. Never end: always set conversation_finished to false.",
+    extra: "You and the learner are discussing one topic, like two people with different opinions: the topic is named in the first message. Stay on it. Each turn: react to what the learner said, add a short opinion, reason or example of your own, then ask one question that makes them give a reason, an example or a comparison, about the angle you are given for this turn. Keep the opinion you gave in your first message: you may add to it or soften it, but never switch to the other side. Where the learner holds the other view, disagree politely, so they have to defend it. Don't change to small talk or another topic until this one is clearly used up (about eight exchanges); then say so in a few words and name a new topic the same way. Never end: always set conversation_finished to false.",
   },
   // Sentence making with the learner's own words: one word per turn, a short situation,
   // one sentence from the learner, a quick check, the next word (see the speaking schedule).
@@ -637,7 +666,7 @@ function pickTodayWords(learnt, { evenIfNotDue = false } = {}) {
     ? learnt.filter((w) => spoken[w.de] && spoken[w.de].due > now).sort((a, b) => spoken[a.de].due - spoken[b.de].due)
     : [];
   const order = [...due, ...learnt.filter((w) => !spoken[w.de]), ...later];
-  todayWords = { active: order.slice(0, TODAY_WORDS), waiting: order.slice(TODAY_WORDS), status: {} };
+  todayWords = { active: order.slice(0, TODAY_WORDS), waiting: order.slice(TODAY_WORDS), status: {}, asked: {} };
 }
 
 function setSpoken(de, entry) {
@@ -848,7 +877,7 @@ const LEVEL_GUIDE = {
   C1: "Speak as to a near-native speaker: natural, idiomatic language with nuanced words, complex sentences and all tenses and moods. Discuss abstract topics in depth and ask the learner to justify, nuance or take a stance. Besides real mistakes, also correct phrasing that is grammatical but unidiomatic.",
 };
 
-function turnSystemPrompt({ language, nativeLanguage, level, scenario, mode, tense }, targetWords = [], learnt = false, learnerMessage = "", weakSpots = [], today = null) {
+function turnSystemPrompt({ language, nativeLanguage, level, scenario, mode, tense }, targetWords = [], learnt = false, learnerMessage = "", weakSpots = [], today = null, hints = null) {
   const m = MODES[mode] ?? MODES.scene;
   const persona = personaFor({ scenario, mode });
   const t = TENSES[tense];
@@ -893,6 +922,9 @@ function turnSystemPrompt({ language, nativeLanguage, level, scenario, mode, ten
     const notYet = today.words.filter((w) => !today.status[w.de]?.correct);
     const said = today.words.filter((w) => today.status[w.de]?.correct);
     const neverSay = "Never say, translate or hint at one the learner hasn't said yet: they must recall it (the app shows its meaning).";
+    const resting = (w) => wordResting(today.asked, w.de, today.turn ?? 0);
+    const askable = notYet.filter((w) => m.drill || !resting(w));
+    const waiting = m.drill ? [] : notYet.filter(resting);
     lines.push(
       `Today's words, to be said until automatic: ${today.words.map(fmt).join("; ")}.`,
       ...(m.drill
@@ -907,18 +939,22 @@ function turnSystemPrompt({ language, nativeLanguage, level, scenario, mode, ten
           "If their sentence misses the word asked for or uses it wrongly, ask for it again next turn, still without saying it.",
         ]
         : [
-          ...(notYet.length
+          ...(askable.length
             ? [m.topics
               // In a topic chat the topic is fixed: a word is asked for only where it is the
               // natural thing to say about it, otherwise the discussion just goes on.
-              ? `Not said yet: ${notYet.map((w) => w.de).join("; ")}. Only where one of these is the natural thing to say about the current topic, ask a question whose answer needs it, without naming it. If none fits at this point, ask for none and keep discussing the topic: never change the topic or bridge to another one to bring a word in, and don't force a word in. ${neverSay}`
-              : `Not said yet: ${notYet.map((w) => w.de).join("; ")}. Get the learner to say them, one at a time, with a question on the current topic whose natural answer needs one (bridge naturally; never quiz or list). ${neverSay}`]
+              ? `Not said yet: ${askable.map((w) => w.de).join("; ")}. Only where one of these is the natural thing to say about the current topic, ask a question whose answer needs it, without naming it. If none fits at this point, ask for none and keep discussing the topic: never change the topic or bridge to another one to bring a word in, and don't force a word in. ${neverSay}`
+              : `Not said yet: ${askable.map((w) => w.de).join("; ")}. Get the learner to say them, one at a time, with a question on the current topic whose natural answer needs one (bridge naturally; never quiz or list). ${neverSay}`]
             : []),
+          ...(waiting.length ? [`Asked about already without success, so leave these alone for now: ${waiting.map((w) => w.de).join("; ")}.`] : []),
           ...(said.length ? [`Already said: ${said.map((w) => w.de).join("; ")}. Bring each back later in another form.`] : []),
         ]),
       "next_word: the word from this list (as written) your reply asks for, else empty.",
       ...(learnerMessage ? ["coach.used_words: list every one of today's words that appears in the learner's last message, in any form (write it as in the list), with correct true only if its meaning, form and article are right; empty only if none appears. A wrong use also gets a coach.correction."] : []),
     );
+  }
+  if (m.topics && hints) {
+    lines.push(`Stay on the topic "${hints.topic}": every question is about it itself, never about something the learner only mentioned in passing, and never about another subject.${hints.asked.length ? ` You have already asked: ${hints.asked.map((q) => JSON.stringify(q)).join(" ")}. Never ask any of these, or a question that starts or means the same, again.` : ""}${hints.angle ? ` This turn, ask about ${hints.angle}.` : ""}`);
   }
   if (weakSpots.length) {
     const clip = (t) => JSON.stringify(t.length > 120 ? `${t.slice(0, 117)}…` : t);
@@ -1206,13 +1242,13 @@ async function chatTurn(settings, history, message) {
     }
   }
   const learnt = Boolean(settings.vocab?.learnt);
-  const today = todayWords ? { words: todayWords.active, status: todayWords.status, situation: todayWords.situation } : null;
+  const today = todayWords ? { words: todayWords.active, status: todayWords.status, situation: todayWords.situation, asked: todayWords.asked ?? {}, turn: Math.floor(history.length / 2) } : null;
   const todaySet = new Set(today?.words.map((w) => w.de));
   // A drill is only about today's words: no background words to weave in.
   const targetWords = settings.vocab?.enabled && !mode.drill ? nextVocabBatch(learnt ? 8 : 12).filter((w) => !todaySet.has(w.de)) : [];
   const startedAt = performance.now();
   let voiced = false;
-  const systemInstruction = turnSystemPrompt(settings.request, targetWords, learnt, message.trim(), recurringMistakes(settings.request.language), today);
+  const systemInstruction = turnSystemPrompt(settings.request, targetWords, learnt, message.trim(), recurringMistakes(settings.request.language), today, mode.topics ? topicHints(history, settings.topic ?? "") : null);
   // A drill is short, plain and only needs the last few turns: less to read and write, so
   // replies come sooner, and a low temperature keeps its questions sensible.
   const contents = historyToContents(mode.drill ? history.slice(-DRILL_HISTORY) : history, userText);
@@ -2568,7 +2604,16 @@ async function sendTurn(message) {
       }
     }
     // The word the reply asks for: its chip is highlighted.
-    if (todayWords) todayWords.current = findTodayWord(turn.next_word)?.de ?? null;
+    if (todayWords) {
+      todayWords.current = findTodayWord(turn.next_word)?.de ?? null;
+      // Which turn asked for which word (see wordResting). Only an ask the prompt allowed counts:
+      // the prompt of this turn was built one exchange earlier than the history is now.
+      const turnNo = Math.floor(state.history.length / 2);
+      if (todayWords.current && !todayWords.status[todayWords.current]?.correct
+          && !wordResting(todayWords.asked, todayWords.current, turnNo - 1)) {
+        ((todayWords.asked ??= {})[todayWords.current] ??= []).push(turnNo);
+      }
+    }
     // The drill's situation is kept here and sent back each turn (only the last few turns
     // are), so the story stays coherent; the header shows it.
     if (todayWords && MODES[state.settings.request.mode]?.drill && turn.situation?.trim()) {
@@ -3297,7 +3342,7 @@ $("end").addEventListener("click", () => {
 if ("speechSynthesis" in window) speechSynthesis.onvoiceschanged = () => {};
 
 // With ?debug: which build this phone runs (a cached old one would explain old behaviour).
-debugLog(`Talkloop v52 · speech recognition ${Recognition ? "yes" : "no"}`);
+debugLog(`Talkloop v53 · speech recognition ${Recognition ? "yes" : "no"}`);
 refreshKeyGate();
 renderStats();
 renderBookmarks();
