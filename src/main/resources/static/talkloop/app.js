@@ -58,8 +58,8 @@ function renderStats() {
 }
 
 // ---------- AI services (called directly from the browser with the user's own keys) ----------
-// Conversation runs on Mistral (best German of the free tiers, with Groq as a backup when
-// Mistral is busy) or on Gemini. Gemini is also the backup voice when Piper can't speak.
+// Conversation runs on Groq (with Mistral as a backup when Groq is busy), OpenAI, Cloudflare
+// or Gemini. Gemini is also the backup voice when Piper can't speak.
 // Lite answers in about a second; Flash takes about five, so it is only the fallback.
 const CONV_MODEL = "gemini-flash-lite-latest";
 const CONV_FALLBACK_MODEL = "gemini-flash-latest";
@@ -73,6 +73,16 @@ const GROQ = {
   url: "https://api.groq.com/openai/v1/chat/completions",
   model: "openai/gpt-oss-120b",
   extra: { reasoning_effort: "low" }, // keep replies quick enough for a conversation
+};
+
+// OpenAI (GPT-6 Luna by default; another model ID can be typed in with the key). Its newer
+// models only take the default temperature, so none is sent.
+const OPENAI_DEFAULT_MODEL = "gpt-6-luna";
+const OPENAI = {
+  name: "OpenAI",
+  url: "https://api.openai.com/v1/chat/completions",
+  get model() { return store.get("openai_model", "") || OPENAI_DEFAULT_MODEL; },
+  noTemperature: true,
 };
 
 const memoryKeys = {}; // fallback when localStorage is unavailable
@@ -93,7 +103,8 @@ function setKey(service, k) {
   }
 }
 
-// Which service runs the conversation. People who only ever saved a Gemini key stay on Gemini.
+// Which service runs the conversation. People who only ever saved a Gemini key stay on Gemini;
+// Mistral is no longer a choice of its own, so it moves to Groq (its backup stays).
 function getProvider() {
   let saved = "";
   try {
@@ -101,8 +112,8 @@ function getProvider() {
   } catch {
     saved = memoryKeys.provider || "";
   }
-  if (saved === "mistral" || saved === "gemini" || saved === "groq" || saved === "cloudflare") return saved;
-  return getKey("gemini") && !getKey("mistral") ? "gemini" : "mistral";
+  if (["gemini", "groq", "cloudflare", "openai"].includes(saved)) return saved;
+  return getKey("gemini") && !getKey("mistral") && !getKey("groq") ? "gemini" : "groq";
 }
 // Whether the chosen service has what it needs: one key, or Cloudflare's account ID and token.
 function providerReady(provider = getProvider()) {
@@ -1032,7 +1043,7 @@ function parseModelJson(text) {
   }
 }
 
-// One request to an OpenAI-compatible chat API (Mistral, Groq). Returns the fetch Response.
+// One request to an OpenAI-compatible chat API (OpenAI, Groq, Mistral). Returns the fetch Response.
 // The answer format for chat APIs, which get it as text: the JSON Schema without its
 // "required" lists (every field is required, said once instead), which repeated each field
 // name on every turn.
@@ -1065,7 +1076,7 @@ function chatRequest(service, key, request, stream = false) {
       model: service.model,
       messages,
       response_format: { type: "json_object" },
-      temperature,
+      ...(service.noTemperature ? {} : { temperature }),
       ...(stream ? { stream: true } : {}),
       ...service.extra,
     }),
@@ -1099,21 +1110,21 @@ async function failure(res, serviceName) {
   return new Error(`${serviceName ? `${serviceName}: ` : ""}${typeof message === "string" ? message : JSON.stringify(message)}`);
 }
 
-async function chatJson(request) {
-  const mistralKey = getKey("mistral");
-  const groqKey = getKey("groq");
-  if (!mistralKey) throw new Error("Add your Mistral API key to start.");
-  // With onPartial, Mistral streams its answer so the reply can be voiced before the rest is written.
+// OpenAI as the main service, streamed so the reply can be voiced before the rest is written.
+// When it is busy or at its limit, Groq takes over, if it has a key.
+async function openaiJson(request) {
+  const openaiKey = getKey("openai");
+  if (!openaiKey) throw new Error("Add your OpenAI API key to start.");
   const stream = typeof request.onPartial === "function";
-  let service = MISTRAL;
-  let res = await chatRequest(MISTRAL, mistralKey, request, stream);
-  // Mistral's free tier is rate-limited (429) and sometimes overloaded (5xx); Groq takes over.
-  if ((res.status === 429 || res.status >= 500) && groqKey) {
+  let service = OPENAI;
+  let res = await chatRequest(OPENAI, openaiKey, request, stream);
+  if ((res.status === 429 || res.status >= 500) && getKey("groq")) {
+    debugLog("OpenAI busy: using Groq");
     service = GROQ;
-    res = await chatRequest(GROQ, groqKey, request);
+    res = await chatRequest(GROQ, getKey("groq"), request);
   }
-  if (!res.ok) throw await failure(res, service.name);
-  if (stream && service === MISTRAL) {
+  if (!res.ok) throw await failure(res, `${service.name}${service === OPENAI ? ` (${OPENAI.model})` : ""}`);
+  if (stream && service === OPENAI) {
     let text = "";
     await readSse(res, (event) => {
       const delta = event.choices?.[0]?.delta?.content;
@@ -1201,7 +1212,8 @@ function aiJson(request) {
   const provider = getProvider();
   if (provider === "groq") return groqJson(request);
   if (provider === "cloudflare") return cloudflareJson(request);
-  return provider === "mistral" ? chatJson(request) : geminiJson(request);
+  if (provider === "openai") return openaiJson(request);
+  return geminiJson(request);
 }
 
 async function geminiJson({ systemInstruction, schema, contents, onPartial, temperature = 0.8 }) {
@@ -3035,7 +3047,7 @@ function renderBookmarks() {
 
 // ---------- wiring ----------
 
-const KEY_INPUTS = { mistral: "mistral-key", groq: "groq-key", groq2: "groq2-key", groq3: "groq3-key", cfAccount: "cf-account", cfToken: "cf-token", gemini: "api-key" };
+const KEY_INPUTS = { openai: "openai-key", mistral: "mistral-key", groq: "groq-key", groq2: "groq2-key", groq3: "groq3-key", cfAccount: "cf-account", cfToken: "cf-token", gemini: "api-key" };
 
 // Show only the key fields the chosen AI needs; saved keys show as a placeholder.
 function showKeyFields() {
@@ -3044,9 +3056,8 @@ function showKeyFields() {
     el.hidden = !el.dataset.provider.split(" ").includes(provider);
   }
   $("gemini-optional").hidden = provider === "gemini";
-  // Mistral and Groq back each other up: the other one's key is optional.
+  // Groq backs up OpenAI, and Mistral backs up Groq: those keys are optional.
   $("groq-optional").hidden = provider === "groq";
-  $("mistral-optional").hidden = provider === "mistral";
   $("cf-optional").hidden = provider === "cloudflare";
   for (const [service, id] of Object.entries(KEY_INPUTS)) {
     $(id).placeholder = getKey(service) ? "Saved — leave blank to keep" : $(id).dataset.placeholder;
@@ -3060,13 +3071,13 @@ $("grammar-check").addEventListener("change", () => store.set("grammar_check", $
 
 function keySummary() {
   if (getProvider() === "gemini") return "✓ Using Google Gemini.";
+  if (getProvider() === "openai") return `✓ Using OpenAI (${OPENAI.model})${getKey("groq") ? ", with Groq as backup" : ""}.`;
   if (getProvider() === "cloudflare") return getKey("groq") ? "✓ Using Cloudflare Workers AI, with Groq as backup." : "✓ Using Cloudflare Workers AI.";
   if (getProvider() === "groq") {
     const groqBackups = GROQ_BACKUPS.filter((k) => getKey(k)).length;
     const backups = [groqBackups && (groqBackups === 1 ? "a second Groq key" : `${groqBackups} more Groq keys`), getKey("cfAccount") && getKey("cfToken") && "Cloudflare", getKey("mistral") && "Mistral"].filter(Boolean);
     return backups.length ? `✓ Using Groq, with ${backups.join(" and ")} as backup.` : "✓ Using Groq.";
   }
-  return getKey("groq") ? "✓ Using Mistral, with Groq as backup." : "✓ Using Mistral.";
 }
 
 // Show the key box or the setup, depending on whether the chosen AI has a key saved.
@@ -3089,13 +3100,15 @@ $("save-key").addEventListener("click", () => {
   if (missing) {
     $("key-status").textContent = provider === "cloudflare"
       ? "Paste your Cloudflare account ID and API token first."
-      : `Paste your ${{ mistral: "Mistral", groq: "Groq", gemini: "Gemini" }[provider]} API key first.`;
+      : `Paste your ${{ openai: "OpenAI", groq: "Groq", gemini: "Gemini" }[provider]} API key first.`;
     return;
   }
   for (const [service, value] of Object.entries(typed)) {
     if (value) setKey(service, value);
     $(KEY_INPUTS[service]).value = "";
   }
+  const model = $("openai-model").value.trim();
+  if (provider === "openai" && model) store.set("openai_model", model);
   setProvider(provider);
   $("key-status").textContent = "";
   refreshKeyGate();
@@ -3492,7 +3505,7 @@ $("end").addEventListener("click", () => {
 if ("speechSynthesis" in window) speechSynthesis.onvoiceschanged = () => {};
 
 // With ?debug: which build this phone runs (a cached old one would explain old behaviour).
-debugLog(`Talkloop v58 · speech recognition ${Recognition ? "yes" : "no"}`);
+debugLog(`Talkloop v59 · speech recognition ${Recognition ? "yes" : "no"}`);
 if (!trainerSession()) goToLogin();
 refreshKeyGate();
 renderStats();
