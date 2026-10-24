@@ -1,5 +1,6 @@
 package com.vocabtrainer.service;
 
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
@@ -34,6 +35,11 @@ public class TalkloopService {
     private static final int MAX_SPOKEN_WORDS = 5000;
     private static final int MAX_WORD = 100;
     private static final Pattern DAY = Pattern.compile("\\d{4}-\\d{2}-\\d{2}");
+    static final int MAX_CHATS = 20; // as many as Talkloop lists
+    private static final int MAX_CHAT_BYTES = 900_000; // a Firestore document holds at most 1 MiB
+    private static final int MAX_TOPIC = 200;
+    private static final int MAX_TOPICS = 200;
+    private static final Pattern CHAT_ID = Pattern.compile("[A-Za-z0-9_-]{1,40}");
 
     private final JwtService jwt;
     private final ProgressService progress;
@@ -188,6 +194,65 @@ public class TalkloopService {
             }
             return Map.of("words", words);
         }
+    }
+
+    /**
+     * Talkloop's topic chats, newest first, and every topic ever discussed (newest
+     * first), so a new chat gets a topic the learner hasn't had, on any device and
+     * after the browser's storage is cleared. Each chat is {id, topic, at, data}: data
+     * is the chat as Talkloop keeps it (JSON text). Only the newest {@value #MAX_CHATS}
+     * chats are kept; older ones are deleted here.
+     */
+    @SuppressWarnings("unchecked")
+    public Map<String, Object> chats(Ctx ctx) {
+        List<Map<String, Object>> chats = new ArrayList<>(repo.findTalkloopChats(ctx));
+        chats.sort(Comparator.comparingLong((Map<String, Object> c) -> Srs.num(c.get("at"), 0)).reversed());
+        if (chats.size() > MAX_CHATS) {
+            repo.deleteTalkloopChats(ctx, chats.subList(MAX_CHATS, chats.size()).stream().map(c -> (String) c.get("id")).toList());
+            chats = chats.subList(0, MAX_CHATS);
+        }
+        Map<String, Object> stored = repo.findTalkloopTopics(ctx);
+        Map<String, Object> v = new LinkedHashMap<>();
+        v.put("chats", chats);
+        v.put("topics", stored != null && stored.get("topics") instanceof List<?> l ? l : List.of());
+        return v;
+    }
+
+    /** Saves (creates or replaces) one chat, and adds its topic to the topics discussed. */
+    @SuppressWarnings("unchecked")
+    public Map<String, Object> saveChat(Ctx ctx, String id, Map<String, Object> body) {
+        if (!CHAT_ID.matcher(id).matches()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "id: letters, digits, - and _ only");
+        }
+        if (!(body.get("topic") instanceof String topic) || topic.isBlank() || topic.length() > MAX_TOPIC
+                || !(body.get("at") instanceof Number at) || at.longValue() <= 0
+                || !(body.get("data") instanceof String data)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "expected {topic, at, data}");
+        }
+        if (data.getBytes(StandardCharsets.UTF_8).length > MAX_CHAT_BYTES) {
+            throw new ResponseStatusException(HttpStatus.PAYLOAD_TOO_LARGE, "chat too long to keep");
+        }
+        synchronized (syncLocks[Math.floorMod(ctx.uid().hashCode(), syncLocks.length)]) {
+            Map<String, Object> chat = new LinkedHashMap<>();
+            chat.put("topic", topic);
+            chat.put("at", at.longValue());
+            chat.put("data", data);
+            repo.saveTalkloopChat(ctx, id, chat);
+            Map<String, Object> stored = repo.findTalkloopTopics(ctx);
+            List<Object> topics = new ArrayList<>(stored != null && stored.get("topics") instanceof List<?> l ? l : List.of());
+            if (!topics.contains(topic)) { // a chat that goes on costs no extra write
+                topics.add(0, topic);
+                repo.saveTalkloopTopics(ctx, Map.of("topics", topics.subList(0, Math.min(MAX_TOPICS, topics.size()))));
+            }
+        }
+        return Map.of("ok", true);
+    }
+
+    public void deleteChat(Ctx ctx, String id) {
+        if (!CHAT_ID.matcher(id).matches()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "id: letters, digits, - and _ only");
+        }
+        repo.deleteTalkloopChats(ctx, List.of(id));
     }
 
     /** A valid speaking-schedule entry, or null. */

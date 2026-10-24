@@ -489,6 +489,43 @@ class EndToEndTest {
         assertEquals(400, status(post("/api/talkloop/spoken"), link, Map.of("words", List.of())));
     }
 
+    @Test
+    @SuppressWarnings("unchecked")
+    void talkloopKeepsTopicChatsAndTheTopicsDiscussed() throws Exception {
+        String t = login(BEN, "ben-test-pw");
+        String link = (String) ok(post("/api/talkloop/link"), t, null).get("token");
+        assertEquals(List.of(), ok(get("/api/talkloop/chats"), link, null).get("chats"));
+
+        ok(post("/api/talkloop/chats/100"), link, Map.of("topic", "Homeoffice oder Büro?", "at", 1000, "data", "{\"log\":[]}"));
+        ok(post("/api/talkloop/chats/200"), link, Map.of("topic", "Stadt oder Land?", "at", 2000, "data", "{}"));
+        // The same chat saved again (it went on) replaces itself.
+        ok(post("/api/talkloop/chats/100"), link, Map.of("topic", "Homeoffice oder Büro?", "at", 3000, "data", "{\"log\":[1]}"));
+        Map<String, Object> all = ok(get("/api/talkloop/chats"), link, null);
+        List<Map<String, Object>> chats = (List<Map<String, Object>>) all.get("chats");
+        assertEquals(List.of("100", "200"), chats.stream().map(c -> c.get("id")).toList());
+        assertEquals("{\"log\":[1]}", chats.get(0).get("data"));
+        assertEquals(List.of("Stadt oder Land?", "Homeoffice oder Büro?"), all.get("topics"));
+
+        // A deleted chat's topic still counts as discussed.
+        ok(delete("/api/talkloop/chats/100"), link, null);
+        all = ok(get("/api/talkloop/chats"), link, null);
+        assertEquals(1, ((List<?>) all.get("chats")).size());
+        assertEquals(2, ((List<?>) all.get("topics")).size());
+
+        // Only the newest chats are kept.
+        for (int i = 0; i < 25; i++) {
+            ok(post("/api/talkloop/chats/c" + i), link, Map.of("topic", "Thema " + i, "at", 10_000 + i, "data", "{}"));
+        }
+        chats = (List<Map<String, Object>>) ok(get("/api/talkloop/chats"), link, null).get("chats");
+        assertEquals(20, chats.size());
+        assertEquals("c24", chats.get(0).get("id"));
+
+        assertEquals(400, status(post("/api/talkloop/chats/bad.id"), link, Map.of("topic", "x", "at", 1, "data", "{}")));
+        assertEquals(400, status(post("/api/talkloop/chats/300"), link, Map.of("topic", "x", "at", 1)));
+        assertEquals(401, status(get("/api/talkloop/chats"), t, null));
+        assertEquals(401, status(get("/api/talkloop/chats"), null, null));
+    }
+
     @SuppressWarnings("unchecked")
     private static List<Map<String, Object>> germanEntries(Map<String, Object> answer) {
         Map<String, Object> german = (Map<String, Object>) ((Map<String, Object>) answer.get("languages")).get("German");
