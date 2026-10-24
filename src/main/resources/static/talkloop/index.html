@@ -8,7 +8,7 @@
     <link rel="apple-touch-icon" href="favicon.svg" />
     <meta name="theme-color" content="#2f5fd0" />
     <!-- ?v= makes phones fetch the new file after a change instead of a cached copy: bump it with each change. -->
-    <link rel="stylesheet" href="styles.css?v=19" />
+    <link rel="stylesheet" href="styles.css?v=20" />
   </head>
   <body>
     <header class="topbar">
@@ -154,13 +154,7 @@
         </div>
         <div class="trainer-link">
           <p id="trainer-status" class="muted" aria-live="polite"></p>
-          <button type="button" id="trainer-unlink" hidden>Unlink</button>
         </div>
-        <form id="trainer-form" class="trainer-form" hidden>
-          <input id="trainer-email" type="email" autocomplete="username" placeholder="Vocab Trainer email" required />
-          <input id="trainer-password" type="password" autocomplete="current-password" placeholder="Password" required />
-          <button type="submit" id="trainer-connect">Connect</button>
-        </form>
         <div class="vocab-url-row">
           <input id="vocab-url" type="url"
                  value="https://harsimar17.github.io/Deutsch-Vocab-Helper/german_vocab.json"
@@ -243,6 +237,7 @@
         </div>
         <form id="composer" class="composer">
           <input id="text" autocomplete="off" placeholder="Type your reply…" />
+          <button type="button" id="lookup-open" title="Look up a word" aria-label="Look up a word">🔍</button>
           <button class="primary" type="submit">Send</button>
         </form>
         <div class="call-controls">
@@ -281,6 +276,6 @@
       <ul id="bookmarks" class="bookmarks"></ul>
     </section>
 
-    <script src="app.js?v=55" type="module"></script> <!-- bump with app.js changes, like styles.css above -->
+    <script src="app.js?v=57" type="module"></script> <!-- bump with app.js changes, like styles.css above -->
   </body>
 </html>

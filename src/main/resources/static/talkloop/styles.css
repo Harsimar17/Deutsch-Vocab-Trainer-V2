@@ -249,10 +249,6 @@ body.in-call { overflow: hidden; }
 .trainer-link { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
 .trainer-link p { flex: 1; margin: 0; font-size: 0.85rem; }
 .trainer-link button { white-space: nowrap; font-size: 0.85rem; }
-.trainer-form { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 8px; }
-.trainer-form[hidden] { display: none; }
-.trainer-form input { flex: 1 1 150px; min-width: 0; font-size: 0.9rem; }
-.trainer-form button { white-space: nowrap; font-size: 0.9rem; }
 .vocab-url-row { display: flex; gap: 8px; margin-bottom: 8px; }
 .vocab-url-row input { flex: 1; min-width: 0; font-size: 0.85rem; }
 .vocab-url-row button { white-space: nowrap; font-size: 0.9rem; }
@@ -371,3 +367,7 @@ button.focus-word { border: 1px solid transparent; color: inherit; font: inherit
 #keygate label { margin-bottom: 12px; }
 
 .auto-send { align-self: flex-start; }
+
+/* Look up any word during a call (🔍 next to Send) */
+.lookup { display: flex; gap: 8px; margin: 4px 32px 10px 0; }
+.lookup input { flex: 1; min-width: 0; }

@@ -425,35 +425,39 @@ function trainerLink() {
 // page's own origin; "trainer_api" in localStorage overrides it (e.g. a local one).
 const TRAINER_API = location.origin;
 
-// Logged in to the trainer in this browser? It is the same site, so its session is right
-// here: swap it for a read-only link without asking for the password again.
-async function linkFromTrainerSession() {
-  if (trainerLink()) return false;
-  let session = null;
-  try { session = JSON.parse(localStorage.getItem("wortschatz.session"))?.token ?? null; } catch { session = null; }
-  if (!session) return false;
-  const api = store.get("trainer_api", TRAINER_API).replace(/\/+$/, "");
-  const res = await fetch(`${api}/api/talkloop/link`, { method: "POST", headers: { Authorization: `Bearer ${session}` } });
-  if (!res.ok) return false; // an expired session: the form below still works
-  store.set("trainer_link", { token: (await res.json()).token, api });
-  return true;
+// ---------- the trainer's login ----------
+// Talkloop opens only for a learner logged in to the Vocab Trainer. It is the same site, so
+// the trainer's login is right here: on every load it is renewed (it ends after a day without
+// use) and swapped for a fresh link, so there is no password to type and no link to run out.
+const TRAINER_SESSION_KEY = "wortschatz.session";
+
+// The trainer's login, or null when there is none or it has expired.
+function trainerSession() {
+  try {
+    const session = JSON.parse(localStorage.getItem(TRAINER_SESSION_KEY));
+    const payload = JSON.parse(atob(session.token.split(".")[1].replace(/-/g, "+").replace(/_/g, "/")));
+    return payload.exp * 1000 > Date.now() ? session : null;
+  } catch {
+    return null;
+  }
 }
 
-// Log in to the trainer once and swap the session for the same read-only link the
-// trainer's button hands out. The password is sent only to the trainer and not kept.
-async function connectTrainer(email, password) {
+// The trainer's login screen, which comes back here once logged in.
+function goToLogin() {
+  try { localStorage.removeItem(TRAINER_SESSION_KEY); } catch { /* storage blocked */ }
+  location.replace("/#talkloop");
+}
+
+async function linkFromTrainerSession() {
+  const session = trainerSession();
+  if (!session) return goToLogin();
   const api = store.get("trainer_api", TRAINER_API).replace(/\/+$/, "");
-  const message = async (res) => (await res.json().catch(() => ({}))).message || `Vocab Trainer answered ${res.status}`;
-  const login = await fetch(`${api}/api/auth/login`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ email, password }),
-  });
-  if (login.status === 401) throw new Error("Wrong email or password.");
-  if (!login.ok) throw new Error(await message(login));
-  const { token: session } = await login.json();
-  const res = await fetch(`${api}/api/talkloop/link`, { method: "POST", headers: { Authorization: `Bearer ${session}` } });
-  if (!res.ok) throw new Error(await message(res));
+  // Offline or the free server asleep: the link from last time still works.
+  const res = await fetch(`${api}/api/talkloop/link`, { method: "POST", headers: { Authorization: `Bearer ${session.token}` } });
+  if (res.status === 401) return goToLogin(); // the trainer no longer knows this login
+  if (!res.ok) return;
+  const renewed = res.headers.get("X-Auth-Token");
+  if (renewed) localStorage.setItem(TRAINER_SESSION_KEY, JSON.stringify({ ...session, token: renewed }));
   store.set("trainer_link", { token: (await res.json()).token, api });
 }
 
@@ -463,7 +467,8 @@ async function fetchLearntWords() {
   const res = await fetch(`${link.api}/api/talkloop/words`, { headers: { Authorization: `Bearer ${link.token}` } });
   if (res.status === 401) {
     store.set("trainer_link", null);
-    throw new Error("The link to the Vocab Trainer has expired. Connect again.");
+    goToLogin();
+    throw new Error("Your Vocab Trainer login has ended: log in again.");
   }
   if (!res.ok) throw new Error(`Vocab Trainer answered ${res.status}`);
   const { words } = await res.json();
@@ -2920,18 +2925,56 @@ function isSkipCommand(text) {
 }
 
 // ---------- word explorer & bookmarks ----------
-async function openExplorer(word, sentence) {
-  const panel = $("explorer");
-  const body = $("explorer-body");
-  panel.hidden = false;
+function openExplorer(word, sentence) {
+  $("explorer").hidden = false;
+  showWordInfo($("explorer-body"), word, () => wordInfo({
+    word,
+    sentence,
+    language: state.settings.request.language,
+    nativeLanguage: state.settings.request.nativeLanguage,
+  }));
+}
+
+// Any word, without leaving the call: one the learner wants to say but doesn't know (in their
+// own language), or one they heard (in the language practised).
+function openLookup() {
+  const { language, nativeLanguage } = state.settings.request;
+  $("explorer").hidden = false;
+  const form = document.createElement("form");
+  form.className = "lookup";
+  const input = document.createElement("input");
+  input.autocomplete = "off";
+  input.enterKeyHint = "search";
+  input.placeholder = `A word in ${nativeLanguage} or ${language}`;
+  const go = document.createElement("button");
+  go.type = "submit";
+  go.className = "primary";
+  go.textContent = "Look up";
+  form.append(input, go);
+  const result = document.createElement("div");
+  form.addEventListener("submit", (event) => {
+    event.preventDefault();
+    const query = input.value.trim();
+    if (query) showWordInfo(result, query, () => lookupWord(query));
+  });
+  $("explorer-body").replaceChildren(form, result);
+  input.focus();
+}
+
+function lookupWord(query) {
+  const { language, nativeLanguage } = state.settings.request;
+  return aiJson({
+    systemInstruction: `You are a concise ${language}–${nativeLanguage} dictionary for a ${nativeLanguage} speaker learning ${language}.`,
+    schema: WORD_SCHEMA,
+    contents: [{ role: "user", parts: [{ text: `The learner looks up "${query}". If it is ${nativeLanguage}, give the most common ${language} word or phrase for it as word (a noun with its article) and its ${nativeLanguage} meaning as translation. If it is ${language}, give it as word (a noun with its article) and its ${nativeLanguage} meaning as translation. The example is a short everyday ${language} sentence using the word.` }] }],
+  });
+}
+
+// Looks a word up and shows it in `body`: translation, how to say it, an example, Listen and Save.
+async function showWordInfo(body, word, lookup) {
   body.textContent = `Looking up “${word}”…`;
   try {
-    const info = await wordInfo({
-      word,
-      sentence,
-      language: state.settings.request.language,
-      nativeLanguage: state.settings.request.nativeLanguage,
-    });
+    const info = await lookup();
     body.replaceChildren();
     const title = document.createElement("h2");
     title.textContent = `${info.word} — ${info.translation}`;
@@ -2969,7 +3012,7 @@ function renderMistakes() {
   $("reset-mistakes").hidden = !ranked.length;
   $("mistakes-sync").textContent = trainerLink()
     ? "Kept in your Vocab Trainer too, so it follows you to your other devices."
-    : "Kept on this device only. Connect your Vocab Trainer above to have it on all your devices.";
+    : "Kept on this device until Talkloop is linked to your Vocab Trainer.";
   if (!ranked.length) {
     const li = document.createElement("li");
     li.className = "muted";
@@ -3239,44 +3282,13 @@ function higherCount(words) {
 // count: learnt B1 words ready (null when not linked).
 function renderTrainerLink(count, problem = "") {
   const linked = Boolean(trainerLink());
-  $("trainer-unlink").hidden = !linked;
-  $("trainer-form").hidden = linked;
+  // The free server sleeps when unused and can take a minute to wake up.
   const text = !linked
-    ? "Connect your Vocab Trainer so B1 uses only the words you have learnt there:"
+    ? "Connecting to your Vocab Trainer… (it can take up to a minute to wake up)"
     : `🔗 Linked to your Vocab Trainer · your partner uses all A1 and A2 words plus ${
         count ? `the ${count} B1 words you have learnt there` : "your learnt B1 words (none yet)"}.`;
   $("trainer-status").textContent = problem ? `${problem} ${linked ? text : ""}`.trim() : text;
 }
-
-$("trainer-form").addEventListener("submit", async (event) => {
-  event.preventDefault();
-  const email = $("trainer-email").value.trim();
-  const password = $("trainer-password").value;
-  $("trainer-connect").disabled = true;
-  // The free server sleeps when unused and can take a minute to wake up.
-  $("trainer-status").textContent = "Connecting… (the Vocab Trainer can take up to a minute to wake up)";
-  try {
-    await connectTrainer(email, password);
-    $("trainer-password").value = "";
-    await refreshLearntWords();
-    syncMistakes();
-    syncSpoken();
-    syncChats().catch(() => {});
-    renderMistakes();
-  } catch (error) {
-    renderTrainerLink(null, error.message === "Failed to fetch" ? "Couldn't reach the Vocab Trainer." : error.message);
-  } finally {
-    $("trainer-connect").disabled = false;
-  }
-});
-
-$("trainer-unlink").addEventListener("click", async () => {
-  store.set("trainer_link", null);
-  await idbSet("learnt_words", []).catch(() => {});
-  renderTrainerLink(null);
-  renderMistakes();
-  refreshVocabUI((await vocabMeta().catch(() => ({ count: 0 }))).count);
-});
 
 function refreshVocabUI(count) {
   const useVocab = $("use-vocab");
@@ -3480,6 +3492,8 @@ onTap($("heard-delete"), () => {
   showHeard("");
 });
 
+onTap($("lookup-open"), () => openLookup());
+
 onTap($("explorer-close"), () => {
   $("explorer").hidden = true;
 });
@@ -3523,7 +3537,8 @@ $("end").addEventListener("click", () => {
 if ("speechSynthesis" in window) speechSynthesis.onvoiceschanged = () => {};
 
 // With ?debug: which build this phone runs (a cached old one would explain old behaviour).
-debugLog(`Talkloop v55 · speech recognition ${Recognition ? "yes" : "no"}`);
+debugLog(`Talkloop v57 · speech recognition ${Recognition ? "yes" : "no"}`);
+if (!trainerSession()) goToLogin();
 refreshKeyGate();
 renderStats();
 renderBookmarks();
@@ -3532,17 +3547,17 @@ renderChats();
 restoreCall().catch((error) => console.warn("Couldn't restore the call:", error));
 // Get the voice ready while the learner picks their settings, so the first reply doesn't wait.
 preloadSelectedVoice();
-// Show any already-imported vocab; if none, fetch the default URL in the background.
-// Then the learnt words from the Vocab Trainer, if linked (or just linked via the URL).
+// Show the vocab kept from last time and fetch the latest in the background.
+// Then link to the Vocab Trainer with its login and fetch the learnt words.
 takeTrainerLinkFromUrl();
 vocabMeta()
   .then((m) => {
     refreshVocabUI(m.count);
-    if (m.count === 0) loadVocabUrl(DEFAULT_VOCAB_URL, { silent: true });
+    loadVocabUrl(DEFAULT_VOCAB_URL, { silent: true });
   })
   .catch(() => {})
   .finally(async () => {
-    await linkFromTrainerSession().catch(() => false);
+    await linkFromTrainerSession().catch(() => {});
     refreshLearntWords();
     syncMistakes();
     syncSpoken();
