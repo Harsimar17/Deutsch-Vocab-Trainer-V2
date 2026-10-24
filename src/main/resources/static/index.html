@@ -3332,7 +3332,8 @@ function LoginScreen({ onLoggedIn }) {
     if (state.busy) return;
     setState({ busy: true, error: null });
     session.login(email.trim(), password)
-      .then((user) => onLoggedIn(user))
+      // Sent here by Talkloop (/#talkloop): go back to it once logged in.
+      .then((user) => { if (location.hash === "#talkloop") location.replace("/talkloop/"); else onLoggedIn(user); })
       .catch((err) => setState({ busy: false, error: err.message }));
   };
   const field = { fontFamily: "var(--font-mono)", fontSize: "13px", padding: "10px 12px", borderRadius: "8px", border: "1px solid var(--line)", background: "var(--paper-raised)", color: "var(--ink)", width: "100%", boxSizing: "border-box" };
