@@ -260,6 +260,7 @@ const MODES = {
     label: "Free chat — the partner leads",
     usesScene: false,
     endable: false,
+    subjects: true, // saved as a chat; the subjects talked about aren't brought up again (see subjectHints)
     opener: "(Start the conversation. Greet the learner warmly and ask one easy opening question.)",
     extra: "You lead the whole conversation. Always finish your reply with a question that keeps it going. Follow up on what the learner says, gently change topic when one runs dry, and keep it light and encouraging. Never end the conversation: always set conversation_finished to false.",
   },
@@ -267,6 +268,7 @@ const MODES = {
     label: "Interview me",
     usesScene: false,
     endable: false,
+    subjects: true,
     opener: "(Greet the learner and ask their name or how their day is going.)",
     extra: "Interview the learner about their life, day, hobbies, work and opinions. Ask one question at a time, react to the answer, then ask a natural follow-up. Never end: always set conversation_finished to false.",
   },
@@ -850,9 +852,12 @@ const TURN_SCHEMA = {
     next_word: { type: "STRING" },
     // The sentence drill's current situation, kept by the app so it stays coherent, or "".
     situation: { type: "STRING" },
+    // In a free chat or interview: what the reply's question is about, in a few English words.
+    // Not required: other modes leave it out.
+    subject: { type: "STRING" },
   },
   required: ["coach", "mood", "reply", "reply_translation", "suggestions", "rapport_delta", "conversation_finished", "next_word", "situation"],
-  propertyOrdering: ["coach", "mood", "reply", "reply_translation", "suggestions", "rapport_delta", "conversation_finished", "next_word", "situation"],
+  propertyOrdering: ["coach", "mood", "reply", "reply_translation", "suggestions", "rapport_delta", "conversation_finished", "next_word", "situation", "subject"],
 };
 
 const WORD_SCHEMA = {
@@ -961,6 +966,10 @@ function turnSystemPrompt({ language, nativeLanguage, level, scenario, mode, ten
   if (m.topics && hints) {
     lines.push(`Stay on the topic "${hints.topic}": every question is about it itself, never about something the learner only mentioned in passing, and never about another subject.${hints.asked.length ? ` You have already asked: ${hints.asked.map((q) => JSON.stringify(q)).join(" ")}. Never ask any of these, or a question that starts or means the same, again.` : ""}${hints.angle ? ` This turn, ask about ${hints.angle}.` : ""}`);
   }
+  if (m.subjects && hints) {
+    const quote = (list) => list.map((s) => JSON.stringify(s)).join(", ");
+    lines.push(`subject: what the question in your reply is about, in two to four English words (e.g. "weekend plans"); keep it the same while you stay on it.${hints.covered.length ? ` Talked about in earlier chats, so never bring these up yourself (follow the learner if they do): ${quote(hints.covered)}.` : ""}${hints.current.length ? ` Already talked about in this chat: ${quote(hints.current)}; when the current one runs dry, move on to a new subject, not back to one of these.` : ""}`);
+  }
   if (weakSpots.length) {
     const clip = (t) => JSON.stringify(t.length > 120 ? `${t.slice(0, 117)}…` : t);
     const list = weakSpots.map((m) => `${MISTAKE_TYPES[m.type]} (said ${clip(m.example.said)}; correct ${clip(m.example.fix)})`).join("; ");
@@ -1006,6 +1015,7 @@ function normalizeTurn(raw) {
     conversation_finished: t.conversation_finished === true,
     next_word: str(t.next_word),
     situation: str(t.situation),
+    subject: str(t.subject).trim().toLowerCase().slice(0, 60),
   };
 }
 
@@ -1253,7 +1263,8 @@ async function chatTurn(settings, history, message) {
   const targetWords = settings.vocab?.enabled && !mode.drill ? nextVocabBatch(learnt ? 8 : 12).filter((w) => !todaySet.has(w.de)) : [];
   const startedAt = performance.now();
   let voiced = false;
-  const systemInstruction = turnSystemPrompt(settings.request, targetWords, learnt, message.trim(), recurringMistakes(settings.request.language), today, mode.topics ? topicHints(history, settings.topic ?? "") : null);
+  const hints = mode.topics ? topicHints(history, settings.topic ?? "") : mode.subjects ? subjectHints(settings.subjects ?? []) : null;
+  const systemInstruction = turnSystemPrompt(settings.request, targetWords, learnt, message.trim(), recurringMistakes(settings.request.language), today, hints);
   // A drill is short, plain and only needs the last few turns: less to read and write, so
   // replies come sooner, and a low temperature keeps its questions sensible.
   const contents = historyToContents(mode.drill ? history.slice(-DRILL_HISTORY) : history, userText);
@@ -2016,9 +2027,10 @@ const CALL_KEY = "call_snapshot";
 const CALL_MAX_AGE = 3 * 60 * 60 * 1000; // an older call is not resumed
 let callLog = []; // [{ you: text } | { reply, reply_translation, mood }] as shown
 
-// ---------- topic chats ----------
-// Every "Discuss a topic" call is also kept as a chat (a topic and what was said), so it can
-// be read or carried on later, and a new chat picks a topic that no saved chat has had.
+// ---------- saved chats ----------
+// Every "Discuss a topic", free chat and interview call is also kept as a chat (what was
+// said, and its topic or the subjects it covered), so it can be read or carried on later, and
+// a new chat picks a topic, or brings up subjects, that no earlier chat has had.
 // The words come from the speaking schedule as in any call: when a chat is reopened on a
 // later day, it gets a fresh batch of the words that are due.
 const CHATS_KEY = "topic_chats";
@@ -2028,12 +2040,34 @@ let chatStarted = 0;
 let restoringCall = false; // while a saved call is put back, saving is paused
 
 const TOPICS_KEY = "used_topics"; // every topic discussed, newest first, deleted chats' too
+const SUBJECTS_KEY = "used_subjects"; // every subject of a free chat or interview, newest first
+const MAX_SUBJECT_HINTS = 80; // the most recent ones the partner is told to leave alone
 const topicChats = () => store.get(CHATS_KEY, []);
-// Topics of the saved chats, newest first, then every other topic discussed and the last one used.
-const recentTopics = () => [...new Set([...topicChats().map((c) => c.topic), ...store.get(TOPICS_KEY, []), store.get("last_topic", "")])].filter(Boolean);
+// Topics of the saved topic chats, newest first, then every other topic discussed and the last one used.
+const recentTopics = () => [...new Set([...topicChats().map((c) => c.settings?.topic), ...store.get(TOPICS_KEY, []), store.get("last_topic", "")])].filter(Boolean);
 
 function rememberTopic(topic) {
   store.set(TOPICS_KEY, [topic, ...store.get(TOPICS_KEY, []).filter((t) => t !== topic)].slice(0, 200));
+}
+
+// A subject the partner's latest question is about, added to this chat's (in order).
+function noteSubject(subject) {
+  const subjects = (state.settings.subjects ??= []);
+  if (subject && !subjects.includes(subject)) subjects.push(subject);
+}
+
+// The free chat's or interview's subjects: earlier chats' to leave alone, and this chat's own.
+function subjectHints(current) {
+  const covered = store.get(SUBJECTS_KEY, []).filter((s) => !current.includes(s)).slice(0, MAX_SUBJECT_HINTS);
+  return { covered, current };
+}
+
+// A saved chat's title: its topic, or the kind of chat and its first subjects.
+function chatTitle(settings) {
+  if (settings.topic) return settings.topic;
+  const kind = settings.request.mode === "interview" ? "Interview" : "Free chat";
+  const subjects = settings.subjects ?? [];
+  return subjects.length ? `${kind}: ${subjects.slice(0, 3).join(", ")}` : kind;
 }
 
 // ---------- topic chats in the Vocab Trainer ----------
@@ -2049,7 +2083,13 @@ let chatUploadTimer = null;
 function uploadChat(chat, { keepalive = false } = {}) {
   const link = trainerLink();
   if (!link) return;
-  const body = JSON.stringify({ topic: chat.topic, at: chat.at, data: JSON.stringify(chat) });
+  const body = JSON.stringify({
+    topic: chat.topic,
+    at: chat.at,
+    mode: chat.settings?.request?.mode ?? "topic",
+    subjects: chat.settings?.subjects ?? [],
+    data: JSON.stringify(chat),
+  });
   fetch(`${link.api}/api/talkloop/chats/${encodeURIComponent(chat.id)}`, {
     method: "POST",
     headers: { Authorization: `Bearer ${link.token}`, "Content-Type": "application/json" },
@@ -2092,7 +2132,7 @@ async function syncChats() {
   if (!link) return;
   const res = await fetch(`${link.api}/api/talkloop/chats`, { headers: { Authorization: `Bearer ${link.token}` } });
   if (!res.ok) return;
-  const { chats: remote = [], topics = [] } = await res.json();
+  const { chats: remote = [], topics = [], subjects = [] } = await res.json();
   const deleted = store.get(CHATS_DELETED_KEY, []);
   const local = topicChats();
   const byId = new Map(local.map((c) => [c.id, c]));
@@ -2108,6 +2148,7 @@ async function syncChats() {
   deleted.forEach(deleteChatInTrainer);
   store.set(CHATS_KEY, [...byId.values()].sort((a, b) => b.at - a.at).slice(0, MAX_CHATS));
   store.set(TOPICS_KEY, [...new Set([...store.get(TOPICS_KEY, []), ...topics])].slice(0, 200));
+  store.set(SUBJECTS_KEY, [...new Set([...store.get(SUBJECTS_KEY, []), ...subjects])].slice(0, 300));
   renderChats();
 }
 
@@ -2125,9 +2166,12 @@ function saveCall() {
     today: todayWords ? { ...todayWords, waiting: todayWords.waiting.slice(0, 50) } : null,
   };
   store.set(CALL_KEY, snap);
-  if (chatId && state.settings.topic && callLog.length) {
+  if (chatId && callLog.length) {
     const chats = topicChats().filter((c) => c.id !== chatId);
-    chats.unshift({ ...snap, id: chatId, topic: state.settings.topic });
+    chats.unshift({ ...snap, id: chatId, topic: chatTitle(state.settings) });
+    // This chat's subjects count as talked about from now on (the trainer keeps them too).
+    const current = state.settings.subjects ?? [];
+    if (current.length) store.set(SUBJECTS_KEY, [...new Set([...[...current].reverse(), ...store.get(SUBJECTS_KEY, [])])].slice(0, 300));
     store.set(CHATS_KEY, chats.slice(0, MAX_CHATS));
     queueChatUpload(chatId);
   }
@@ -2200,7 +2244,7 @@ function deleteChat(id) {
 function renderChats() {
   const chats = topicChats();
   $("chats").hidden = chats.length === 0;
-  $("chats-summary").textContent = `Topic chats (${chats.length})`;
+  $("chats-summary").textContent = `Chat history (${chats.length})`;
   const list = $("chat-list");
   list.replaceChildren();
   for (const chat of chats) {
@@ -2680,6 +2724,7 @@ async function sendTurn(message) {
     if (message) await addGrammarCheck(turn, message, check);
     state.history.push({ role: "user", content: message || userText });
     state.history.push({ role: "assistant", content: turn.reply });
+    if (MODES[state.settings.request.mode]?.subjects) noteSubject(turn.subject);
 
     state.rapport = Math.max(0, state.rapport + Math.max(-2, Math.min(2, turn.rapport_delta)));
     renderStats();
@@ -3118,6 +3163,10 @@ $("start").addEventListener("click", async () => {
     state.settings.topic = pickTopic(state.settings.level, recentTopics());
     store.set("last_topic", state.settings.topic);
     rememberTopic(state.settings.topic);
+  }
+  // Free chats and interviews are kept too, with the subjects they cover.
+  if (MODES[mode]?.subjects) state.settings.subjects = [];
+  if (MODES[mode]?.topics || MODES[mode]?.subjects) {
     chatId = String(Date.now()); // a new chat; it is saved with the first message
     chatStarted = Date.now();
   }
@@ -3443,7 +3492,7 @@ $("end").addEventListener("click", () => {
 if ("speechSynthesis" in window) speechSynthesis.onvoiceschanged = () => {};
 
 // With ?debug: which build this phone runs (a cached old one would explain old behaviour).
-debugLog(`Talkloop v56 · speech recognition ${Recognition ? "yes" : "no"}`);
+debugLog(`Talkloop v58 · speech recognition ${Recognition ? "yes" : "no"}`);
 if (!trainerSession()) goToLogin();
 refreshKeyGate();
 renderStats();
