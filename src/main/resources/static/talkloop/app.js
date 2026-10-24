@@ -1423,6 +1423,89 @@ function debugLog(text) {
   box.textContent = lines.slice(-20).join("\n");
 }
 
+// ---------- Whisper (Groq): what was said, written down from a recording ----------
+// The browser's recognizer is made for native speakers and often mishears or drops a learner's
+// words, so the mic is also recorded and, once listening ends, Groq's Whisper writes it down.
+// The browser's text is still shown live while speaking, and used whenever Whisper can't help
+// (no Groq key, no recording, an error, too slow, or one of Whisper's phantom phrases).
+const WHISPER_URL = "https://api.groq.com/openai/v1/audio/transcriptions";
+const WHISPER_MODEL = "whisper-large-v3";
+const WHISPER_TIMEOUT_MS = 8000;
+// Whisper "hears" these (subtitle credits from its training data) in silence or noise.
+const WHISPER_PHANTOMS = /amara\.org|untertitel|fürs zuschauen|abonnier|copyright/i;
+
+function startRecording() {
+  if (!getKey("groq") || !window.MediaRecorder || !navigator.mediaDevices?.getUserMedia) return null;
+  const rec = { chunks: [], recorder: null, stream: null, stopped: false };
+  rec.ready = navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } })
+    .then((stream) => {
+      rec.stream = stream;
+      if (rec.stopped) return; // listening already ended
+      rec.recorder = new MediaRecorder(stream);
+      rec.recorder.ondataavailable = (e) => { if (e.data.size) rec.chunks.push(e.data); };
+      rec.recorder.start();
+      debugLog("recording");
+    })
+    .catch((error) => debugLog(`no recording: ${error.message}`));
+  return rec;
+}
+
+// Stops the recording and lets the mic go; resolves with the audio, or null.
+async function finishRecording(rec) {
+  if (!rec) return null;
+  rec.stopped = true;
+  await rec.ready;
+  const { recorder, stream } = rec;
+  if (recorder && recorder.state !== "inactive") {
+    await new Promise((resolve) => { recorder.onstop = resolve; recorder.stop(); });
+  }
+  stream?.getTracks().forEach((t) => t.stop());
+  return rec.chunks.length ? new Blob(rec.chunks, { type: recorder?.mimeType || rec.chunks[0].type }) : null;
+}
+
+async function whisperTranscribe(audio) {
+  const type = audio.type || "audio/webm";
+  const ext = type.includes("mp4") ? "mp4" : type.includes("ogg") ? "ogg" : type.includes("wav") ? "wav" : "webm";
+  // The partner's last line as context: Whisper then spells the words of the topic right.
+  const lastReply = [...state.history].reverse().find((m) => m.role === "assistant")?.content ?? "";
+  // Like the chat: when a key reaches its limit, the backup keys take over.
+  for (const key of ["groq", ...GROQ_BACKUPS].map(getKey).filter(Boolean)) {
+    const form = new FormData();
+    form.append("file", audio, `speech.${ext}`);
+    form.append("model", WHISPER_MODEL);
+    form.append("language", state.settings.locale.split("-")[0]);
+    form.append("temperature", "0");
+    form.append("response_format", "json");
+    if (lastReply) form.append("prompt", lastReply.slice(-400));
+    const res = await fetch(WHISPER_URL, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${key}` },
+      body: form,
+      signal: AbortSignal.timeout?.(WHISPER_TIMEOUT_MS),
+    });
+    if (res.status === 429) continue;
+    if (!res.ok) throw new Error(`Whisper answered ${res.status}`);
+    return ((await res.json()).text ?? "").trim();
+  }
+  throw new Error("every Groq key is at its limit");
+}
+
+// Whisper's text when it comes back in time and makes sense; otherwise what the browser heard.
+async function transcribe(recording, browserText) {
+  setStatus("Writing down what you said…");
+  try {
+    const audio = await finishRecording(recording);
+    if (!audio) return browserText;
+    const text = await whisperTranscribe(audio);
+    if (!text || (WHISPER_PHANTOMS.test(text) && !WHISPER_PHANTOMS.test(browserText))) return browserText;
+    debugLog(`whisper: "${text.slice(0, 40)}"`);
+    return text;
+  } catch (error) {
+    debugLog(`whisper failed (${error.message}): browser text used`);
+    return browserText;
+  }
+}
+
 // What the mic has heard so far, with Edit and Delete while it can still be changed.
 function showHeard(text) {
   $("live").textContent = text;
@@ -1475,9 +1558,20 @@ function startListening() {
     recognizer = null;
     setMic(false);
     showHeard("");
-    afterListening(heard.length > finalText.trim().length ? heard : finalText.trim());
+    const browserText = heard.length > finalText.trim().length ? heard : finalText.trim();
+    // Dropped, deleted or nothing heard: no need to ask Whisper.
+    if (!recording || dropNextResult || redoNextResult || !browserText) {
+      finishRecording(recording);
+      afterListening(browserText);
+      return;
+    }
+    const log = callLog; // replaced when the call ends or another chat opens
+    transcribe(recording, browserText).then((text) => {
+      if (callLog === log) afterListening(text);
+    });
   };
   if (DEBUG) for (const type of ["audiostart", "soundstart", "speechstart", "audioend"]) recognizer.addEventListener(type, () => debugLog(`mic ${type}`));
+  const recording = startRecording();
   recognizer.start();
   debugLog("mic start");
   setMic(true);
@@ -3443,7 +3537,7 @@ $("end").addEventListener("click", () => {
 if ("speechSynthesis" in window) speechSynthesis.onvoiceschanged = () => {};
 
 // With ?debug: which build this phone runs (a cached old one would explain old behaviour).
-debugLog(`Talkloop v56 · speech recognition ${Recognition ? "yes" : "no"}`);
+debugLog(`Talkloop v57 · speech recognition ${Recognition ? "yes" : "no"}`);
 if (!trainerSession()) goToLogin();
 refreshKeyGate();
 renderStats();
