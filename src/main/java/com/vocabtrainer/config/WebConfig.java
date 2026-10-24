@@ -57,12 +57,14 @@ public class WebConfig implements WebMvcConfigurer {
     public void addInterceptors(InterceptorRegistry registry) {
         // Public: the vocabulary (same data as the repo), logging in, and creating
         // users (guarded by the admin key instead). Talkloop's calls (learnt words,
-        // mistake log) need a Talkloop link instead. Everything else needs a session.
+        // mistake log, topic chats) need a Talkloop link instead. Everything else needs a session.
         registry.addInterceptor(sessionInterceptor)
                 .addPathPatterns("/api/**")
                 .excludePathPatterns("/api/vocab", "/api/auth/login", "/api/users", "/api/talkloop/words",
-                        "/api/talkloop/mistakes", "/api/talkloop/spoken", "/api/talkloop/cloudflare");
+                        "/api/talkloop/mistakes", "/api/talkloop/spoken", "/api/talkloop/cloudflare",
+                        "/api/talkloop/chats", "/api/talkloop/chats/*");
         registry.addInterceptor(talkloopLinkInterceptor)
-                .addPathPatterns("/api/talkloop/words", "/api/talkloop/mistakes", "/api/talkloop/spoken", "/api/talkloop/cloudflare");
+                .addPathPatterns("/api/talkloop/words", "/api/talkloop/mistakes", "/api/talkloop/spoken", "/api/talkloop/cloudflare",
+                        "/api/talkloop/chats", "/api/talkloop/chats/*");
     }
 }

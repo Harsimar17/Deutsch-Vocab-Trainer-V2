@@ -312,6 +312,49 @@ public class ProgressRepository {
         commit(ctx.token(), List.of(update(progressName(ctx) + "/talkloop/spoken", data, null)));
     }
 
+    // Talkloop's topic chats: one document each in scores/{uid}/talkloopChats, as a
+    // long chat can be large, and the topics ever discussed in talkloop/topics.
+
+    public List<Map<String, Object>> findTalkloopChats(Ctx ctx) {
+        Map<String, Object> page = call(() -> http.get()
+                .uri("/" + progressName(ctx) + "/talkloopChats?pageSize=300&key={key}", apiKey)
+                .headers(h -> h.setBearerAuth(ctx.token()))
+                .retrieve()
+                .body(MAP));
+        List<Map<String, Object>> out = new ArrayList<>();
+        if (page != null && page.get("documents") instanceof List<?> docs) {
+            for (Object d : docs) {
+                @SuppressWarnings("unchecked")
+                Map<String, Object> doc = (Map<String, Object>) d;
+                Map<String, Object> m = fieldsOf(doc);
+                m.put("id", lastSegment((String) doc.get("name")));
+                out.add(m);
+            }
+        }
+        return out;
+    }
+
+    /** The id was checked by the caller (letters, digits, "-" and "_" only). */
+    public void saveTalkloopChat(Ctx ctx, String id, Map<String, Object> data) {
+        commit(ctx.token(), List.of(update(progressName(ctx) + "/talkloopChats/" + id, data, null)));
+    }
+
+    public void deleteTalkloopChats(Ctx ctx, List<String> ids) {
+        if (!ids.isEmpty()) {
+            commit(ctx.token(), ids.stream()
+                    .<Map<String, Object>>map(id -> Map.of("delete", progressName(ctx) + "/talkloopChats/" + id)).toList());
+        }
+    }
+
+    public Map<String, Object> findTalkloopTopics(Ctx ctx) {
+        Map<String, Object> doc = getDocument(ctx.token(), progressName(ctx) + "/talkloop/topics");
+        return doc == null ? null : fieldsOf(doc);
+    }
+
+    public void saveTalkloopTopics(Ctx ctx, Map<String, Object> data) {
+        commit(ctx.token(), List.of(update(progressName(ctx) + "/talkloop/topics", data, null)));
+    }
+
     // ---- REST plumbing ----
     // Document names go into the URL literally: as URI *variables* their "/"
     // would be percent-encoded and Firestore would see a different path.

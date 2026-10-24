@@ -30,6 +30,8 @@ public class InMemoryProgressRepository extends ProgressRepository {
     private int talkloopMistakeWrites;
     private final Map<String, Map<String, Object>> talkloopSpoken = new ConcurrentHashMap<>();
     private int talkloopSpokenWrites;
+    private final Map<String, Map<String, Map<String, Object>>> talkloopChats = new ConcurrentHashMap<>();
+    private final Map<String, Map<String, Object>> talkloopTopics = new ConcurrentHashMap<>();
 
     public InMemoryProgressRepository() {
         super(RestClient.create(), new AppProperties(new AppProperties.Firebase("fake", "fake-key", "http://unused"),
@@ -140,6 +142,43 @@ public class InMemoryProgressRepository extends ProgressRepository {
         rules(ctx);
         talkloopSpoken.put(ctx.uid(), copy(data));
         talkloopSpokenWrites++;
+    }
+
+    @Override
+    public synchronized List<Map<String, Object>> findTalkloopChats(Ctx ctx) {
+        rules(ctx);
+        List<Map<String, Object>> out = new ArrayList<>();
+        talkloopChats.getOrDefault(ctx.uid(), Map.of()).forEach((id, data) -> {
+            Map<String, Object> m = copy(data);
+            m.put("id", id);
+            out.add(m);
+        });
+        return out;
+    }
+
+    @Override
+    public synchronized void saveTalkloopChat(Ctx ctx, String id, Map<String, Object> data) {
+        rules(ctx);
+        talkloopChats.computeIfAbsent(ctx.uid(), k -> new LinkedHashMap<>()).put(id, copy(data));
+    }
+
+    @Override
+    public synchronized void deleteTalkloopChats(Ctx ctx, List<String> ids) {
+        rules(ctx);
+        ids.forEach(talkloopChats.getOrDefault(ctx.uid(), new LinkedHashMap<>())::remove);
+    }
+
+    @Override
+    public synchronized Map<String, Object> findTalkloopTopics(Ctx ctx) {
+        rules(ctx);
+        Map<String, Object> m = talkloopTopics.get(ctx.uid());
+        return m == null ? null : copy(m);
+    }
+
+    @Override
+    public synchronized void saveTalkloopTopics(Ctx ctx, Map<String, Object> data) {
+        rules(ctx);
+        talkloopTopics.put(ctx.uid(), copy(data));
     }
 
     /** How many times the speaking schedule was written (tests: a pull alone must not write). */

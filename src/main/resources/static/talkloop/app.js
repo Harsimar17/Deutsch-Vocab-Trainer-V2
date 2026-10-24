@@ -2022,9 +2022,89 @@ let chatId = null;
 let chatStarted = 0;
 let restoringCall = false; // while a saved call is put back, saving is paused
 
+const TOPICS_KEY = "used_topics"; // every topic discussed, newest first, deleted chats' too
 const topicChats = () => store.get(CHATS_KEY, []);
-// Topics of the saved chats, newest first, then the last one used.
-const recentTopics = () => [...topicChats().map((c) => c.topic), store.get("last_topic", "")].filter(Boolean);
+// Topics of the saved chats, newest first, then every other topic discussed and the last one used.
+const recentTopics = () => [...new Set([...topicChats().map((c) => c.topic), ...store.get(TOPICS_KEY, []), store.get("last_topic", "")])].filter(Boolean);
+
+function rememberTopic(topic) {
+  store.set(TOPICS_KEY, [topic, ...store.get(TOPICS_KEY, []).filter((t) => t !== topic)].slice(0, 200));
+}
+
+// ---------- topic chats in the Vocab Trainer ----------
+// The chats and the topics discussed are kept in the trainer's database too, so they are
+// still there after the browser's storage is cleared, and on other devices. A chat goes up
+// a few seconds after it last changed (or when the page is left); on load the trainer's
+// chats are merged with this device's, the newer copy of each winning.
+const CHATS_DELETED_KEY = "topic_chats_deleted"; // ids deleted here, until the trainer has deleted them too
+const CHAT_UPLOAD_DELAY = 4000;
+const unsentChats = new Set();
+let chatUploadTimer = null;
+
+function uploadChat(chat, { keepalive = false } = {}) {
+  const link = trainerLink();
+  if (!link) return;
+  const body = JSON.stringify({ topic: chat.topic, at: chat.at, data: JSON.stringify(chat) });
+  fetch(`${link.api}/api/talkloop/chats/${encodeURIComponent(chat.id)}`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${link.token}`, "Content-Type": "application/json" },
+    body,
+    keepalive: keepalive && body.length < 60_000,
+  }).catch(() => {}); // offline: the next load sends it (it is newer than the trainer's copy)
+}
+
+function queueChatUpload(id) {
+  unsentChats.add(id);
+  clearTimeout(chatUploadTimer);
+  chatUploadTimer = setTimeout(flushChatUploads, CHAT_UPLOAD_DELAY);
+}
+
+function flushChatUploads({ keepalive = false } = {}) {
+  clearTimeout(chatUploadTimer);
+  const chats = topicChats();
+  for (const id of unsentChats) {
+    const chat = chats.find((c) => c.id === id);
+    if (chat) uploadChat(chat, { keepalive });
+  }
+  unsentChats.clear();
+}
+
+function deleteChatInTrainer(id) {
+  const link = trainerLink();
+  if (!link) return;
+  fetch(`${link.api}/api/talkloop/chats/${encodeURIComponent(id)}`, {
+    method: "DELETE",
+    headers: { Authorization: `Bearer ${link.token}` },
+  })
+    .then((res) => {
+      if (res.ok) store.set(CHATS_DELETED_KEY, store.get(CHATS_DELETED_KEY, []).filter((d) => d !== id));
+    })
+    .catch(() => {});
+}
+
+async function syncChats() {
+  const link = trainerLink();
+  if (!link) return;
+  const res = await fetch(`${link.api}/api/talkloop/chats`, { headers: { Authorization: `Bearer ${link.token}` } });
+  if (!res.ok) return;
+  const { chats: remote = [], topics = [] } = await res.json();
+  const deleted = store.get(CHATS_DELETED_KEY, []);
+  const local = topicChats();
+  const byId = new Map(local.map((c) => [c.id, c]));
+  for (const r of remote) {
+    if (deleted.includes(r.id)) continue;
+    let chat;
+    try { chat = JSON.parse(r.data); } catch { continue; }
+    if (!byId.has(r.id) || r.at > byId.get(r.id).at) byId.set(r.id, { ...chat, id: r.id, topic: r.topic, at: r.at });
+  }
+  // What only this device has, or has newer (chats from before this sync existed too), goes up.
+  const remoteAt = new Map(remote.map((r) => [r.id, r.at]));
+  for (const chat of local) if (!(remoteAt.get(chat.id) >= chat.at)) uploadChat(chat);
+  deleted.forEach(deleteChatInTrainer);
+  store.set(CHATS_KEY, [...byId.values()].sort((a, b) => b.at - a.at).slice(0, MAX_CHATS));
+  store.set(TOPICS_KEY, [...new Set([...store.get(TOPICS_KEY, []), ...topics])].slice(0, 200));
+  renderChats();
+}
 
 function saveCall() {
   if (!state.settings || restoringCall) return;
@@ -2044,6 +2124,7 @@ function saveCall() {
     const chats = topicChats().filter((c) => c.id !== chatId);
     chats.unshift({ ...snap, id: chatId, topic: state.settings.topic });
     store.set(CHATS_KEY, chats.slice(0, MAX_CHATS));
+    queueChatUpload(chatId);
   }
 }
 
@@ -2104,6 +2185,9 @@ async function openChat(id) {
 
 function deleteChat(id) {
   store.set(CHATS_KEY, topicChats().filter((c) => c.id !== id));
+  unsentChats.delete(id);
+  store.set(CHATS_DELETED_KEY, [...store.get(CHATS_DELETED_KEY, []), id]);
+  deleteChatInTrainer(id);
   renderChats();
 }
 
@@ -2990,6 +3074,7 @@ $("start").addEventListener("click", async () => {
   if (MODES[mode]?.topics) {
     state.settings.topic = pickTopic(state.settings.level, recentTopics());
     store.set("last_topic", state.settings.topic);
+    rememberTopic(state.settings.topic);
     chatId = String(Date.now()); // a new chat; it is saved with the first message
     chatStarted = Date.now();
   }
@@ -3082,6 +3167,7 @@ $("trainer-form").addEventListener("submit", async (event) => {
     await refreshLearntWords();
     syncMistakes();
     syncSpoken();
+    syncChats().catch(() => {});
     renderMistakes();
   } catch (error) {
     renderTrainerLink(null, error.message === "Failed to fetch" ? "Couldn't reach the Vocab Trainer." : error.message);
@@ -3336,13 +3422,14 @@ $("end").addEventListener("click", () => {
   renderChats();
   syncMistakes(); // the call is over: send its mistakes
   syncSpoken();
+  flushChatUploads(); // and the chat, without waiting
 });
 
 // Voices load asynchronously in Chrome.
 if ("speechSynthesis" in window) speechSynthesis.onvoiceschanged = () => {};
 
 // With ?debug: which build this phone runs (a cached old one would explain old behaviour).
-debugLog(`Talkloop v53 · speech recognition ${Recognition ? "yes" : "no"}`);
+debugLog(`Talkloop v54 · speech recognition ${Recognition ? "yes" : "no"}`);
 refreshKeyGate();
 renderStats();
 renderBookmarks();
@@ -3365,11 +3452,13 @@ vocabMeta()
     refreshLearntWords();
     syncMistakes();
     syncSpoken();
+    syncChats().catch(() => {});
   });
 // Leaving the page (closing the tab, switching apps) sends what this device recorded.
 document.addEventListener("visibilitychange", () => {
   if (document.visibilityState === "hidden") {
     syncMistakes({ keepalive: true });
     syncSpoken({ keepalive: true });
+    flushChatUploads({ keepalive: true });
   }
 });
