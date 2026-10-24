@@ -506,6 +506,18 @@ class EndToEndTest {
         assertEquals("{\"log\":[1]}", chats.get(0).get("data"));
         assertEquals(List.of("Stadt oder Land?", "Homeoffice oder Büro?"), all.get("topics"));
 
+        // A free chat or interview adds its subjects, not its title: newest first, without repeats,
+        // one talked about again moved to the front.
+        ok(post("/api/talkloop/chats/250"), link, Map.of("topic", "Interview: work", "at", 2500, "data", "{}",
+                "mode", "interview", "subjects", List.of("Work", "weekend plans")));
+        ok(post("/api/talkloop/chats/260"), link, Map.of("topic", "Free chat: food", "at", 2600, "data", "{}",
+                "mode", "lead", "subjects", List.of("favourite food", "work")));
+        all = ok(get("/api/talkloop/chats"), link, null);
+        assertEquals(List.of("work", "favourite food", "weekend plans"), all.get("subjects"));
+        assertEquals(List.of("Stadt oder Land?", "Homeoffice oder Büro?"), all.get("topics"));
+        ok(delete("/api/talkloop/chats/250"), link, null);
+        ok(delete("/api/talkloop/chats/260"), link, null);
+
         // A deleted chat's topic still counts as discussed.
         ok(delete("/api/talkloop/chats/100"), link, null);
         all = ok(get("/api/talkloop/chats"), link, null);

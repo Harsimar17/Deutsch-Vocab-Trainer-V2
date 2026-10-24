@@ -39,6 +39,9 @@ public class TalkloopService {
     private static final int MAX_CHAT_BYTES = 900_000; // a Firestore document holds at most 1 MiB
     private static final int MAX_TOPIC = 200;
     private static final int MAX_TOPICS = 200;
+    private static final int MAX_SUBJECTS = 300;
+    private static final int MAX_SUBJECTS_PER_CHAT = 40;
+    private static final int MAX_SUBJECT = 60;
     private static final Pattern CHAT_ID = Pattern.compile("[A-Za-z0-9_-]{1,40}");
 
     private final JwtService jwt;
@@ -197,11 +200,12 @@ public class TalkloopService {
     }
 
     /**
-     * Talkloop's topic chats, newest first, and every topic ever discussed (newest
-     * first), so a new chat gets a topic the learner hasn't had, on any device and
-     * after the browser's storage is cleared. Each chat is {id, topic, at, data}: data
-     * is the chat as Talkloop keeps it (JSON text). Only the newest {@value #MAX_CHATS}
-     * chats are kept; older ones are deleted here.
+     * Talkloop's saved chats, newest first, every topic ever discussed in "Discuss a
+     * topic" and every subject ever talked about in the other saved chats (free chat,
+     * interview), newest first, so a new chat doesn't repeat them, on any device and
+     * after the browser's storage is cleared. Each chat is {id, topic, at, data}: topic
+     * is its title, data the chat as Talkloop keeps it (JSON text). Only the newest
+     * {@value #MAX_CHATS} chats are kept; older ones are deleted here.
      */
     @SuppressWarnings("unchecked")
     public Map<String, Object> chats(Ctx ctx) {
@@ -215,10 +219,15 @@ public class TalkloopService {
         Map<String, Object> v = new LinkedHashMap<>();
         v.put("chats", chats);
         v.put("topics", stored != null && stored.get("topics") instanceof List<?> l ? l : List.of());
+        v.put("subjects", stored != null && stored.get("subjects") instanceof List<?> l ? l : List.of());
         return v;
     }
 
-    /** Saves (creates or replaces) one chat, and adds its topic to the topics discussed. */
+    /**
+     * Saves (creates or replaces) one chat. A topic chat (mode "topic", or none) adds its
+     * topic to the topics discussed; any chat adds the subjects it sends (short phrases
+     * naming what was talked about) to the subjects talked about.
+     */
     @SuppressWarnings("unchecked")
     public Map<String, Object> saveChat(Ctx ctx, String id, Map<String, Object> body) {
         if (!CHAT_ID.matcher(id).matches()) {
@@ -232,6 +241,14 @@ public class TalkloopService {
         if (data.getBytes(StandardCharsets.UTF_8).length > MAX_CHAT_BYTES) {
             throw new ResponseStatusException(HttpStatus.PAYLOAD_TOO_LARGE, "chat too long to keep");
         }
+        boolean topicChat = !(body.get("mode") instanceof String mode) || mode.equals("topic");
+        List<String> sentSubjects = new ArrayList<>();
+        for (Object o : body.get("subjects") instanceof List<?> l ? l : List.of()) {
+            if (o instanceof String subject && !subject.isBlank() && sentSubjects.size() < MAX_SUBJECTS_PER_CHAT) {
+                String clean = subject.strip().toLowerCase();
+                sentSubjects.add(clean.length() > MAX_SUBJECT ? clean.substring(0, MAX_SUBJECT) : clean);
+            }
+        }
         synchronized (syncLocks[Math.floorMod(ctx.uid().hashCode(), syncLocks.length)]) {
             Map<String, Object> chat = new LinkedHashMap<>();
             chat.put("topic", topic);
@@ -240,9 +257,25 @@ public class TalkloopService {
             repo.saveTalkloopChat(ctx, id, chat);
             Map<String, Object> stored = repo.findTalkloopTopics(ctx);
             List<Object> topics = new ArrayList<>(stored != null && stored.get("topics") instanceof List<?> l ? l : List.of());
-            if (!topics.contains(topic)) { // a chat that goes on costs no extra write
+            List<Object> subjects = new ArrayList<>(stored != null && stored.get("subjects") instanceof List<?> l ? l : List.of());
+            boolean changed = false; // a chat that goes on with nothing new costs no extra write
+            if (topicChat && !topics.contains(topic)) {
                 topics.add(0, topic);
-                repo.saveTalkloopTopics(ctx, Map.of("topics", topics.subList(0, Math.min(MAX_TOPICS, topics.size()))));
+                changed = true;
+            }
+            // In the order talked about, each to the front: the chat's latest subject ends up
+            // first, and one talked about again is recent again.
+            for (String subject : sentSubjects) {
+                if (subjects.indexOf(subject) != 0) {
+                    subjects.remove(subject);
+                    subjects.add(0, subject);
+                    changed = true;
+                }
+            }
+            if (changed) {
+                repo.saveTalkloopTopics(ctx, Map.of(
+                        "topics", topics.subList(0, Math.min(MAX_TOPICS, topics.size())),
+                        "subjects", subjects.subList(0, Math.min(MAX_SUBJECTS, subjects.size()))));
             }
         }
         return Map.of("ok", true);
