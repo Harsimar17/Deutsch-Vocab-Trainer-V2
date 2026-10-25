@@ -916,7 +916,8 @@ function turnSystemPrompt({ language, nativeLanguage, level, scenario, mode, ten
     m.extra,
     ...(m.usesScene && persona.goal ? [`Scene goal: ${persona.goal}`] : []),
     "The learner's message comes from speech recognition: ignore missing punctuation and obvious transcription slips.",
-    `Write reply_translation and coach.tip in ${nativeLanguage}; everything else in ${language}.`,
+    // Said once, briefly: without it, models that get the schema only as text left suggestions empty.
+    `Write reply_translation and coach.tip in ${nativeLanguage}; everything else in ${language}. suggestions: 2-3 short answers the learner could give.`,
     learnerMessage
       ? `Fill coach first. It judges only the learner's last message: ${JSON.stringify(learnerMessage)}. coach.correction: only if it has a real grammar or word-choice mistake${tenseMistake}, the faulty sentence(s) rewritten correctly, no explanation; then coach.mistakes lists each kind it fixes (${PROMPT_MISTAKES}); otherwise leave both empty. coach.tip: one short sentence praising or explaining something literally in that message (never credit words or grammar it doesn't contain), or empty.`
       : "No learner message yet: leave coach.correction, coach.mistakes, coach.tip and coach.used_words empty.",
@@ -1021,7 +1022,11 @@ function normalizeTurn(raw) {
     mood: MOODS.includes(t.mood) ? t.mood : "neutral",
     reply: str(t.reply).trim(),
     reply_translation: str(t.reply_translation),
-    suggestions: list(t.suggestions).filter((s) => typeof s === "string"),
+    // Plain strings, or objects such as {"text": …} from models that wrap each one.
+    suggestions: list(t.suggestions)
+      .map((s) => (typeof s === "string" ? s : s && typeof s === "object" ? Object.values(s).find((v) => typeof v === "string") ?? "" : ""))
+      .map((s) => s.trim())
+      .filter(Boolean),
     rapport_delta: Number.isFinite(t.rapport_delta) ? t.rapport_delta : 0,
     conversation_finished: t.conversation_finished === true,
     next_word: str(t.next_word),
@@ -3505,7 +3510,7 @@ $("end").addEventListener("click", () => {
 if ("speechSynthesis" in window) speechSynthesis.onvoiceschanged = () => {};
 
 // With ?debug: which build this phone runs (a cached old one would explain old behaviour).
-debugLog(`Talkloop v59 · speech recognition ${Recognition ? "yes" : "no"}`);
+debugLog(`Talkloop v60 · speech recognition ${Recognition ? "yes" : "no"}`);
 if (!trainerSession()) goToLogin();
 refreshKeyGate();
 renderStats();
