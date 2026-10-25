@@ -1,6 +1,113 @@
 # Deutsch Vocab Trainer V2( Fully Vibe Coded App)
 # https://deutsch-vocab-trainer-v2-1.onrender.com/
 
+Learn German from A1 to B1: learn words, read short stories, and practise speaking
+with an AI partner. Free, in your browser, on a laptop or a phone.
+
+## Learn German with it (no tech knowledge needed)
+
+You don't need to install anything or know anything about programming. You need a
+browser, an account, and (for speaking practice) a free key, explained below.
+
+### What you get
+
+- **Wortschatz, the vocabulary trainer:** over 4,000 words from A1 to B1. The app
+  shows you each word again just before you would forget it (spaced repetition).
+- **Stories:** 123 short B1 stories in 16 phases. Tap any word to see what it means.
+  Each phase ends with a test (*Phasentest*).
+- **Talkloop, the speaking partner:** you talk German out loud, an AI answers with a
+  voice like in a phone call, corrects your mistakes and uses the words you learnt.
+
+### Step 1: Get an account
+
+Accounts are created by the app's owner. Ask for one by opening an issue on this
+GitHub page (*Issues* → *New issue*), and you'll get an email and a password to log in with.
+
+### Step 2: Open the app and log in
+
+1. Open **https://deutsch-vocab-trainer-v2-1.onrender.com/**
+   The app runs on a free server that sleeps when nobody uses it, so the first visit
+   of the day can take **up to a minute**. Just wait; after that it is fast.
+2. Log in with your email and password.
+3. Tip for your phone: save it to your home screen, so it opens like an app
+   (Safari on iPhone: Share → *Add to Home Screen*; Chrome on Android: ⋮ → *Add to Home screen*).
+
+You stay logged in as long as you use the app at least once a day.
+
+### Step 3: Learn words (the *Practice* tab)
+
+At the top you choose your levels (A1, A2, B1). The line under the title shows your
+streak 🔥 and how many words you did today.
+
+| Mode | What it does | Use it for |
+|---|---|---|
+| **Study** | New words, one at a time, with an example | learning new words |
+| **Write** | You type the German word | really remembering the spelling |
+| **Cards** | Flashcards: think of the answer, then flip | fast repetition |
+| **Quiz** | Choose the right meaning | a quick check |
+| **Articles** | *der, die* or *das*? | the article of each noun |
+| **Separable verbs** | *anrufen → ich rufe an* | verbs that split |
+| **Fill-in** | Put the missing word into a sentence | words in context |
+| **Patterns** | Useful sentence patterns | building sentences |
+| **Review** | The words you got wrong | fixing your mistakes |
+
+Start with **Study**, then **Write**. Do **Review** every day; it only takes a few minutes.
+
+### Step 4: Read stories (the *Stories* tab)
+
+The stories are in 16 phases, from everyday life to B1 exam topics. Read a story,
+tap the words you don't know, and mark it as read. When you have read all stories of
+a phase, do its **Phasentest**. After you pass it, short refreshers come back after
+1, 7, 30, 90 and 180 days, so you don't forget the words.
+
+Good order for speaking: **Phase 1** (everyday life) → **Phase 16** (connectors like
+*weil, obwohl, deshalb*) → **Phase 2** (work and studies) → **Phases 12 and 13** (verbs) →
+then the rest. If you have a B1 exam soon, do **Phases 5, 6 and 15** earlier.
+
+### Step 5: Speak with Talkloop
+
+1. In the trainer, tap the round letter at the top right (your account) → **practise in Talkloop**.
+   Talkloop uses your login and your learnt words on its own; there is nothing to connect.
+2. **The first time only:** Talkloop needs a free AI key.
+   - Go to **https://console.groq.com/keys**, sign up for free, and click **Create API Key**.
+   - Copy the key (it starts with `gsk_`), paste it into Talkloop under **Groq API key**, and click **Save**.
+   - The key stays in your browser only. It is free; if it ever reaches its daily limit,
+     just continue the next day (or add a second key as a backup).
+3. Choose **Practise: German**, **I speak:** your language, your **Level**, and a **Mode**:
+   - **Interview me:** the AI asks about your life. The easiest way to start talking.
+   - **Free chat:** the AI leads a relaxed conversation.
+   - **Discuss a topic:** you give your opinion and reasons. Good practice for B1.
+   - **Scene role-play:** real situations like the doctor, the train station or a café.
+   - **Sentence drill:** you make sentences with the words you learnt.
+4. Tap **Start** and allow the microphone. Then just talk; after a short pause your
+   answer is sent by itself.
+
+While you talk:
+- If you made a mistake, the correction appears with **Say it again**. Say the correct sentence out loud.
+- Stuck? Tap one of the **suggestions** above the text box.
+- Tap any word in the AI's answer to see what it means.
+- Don't know a word? Tap **🔍** next to *Send* and type it in English or German.
+- Say **"zwei Minuten"** to pause the call, and **"zurück"** to go on.
+- Your chats are saved under **Chat history**; you can open them again later, and the AI
+  doesn't repeat subjects you already talked about.
+
+Use **Chrome** on a laptop or Android phone, or **Safari** on an iPhone. If the microphone
+doesn't work, check that the browser is allowed to use it.
+
+### A good daily plan (20–30 minutes)
+
+1. **Review** in the trainer (5 min).
+2. **Study** and **Write** with new words, about 10 a day (10 min).
+3. One **story** every one or two days.
+4. **Talkloop** (10 min): *Interview me* or *Free chat*. Speak in full sentences and try
+   to give a reason (*…, weil …*).
+
+Every day for 20 minutes helps more than two hours once a week.
+
+---
+
+## For developers
+
 A German vocabulary trainer (A1–B1) with spaced repetition, quizzes, B1
 reading stories and end-of-phase tests — run entirely by a Spring Boot app. **All logic lives
 here**; the page (`src/main/resources/static/index.html`, served at `/`) only
