@@ -225,6 +225,26 @@ const TOPICS = {
   ],
 };
 
+// Role cards for "Rollenkarte": the learner plays someone else, so there is always something to
+// say and no "I don't know". A card is put together at random from these facts.
+const ROLE_CARD = {
+  names: ["Lukas", "Anna", "Jonas", "Lena", "Felix", "Mia", "David", "Sara", "Tim", "Julia"],
+  jobs: ["a cook in a restaurant", "a nurse in a hospital", "a bus driver", "a primary school teacher", "IT support at a bank", "a baker", "a hairdresser", "an architecture student", "a police officer", "a salesperson in a bike shop"],
+  cities: ["Hamburg", "Munich", "Berlin", "Cologne", "Leipzig", "Freiburg", "Dresden", "Bremen"],
+  homes: ["lives alone in a small flat", "lives in a shared flat with two friends", "lives with their partner and a cat", "still lives with their parents", "has a house with a garden and two children"],
+  hobbies: ["plays the guitar", "goes running every morning", "cooks for friends at weekends", "plays football in a club", "reads crime novels", "takes photos of the city", "goes hiking in the mountains", "plays video games", "is learning Spanish", "goes swimming twice a week"],
+  events: ["was on holiday in Italy last summer", "moved to a new flat last month", "had a big birthday party last weekend", "started a new job two weeks ago", "broke their arm skiing last winter", "won a cooking competition last year", "got a dog in the spring"],
+  plans: ["wants to visit Japan next year", "dreams of opening their own café", "is saving for a car", "wants to run a marathon", "plans to learn to sail", "wants to move to the countryside"],
+};
+function makeRoleCard() {
+  const pick = (list) => list[Math.floor(Math.random() * list.length)];
+  const c = ROLE_CARD;
+  const first = pick(c.hobbies);
+  const second = pick(c.hobbies.filter((h) => h !== first));
+  const age = 20 + Math.floor(Math.random() * 40);
+  return `${pick(c.names)}, ${age}, ${pick(c.jobs)} in ${pick(c.cities)}; ${pick(c.homes)}; ${first} and ${second}; ${pick(c.events)}; ${pick(c.plans)}`;
+}
+
 // "Discuss a topic" kept asking the same question (and drifted to other subjects) because the
 // AI had nothing but the chat to go by. So each turn it is told the topic again, shown the
 // questions it already asked, and given a new angle on the topic to ask about.
@@ -292,6 +312,23 @@ const MODES = {
     topics: true, // the app picks the topic (see pickTopic): left to itself the AI chose weather and picnics
     opener: (topic) => `(Today's topic: "${topic}". In one or two short sentences, name this topic and give your own opinion on it, then ask the learner what they think and why. Go straight to the topic: no weather, no greeting chat, no plans of your own.)`,
     extra: "You and the learner are discussing one topic, like two people with different opinions: the topic is named in the first message. Stay on it. Each turn: react to what the learner said, add a short opinion, reason or example of your own, then ask one easy question on this turn's angle that they can answer from their own life or taste; if they don't know, offer two options to pick from. Keep the opinion you gave in your first message: you may add to it or soften it, but never switch to the other side. Where the learner holds the other view, disagree politely, so they have to defend it. Don't change to small talk or another topic until this one is clearly used up (about eight exchanges); then say so in a few words and name a new topic the same way. Never end: always set conversation_finished to false.",
+  },
+  // Fluency without having to think up content: the app gives what to say, the learner says it.
+  interpret: {
+    label: "Dolmetscher — say it in German",
+    usesScene: false,
+    endable: false,
+    interpreter: true, // the sentence to say comes in turn.situation and shows above the chips
+    opener: "(Start the interpreter drill: say in one short sentence that you will give the learner everyday sentences to say, then put the first one in situation.)",
+    extra: "This is an interpreter drill: each turn you give one everyday sentence for the learner to say, and check their version. Keep your own reply very short, so they do the talking. Never end: always set conversation_finished to false.",
+  },
+  rolecard: {
+    label: "Rollenkarte — play a character",
+    usesScene: false,
+    endable: false,
+    roleCard: true, // the card is made when the call starts and shown in the header
+    opener: "(The learner plays the character on their role card. Greet them warmly and ask their name.)",
+    extra: "Interview the learner, who plays the character on their role card. Ask one question at a time about one detail of the card, in a natural order, react briefly, and ask small follow-ups; they may invent extra details that fit the card. If an answer contradicts the card, point it out kindly. Never end: always set conversation_finished to false.",
   },
   // Sentence making with the learner's own words: one word per turn, a short situation,
   // one sentence from the learner, a quick check, the next word (see the speaking schedule).
@@ -980,6 +1017,12 @@ function turnSystemPrompt({ language, nativeLanguage, level, scenario, mode, ten
   if (m.topics && hints) {
     lines.push(`Stay on the topic "${hints.topic}": every question is about it itself, never about something the learner only mentioned in passing, and never about another subject.${hints.asked.length ? ` You have already asked: ${hints.asked.map((q) => JSON.stringify(q)).join(" ")}. Never ask any of these, or a question that starts or means the same, again.` : ""}${hints.angle ? ` This turn, ask about ${hints.angle}.` : ""}`);
   }
+  if (m.roleCard && hints?.card) lines.push(`The learner's role card (they play this person): ${hints.card}.`);
+  if (m.interpreter) {
+    const given = hints?.given?.length ? ` Already given, never again: ${hints.given.map((g) => JSON.stringify(g)).join(" ")}.` : "";
+    const judge = hints?.target ? ` They were asked to say: ${JSON.stringify(hints.target)}; coach judges whether their message says that correctly in ${language}, meaning included.` : "";
+    lines.push(`situation: the next sentence for the learner to say in ${language}, written in ${nativeLanguage}: short and everyday, at their level, a new situation or pattern each time (shopping, work, friends, travel, home, plans, problems).${given}${judge} reply: one short ${language} reaction to their try; never say the ${language} version of the new sentence.`);
+  }
   if (m.subjects && hints) {
     const quote = (list) => list.map((s) => JSON.stringify(s)).join(", ");
     lines.push(`subject: what the question in your reply is about, in two to four English words (e.g. "weekend plans"); keep it the same while you stay on it.${hints.covered.length ? ` Talked about in earlier chats, so never bring these up yourself (follow the learner if they do): ${quote(hints.covered)}.` : ""}${hints.current.length ? ` Already talked about in this chat: ${quote(hints.current)}; when the current one runs dry, move on to a new subject, not back to one of these.` : ""}`);
@@ -1282,7 +1325,11 @@ async function chatTurn(settings, history, message) {
   const targetWords = settings.vocab?.enabled && !mode.drill ? nextVocabBatch(learnt ? 8 : 12).filter((w) => !todaySet.has(w.de)) : [];
   const startedAt = performance.now();
   let voiced = false;
-  const hints = mode.topics ? topicHints(history, settings.topic ?? "") : mode.subjects ? subjectHints(settings.subjects ?? []) : null;
+  const hints = mode.topics ? topicHints(history, settings.topic ?? "")
+    : mode.subjects ? subjectHints(settings.subjects ?? [])
+    : mode.roleCard ? { card: settings.roleCard ?? "" }
+    : mode.interpreter ? { target: settings.sayThis ?? "", given: (settings.sayThisDone ?? []).slice(-8) }
+    : null;
   const systemInstruction = turnSystemPrompt(settings.request, targetWords, learnt, message.trim(), recurringMistakes(settings.request.language), today, hints);
   // A drill is short, plain and only needs the last few turns: less to read and write, so
   // replies come sooner, and a low temperature keeps its questions sensible.
@@ -1331,8 +1378,8 @@ async function chatTurn(settings, history, message) {
     debugLog(`answer after ${((performance.now() - startedAt) / 1000).toFixed(1)}s`);
   }
   turn.focusWords = targetWords;
-  // Suggested answers would give the drill's word away.
-  if (mode.drill) turn.suggestions = [];
+  // Suggested answers would give the drill's word, or the interpreter's sentence, away.
+  if (mode.drill || mode.interpreter) turn.suggestions = [];
   // In open modes the conversation never ends on its own.
   if (!mode.endable) turn.conversation_finished = false;
   return { turn, userText };
@@ -2641,10 +2688,13 @@ function enterCall() {
     ? `${$("scenario").selectedOptions[0].textContent.split(" — ")[0]} · ${request.language}`
     : `${mode.label.split(" — ")[0]} · ${request.language}`) + (tense ? ` · ${tense.short}` : "");
   // The topic being discussed, under the name (also after a reload: it is part of the saved call).
+  // A role card is shown the same way, in full from the start (the learner needs all of it).
   const topic = state.settings.topic ?? "";
-  $("call-topic").textContent = topic ? `Topic: ${topic}` : "";
-  $("call-topic").hidden = !topic;
-  $("call-topic").classList.remove("expanded"); // on a phone it is one line; a tap shows all of it
+  const card = state.settings.roleCard ?? "";
+  $("call-topic").textContent = topic ? `Topic: ${topic}` : card ? `You are: ${card}` : "";
+  $("call-topic").hidden = !topic && !card;
+  $("call-topic").classList.toggle("expanded", Boolean(card)); // on a phone it is one line; a tap shows all of it
+  renderSayThis();
   lastVoiceNote = "";
   document.body.classList.add("in-call");
   $("conversation").hidden = false;
@@ -2744,6 +2794,11 @@ async function sendTurn(message) {
     state.history.push({ role: "user", content: message || userText });
     state.history.push({ role: "assistant", content: turn.reply });
     if (MODES[state.settings.request.mode]?.subjects) noteSubject(turn.subject);
+    // The interpreter's next sentence: kept with the call (it survives a reload) and shown with the reply.
+    if (MODES[state.settings.request.mode]?.interpreter && turn.situation?.trim()) {
+      if (state.settings.sayThis) (state.settings.sayThisDone ??= []).push(state.settings.sayThis);
+      state.settings.sayThis = turn.situation.trim().slice(0, 200);
+    }
 
     state.rapport = Math.max(0, state.rapport + Math.max(-2, Math.min(2, turn.rapport_delta)));
     renderStats();
@@ -2785,9 +2840,22 @@ async function sendTurn(message) {
   }
 }
 
+// The interpreter drill's sentence to say, above the suggestions (hidden in other modes).
+function renderSayThis() {
+  const text = MODES[state.settings?.request.mode]?.interpreter ? state.settings.sayThis ?? "" : "";
+  const label = document.createElement("span");
+  label.className = "muted";
+  label.textContent = `Say it in ${state.settings?.request.language ?? "German"}: `;
+  const sentence = document.createElement("strong");
+  sentence.textContent = text;
+  $("say-this").replaceChildren(label, sentence);
+  $("say-this").hidden = !text;
+}
+
 // The character's reply, its suggestions and focus words, and the end of a finished scene.
 function presentReply(turn) {
   addCharacterMessage(turn);
+  renderSayThis();
   renderSuggestions(turn.suggestions);
   renderFocusWords(turn.focusWords);
   if (turn.conversation_finished) {
@@ -3184,6 +3252,7 @@ $("start").addEventListener("click", async () => {
     store.set("last_topic", state.settings.topic);
     rememberTopic(state.settings.topic);
   }
+  if (MODES[mode]?.roleCard) state.settings.roleCard = makeRoleCard();
   // Free chats and interviews are kept too, with the subjects they cover.
   if (MODES[mode]?.subjects) state.settings.subjects = [];
   if (MODES[mode]?.topics || MODES[mode]?.subjects) {
@@ -3497,6 +3566,7 @@ $("end").addEventListener("click", () => {
   todayWords = null;
   callLog = [];
   chatId = null; // the chat stays saved in the list
+  $("say-this").hidden = true;
   store.set(CALL_KEY, null); // ended on purpose: nothing to resume
   renderFocusWords([]);
   setBusy(false);
@@ -3512,7 +3582,7 @@ $("end").addEventListener("click", () => {
 if ("speechSynthesis" in window) speechSynthesis.onvoiceschanged = () => {};
 
 // With ?debug: which build this phone runs (a cached old one would explain old behaviour).
-debugLog(`Talkloop v61 · speech recognition ${Recognition ? "yes" : "no"}`);
+debugLog(`Talkloop v62 · speech recognition ${Recognition ? "yes" : "no"}`);
 if (!trainerSession()) goToLogin();
 refreshKeyGate();
 renderStats();
