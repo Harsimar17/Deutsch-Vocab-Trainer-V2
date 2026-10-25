@@ -232,8 +232,10 @@ const TOPIC_ANGLES = [
   "the learner's own experience with it",
   "one concrete advantage, with an example",
   "one concrete disadvantage or risk",
-  "how it is different in another country or was different years ago",
-  "what someone with the opposite view would say, and whether the learner agrees",
+  // Only angles anyone can answer from their own life: "another country or years ago" and
+  // "the opposite view" asked for things learners often don't know.
+  "which option the learner would choose for themselves, and why",
+  "whether the learner agrees with your opinion, and why",
   "what the learner would do or advise a friend in a specific situation",
   "how it affects the learner's daily life or the people around them",
   "what the learner would change about it if they could",
@@ -289,7 +291,7 @@ const MODES = {
     endable: false,
     topics: true, // the app picks the topic (see pickTopic): left to itself the AI chose weather and picnics
     opener: (topic) => `(Today's topic: "${topic}". In one or two short sentences, name this topic and give your own opinion on it, then ask the learner what they think and why. Go straight to the topic: no weather, no greeting chat, no plans of your own.)`,
-    extra: "You and the learner are discussing one topic, like two people with different opinions: the topic is named in the first message. Stay on it. Each turn: react to what the learner said, add a short opinion, reason or example of your own, then ask one question that makes them give a reason, an example or a comparison, about the angle you are given for this turn. Keep the opinion you gave in your first message: you may add to it or soften it, but never switch to the other side. Where the learner holds the other view, disagree politely, so they have to defend it. Don't change to small talk or another topic until this one is clearly used up (about eight exchanges); then say so in a few words and name a new topic the same way. Never end: always set conversation_finished to false.",
+    extra: "You and the learner are discussing one topic, like two people with different opinions: the topic is named in the first message. Stay on it. Each turn: react to what the learner said, add a short opinion, reason or example of your own, then ask one easy question on this turn's angle that they can answer from their own life or taste; if they don't know, offer two options to pick from. Keep the opinion you gave in your first message: you may add to it or soften it, but never switch to the other side. Where the learner holds the other view, disagree politely, so they have to defend it. Don't change to small talk or another topic until this one is clearly used up (about eight exchanges); then say so in a few words and name a new topic the same way. Never end: always set conversation_finished to false.",
   },
   // Sentence making with the learner's own words: one word per turn, a short situation,
   // one sentence from the learner, a quick check, the next word (see the speaking schedule).
@@ -3510,7 +3512,7 @@ $("end").addEventListener("click", () => {
 if ("speechSynthesis" in window) speechSynthesis.onvoiceschanged = () => {};
 
 // With ?debug: which build this phone runs (a cached old one would explain old behaviour).
-debugLog(`Talkloop v60 · speech recognition ${Recognition ? "yes" : "no"}`);
+debugLog(`Talkloop v61 · speech recognition ${Recognition ? "yes" : "no"}`);
 if (!trainerSession()) goToLogin();
 refreshKeyGate();
 renderStats();
