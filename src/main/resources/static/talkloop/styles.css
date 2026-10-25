@@ -371,3 +371,7 @@ button.focus-word { border: 1px solid transparent; color: inherit; font: inherit
 /* Look up any word during a call (🔍 next to Send) */
 .lookup { display: flex; gap: 8px; margin: 4px 32px 10px 0; }
 .lookup input { flex: 1; min-width: 0; }
+
+/* Dolmetscher: the sentence to say next */
+.say-this { margin: 0; padding: 10px 12px; border: 1px solid var(--accent); border-radius: 12px; background: var(--character); font-size: 1.05rem; line-height: 1.35; }
+.say-this strong { font-weight: 600; }
