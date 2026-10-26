@@ -287,10 +287,10 @@ function pickTopic(level, recent = []) {
   return fresh[Math.floor(Math.random() * fresh.length)];
 }
 
-// Free chat and interview opened with "an easy question", and the AI's easy question was always
-// about free time or the weekend. So each chat starts from a theme the app picks, one about the
-// learner's own life that takes a lot to tell, and the partner is told which theme comes next
-// when a subject runs dry. `name` is also the chat's subject (two to four English words).
+// Free chat and interview open with "an easy question", and the AI's easy question is nearly
+// always about free time or the weekend. So "Mein Leben" (and "Erzähl mal") starts from a theme
+// the app picks, one about the learner's own life that takes a lot to tell, and the partner is
+// told which theme comes next when a subject runs dry. `name` is also the chat's subject.
 const THEMES = {
   talk: [
     { name: "your hometown", ask: "the town or city where they grew up: what it is like, what people do there, what they miss and what has changed" },
@@ -356,18 +356,25 @@ const MODES = {
     usesScene: false,
     endable: false,
     subjects: true, // saved as a chat; the subjects talked about aren't brought up again (see subjectHints)
-    themes: "talk", // starts on a theme the app picks, and moves on to the next one (see pickThemes)
-    opener: (theme) => `(Start the conversation. Greet the learner warmly in one short line, then ask an open question about ${theme.ask}. No small talk about the weather, free time or the weekend.)`,
-    extra: "You lead the whole conversation, like a friend on the phone. Always finish your reply with a question that keeps it going. Follow up on what the learner says, now and then add a short line about yourself, and keep it light and encouraging. Never end the conversation: always set conversation_finished to false.",
+    opener: "(Start the conversation. Greet the learner warmly and ask one easy opening question.)",
+    extra: "You lead the whole conversation. Always finish your reply with a question that keeps it going. Follow up on what the learner says, gently change topic when one runs dry, and keep it light and encouraging. Never end the conversation: always set conversation_finished to false.",
   },
   interview: {
     label: "Interview me",
     usesScene: false,
     endable: false,
     subjects: true,
-    themes: "talk",
-    opener: (theme) => `(Greet the learner in one short line, then ask your first question, an open one about ${theme.ask}.)`,
-    extra: "Interview the learner about their own life, like a curious journalist. Ask one question at a time, react to the answer, then dig deeper with a natural follow-up before moving on. Never end: always set conversation_finished to false.",
+    opener: "(Greet the learner and ask their name or how their day is going.)",
+    extra: "Interview the learner about their life, day, hobbies, work and opinions. Ask one question at a time, react to the answer, then ask a natural follow-up. Never end: always set conversation_finished to false.",
+  },
+  life: {
+    label: "Mein Leben — talk about my life",
+    usesScene: false,
+    endable: false,
+    subjects: true,
+    themes: "talk", // starts on a theme the app picks, and moves on to the next one (see pickThemes)
+    opener: (theme) => `(Greet the learner in one short line, then ask an open question about ${theme.ask}. No small talk about the weather, free time or the weekend.)`,
+    extra: "Get the learner talking about their own life, like a curious friend. Ask one question at a time, react to the answer, then dig deeper with a natural follow-up before moving on; now and then add a short line about yourself. Never end: always set conversation_finished to false.",
   },
   story: {
     label: "Erzähl mal — tell a story",
@@ -1102,7 +1109,7 @@ function turnSystemPrompt({ language, nativeLanguage, level, scenario, mode, ten
       const next = m.themes === "story" ? `When the current story is told, ask for this one next: ${hints.next.ask}` : `When the current subject runs dry (after about five or six exchanges on it), move on to ${hints.next.ask}`;
       lines.push(`Ask open questions that take a few sentences to answer (Erzähl mal…, Wie war das…, Warum…, Beschreib mal…), not yes/no ones; when an answer is short, ask for one concrete detail (who, where, what exactly, how it felt). Never bring up hobbies, free time (Freizeit) or the weekend yourself. ${next}, and then set subject to exactly ${JSON.stringify(hints.next.name)}.`);
     }
-    lines.push(`subject: what the question in your reply is about, in two to four English words (e.g. "your hometown"); keep it the same while you stay on it.${hints.covered.length ? ` Talked about in earlier chats, so never bring these up yourself (follow the learner if they do): ${quote(hints.covered)}.` : ""}${hints.current.length ? ` Already talked about in this chat: ${quote(hints.current)}; when the current one runs dry, move on to a new subject, not back to one of these.` : ""}`);
+    lines.push(`subject: what the question in your reply is about, in two to four English words (e.g. "weekend plans"); keep it the same while you stay on it.${hints.covered.length ? ` Talked about in earlier chats, so never bring these up yourself (follow the learner if they do): ${quote(hints.covered)}.` : ""}${hints.current.length ? ` Already talked about in this chat: ${quote(hints.current)}; when the current one runs dry, move on to a new subject, not back to one of these.` : ""}`);
   }
   if (weakSpots.length) {
     const clip = (t) => JSON.stringify(t.length > 120 ? `${t.slice(0, 117)}…` : t);
@@ -2208,7 +2215,7 @@ function chatThemes(settings) {
   return (settings.themes ??= pickThemes(THEMES[mode?.themes] ?? THEMES.talk, store.get(SUBJECTS_KEY, [])));
 }
 
-// The free chat's, interview's or story chat's subjects: earlier chats' to leave alone, this
+// The free chat's, interview's, "Mein Leben" or story chat's subjects: earlier chats' to leave alone, this
 // chat's own, and the next theme not had in this chat yet.
 function subjectHints(current, themes = []) {
   const next = themeByName(themes.find((t) => !current.includes(t)));
@@ -2219,7 +2226,7 @@ function subjectHints(current, themes = []) {
 // A saved chat's title: its topic, or the kind of chat and its first subjects.
 function chatTitle(settings) {
   if (settings.topic) return settings.topic;
-  const kind = { interview: "Interview", story: "Erzähl mal" }[settings.request.mode] ?? "Free chat";
+  const kind = { interview: "Interview", life: "Mein Leben", story: "Erzähl mal" }[settings.request.mode] ?? "Free chat";
   const subjects = settings.subjects ?? [];
   return subjects.length ? `${kind}: ${subjects.slice(0, 3).join(", ")}` : kind;
 }
