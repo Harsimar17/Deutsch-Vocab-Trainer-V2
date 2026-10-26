@@ -74,8 +74,13 @@ then the rest. If you have a B1 exam soon, do **Phases 5, 6 and 15** earlier.
    - The key stays in your browser only. It is free; if it ever reaches its daily limit,
      just continue the next day (or add a second key as a backup).
 3. Choose **Practise: German**, **I speak:** your language, your **Level**, and a **Mode**:
-   - **Interview me:** the AI asks about your life. The easiest way to start talking.
-   - **Free chat:** the AI leads a relaxed conversation.
+   - **Interview me:** the AI asks about your life: your hometown, your work, your family,
+     a big decision… Every chat starts on a different theme. The easiest way to start talking.
+   - **Free chat:** the AI leads a relaxed conversation, like a friend on the phone.
+   - **Erzähl mal:** you tell real stories from your life (a trip, a funny mistake, your
+     first day at work) and the AI asks for the details. Great for the past tense.
+   - **Dolmetscher:** the AI gives you everyday sentences to say in German.
+   - **Rollenkarte:** you play a character from a role card and get interviewed as them.
    - **Discuss a topic:** you give your opinion and reasons. Good practice for B1.
    - **Scene role-play:** real situations like the doctor, the train station or a café.
    - **Sentence drill:** you make sentences with the words you learnt.

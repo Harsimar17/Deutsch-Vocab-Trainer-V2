@@ -287,6 +287,68 @@ function pickTopic(level, recent = []) {
   return fresh[Math.floor(Math.random() * fresh.length)];
 }
 
+// Free chat and interview opened with "an easy question", and the AI's easy question was always
+// about free time or the weekend. So each chat starts from a theme the app picks, one about the
+// learner's own life that takes a lot to tell, and the partner is told which theme comes next
+// when a subject runs dry. `name` is also the chat's subject (two to four English words).
+const THEMES = {
+  talk: [
+    { name: "your hometown", ask: "the town or city where they grew up: what it is like, what people do there, what they miss and what has changed" },
+    { name: "yesterday in detail", ask: "what they did yesterday, from getting up to going to bed, with the small details" },
+    { name: "your work or studies", ask: "what they actually do all day at work or in their studies, what they like about it and what annoys them" },
+    { name: "your family", ask: "the people in their family: who they are, what they do, who they are closest to, how they spend time together" },
+    { name: "food from your country", ask: "a dish from where they come from: what is in it, how it is made, when people eat it" },
+    { name: "learning german", ask: "why they learn German, how they learn it, what is hard, and a funny mistake they have made" },
+    { name: "your home", ask: "where they live: the rooms, their favourite place in it, the neighbours, what they would change" },
+    { name: "your best friend", ask: "their best friend: how they met, what this person is like, what they do together" },
+    { name: "your childhood", ask: "what they were like as a child: where they lived, what they played, what school was like" },
+    { name: "your city now", ask: "the place they live now: what they like and don't like, how they get around, which place they would show a visitor" },
+    { name: "shopping and money", ask: "how they shop for food and clothes: where, what is expensive, how they save money" },
+    { name: "health and sleep", ask: "how they stay healthy: sleep, sport, food, what they do when they are ill" },
+    { name: "festivals and traditions", ask: "a festival or tradition from their culture: what happens, what people eat, how their family celebrates it" },
+    { name: "plans for the future", ask: "where they want to be in five years: work, home, family, a dream they have" },
+    { name: "your last trip", ask: "their last trip: where they went, with whom, what they did, what went well or wrong" },
+    { name: "phone and internet", ask: "how they use their phone: which apps, how many hours, what they read or watch, whether it is too much" },
+    { name: "cooking at home", ask: "what they cook at home, what they cook well, and one recipe step by step" },
+    { name: "getting around", ask: "how they get to work or around town, how long it takes, what happens on the way" },
+    { name: "habits", ask: "a habit they are proud of and one they would like to change, and why" },
+    { name: "a perfect day", ask: "what their perfect day would look like, from morning to night" },
+    { name: "a big decision", ask: "a big decision in their life (a move, a job, studies): why they made it, how it went, whether they would do it again" },
+    { name: "a person you admire", ask: "a person they admire, from their life or not: who it is and why" },
+    { name: "life in germany", ask: "what surprises them about Germany or German people, what they like and what they find strange" },
+    { name: "your daily routine", ask: "a normal workday for them, step by step, and how a good day differs from a bad one" },
+  ],
+  // "Erzähl mal": real stories from the learner's life, told in the past.
+  story: [
+    { name: "something went wrong", ask: "the last time something went really wrong" },
+    { name: "first day somewhere new", ask: "their first day at a new job, school or course" },
+    { name: "an unforgettable trip", ask: "a trip they will never forget" },
+    { name: "getting lost", ask: "a time they got lost or missed a train, bus or flight" },
+    { name: "a memorable meal", ask: "the best (or worst) meal they ever had" },
+    { name: "helping someone", ask: "a time they helped someone, or someone helped them" },
+    { name: "a funny misunderstanding", ask: "a funny misunderstanding, maybe because of a language" },
+    { name: "meeting a friend", ask: "how they met their best friend or partner" },
+    { name: "a perfect day remembered", ask: "a day when everything went right" },
+    { name: "a big surprise", ask: "the last time they were really surprised" },
+    { name: "a childhood memory", ask: "a memory from their childhood that they still think about" },
+    { name: "moving house", ask: "a move to a new flat, city or country" },
+    { name: "a celebration", ask: "a birthday, wedding or festival they remember well" },
+    { name: "a scary moment", ask: "a time they were really scared" },
+    { name: "a problem solved", ask: "a problem with a shop, an office or a landlord, and how it ended" },
+    { name: "a proud moment", ask: "a moment they were really proud of" },
+    { name: "an embarrassing moment", ask: "a slightly embarrassing moment they can laugh about now" },
+    { name: "a lucky day", ask: "a time they were very lucky" },
+  ],
+};
+const themeByName = (name) => [...THEMES.talk, ...THEMES.story].find((t) => t.name === name);
+
+// The chat's themes in the order to bring them up: ones not had lately first, shuffled.
+// `used` lists the subjects of earlier chats, newest first.
+function pickThemes(pool, used = []) {
+  const shuffle = (list) => list.map((t) => [Math.random(), t]).sort((a, b) => a[0] - b[0]).map(([, t]) => t.name);
+  return [...shuffle(pool.filter((t) => !used.includes(t.name))), ...shuffle(pool.filter((t) => used.includes(t.name)))];
+}
+
 // Conversation modes. Open modes never end on their own — they run until you quit.
 const MODES = {
   lead: {
@@ -294,16 +356,27 @@ const MODES = {
     usesScene: false,
     endable: false,
     subjects: true, // saved as a chat; the subjects talked about aren't brought up again (see subjectHints)
-    opener: "(Start the conversation. Greet the learner warmly and ask one easy opening question.)",
-    extra: "You lead the whole conversation. Always finish your reply with a question that keeps it going. Follow up on what the learner says, gently change topic when one runs dry, and keep it light and encouraging. Never end the conversation: always set conversation_finished to false.",
+    themes: "talk", // starts on a theme the app picks, and moves on to the next one (see pickThemes)
+    opener: (theme) => `(Start the conversation. Greet the learner warmly in one short line, then ask an open question about ${theme.ask}. No small talk about the weather, free time or the weekend.)`,
+    extra: "You lead the whole conversation, like a friend on the phone. Always finish your reply with a question that keeps it going. Follow up on what the learner says, now and then add a short line about yourself, and keep it light and encouraging. Never end the conversation: always set conversation_finished to false.",
   },
   interview: {
     label: "Interview me",
     usesScene: false,
     endable: false,
     subjects: true,
-    opener: "(Greet the learner and ask their name or how their day is going.)",
-    extra: "Interview the learner about their life, day, hobbies, work and opinions. Ask one question at a time, react to the answer, then ask a natural follow-up. Never end: always set conversation_finished to false.",
+    themes: "talk",
+    opener: (theme) => `(Greet the learner in one short line, then ask your first question, an open one about ${theme.ask}.)`,
+    extra: "Interview the learner about their own life, like a curious journalist. Ask one question at a time, react to the answer, then dig deeper with a natural follow-up before moving on. Never end: always set conversation_finished to false.",
+  },
+  story: {
+    label: "Erzähl mal — tell a story",
+    usesScene: false,
+    endable: false,
+    subjects: true,
+    themes: "story",
+    opener: (theme) => `(Greet the learner in one short line, then ask them to tell you about ${theme.ask}.)`,
+    extra: "The learner tells real stories from their own life and you are the curious listener. Take one story at a time and get it out of them piece by piece: when and where it happened, who was there, what happened first, then, and in the end, and how they felt. React like a friend (Echt? Und dann?) in one or two short sentences, so they do the talking. Get them to tell it in the past (Perfekt, and war, hatte) with words like zuerst, dann, plötzlich, am Ende, als and weil. Once a story is told (about six exchanges), say in a few words what you liked about it and ask for the next one. If they have no story like that, offer a small variation they might have. Never end: always set conversation_finished to false.",
   },
   topic: {
     label: "Discuss a topic",
@@ -1025,7 +1098,11 @@ function turnSystemPrompt({ language, nativeLanguage, level, scenario, mode, ten
   }
   if (m.subjects && hints) {
     const quote = (list) => list.map((s) => JSON.stringify(s)).join(", ");
-    lines.push(`subject: what the question in your reply is about, in two to four English words (e.g. "weekend plans"); keep it the same while you stay on it.${hints.covered.length ? ` Talked about in earlier chats, so never bring these up yourself (follow the learner if they do): ${quote(hints.covered)}.` : ""}${hints.current.length ? ` Already talked about in this chat: ${quote(hints.current)}; when the current one runs dry, move on to a new subject, not back to one of these.` : ""}`);
+    if (hints.next) {
+      const next = m.themes === "story" ? `When the current story is told, ask for this one next: ${hints.next.ask}` : `When the current subject runs dry (after about five or six exchanges on it), move on to ${hints.next.ask}`;
+      lines.push(`Ask open questions that take a few sentences to answer (Erzähl mal…, Wie war das…, Warum…, Beschreib mal…), not yes/no ones; when an answer is short, ask for one concrete detail (who, where, what exactly, how it felt). Never bring up hobbies, free time (Freizeit) or the weekend yourself. ${next}, and then set subject to exactly ${JSON.stringify(hints.next.name)}.`);
+    }
+    lines.push(`subject: what the question in your reply is about, in two to four English words (e.g. "your hometown"); keep it the same while you stay on it.${hints.covered.length ? ` Talked about in earlier chats, so never bring these up yourself (follow the learner if they do): ${quote(hints.covered)}.` : ""}${hints.current.length ? ` Already talked about in this chat: ${quote(hints.current)}; when the current one runs dry, move on to a new subject, not back to one of these.` : ""}`);
   }
   if (weakSpots.length) {
     const clip = (t) => JSON.stringify(t.length > 120 ? `${t.slice(0, 117)}…` : t);
@@ -1314,6 +1391,8 @@ async function chatTurn(settings, history, message) {
     if (mode.topics) {
       const topic = settings.topic ?? pickTopic(settings.request.level, recentTopics());
       userText = mode.opener(topic);
+    } else if (mode.themes) {
+      userText = mode.opener(themeByName(chatThemes(settings)[0]));
     } else {
       userText = mode.opener;
     }
@@ -1326,7 +1405,7 @@ async function chatTurn(settings, history, message) {
   const startedAt = performance.now();
   let voiced = false;
   const hints = mode.topics ? topicHints(history, settings.topic ?? "")
-    : mode.subjects ? subjectHints(settings.subjects ?? [])
+    : mode.subjects ? subjectHints(settings.subjects ?? [], mode.themes ? chatThemes(settings) : [])
     : mode.roleCard ? { card: settings.roleCard ?? "" }
     : mode.interpreter ? { target: settings.sayThis ?? "", given: (settings.sayThisDone ?? []).slice(-8) }
     : null;
@@ -2122,16 +2201,25 @@ function noteSubject(subject) {
   if (subject && !subjects.includes(subject)) subjects.push(subject);
 }
 
-// The free chat's or interview's subjects: earlier chats' to leave alone, and this chat's own.
-function subjectHints(current) {
-  const covered = store.get(SUBJECTS_KEY, []).filter((s) => !current.includes(s)).slice(0, MAX_SUBJECT_HINTS);
-  return { covered, current };
+// The chat's themes in order (see pickThemes), picked when it starts; a chat saved before
+// themes existed gets them on its next turn.
+function chatThemes(settings) {
+  const mode = MODES[settings.request.mode];
+  return (settings.themes ??= pickThemes(THEMES[mode?.themes] ?? THEMES.talk, store.get(SUBJECTS_KEY, [])));
+}
+
+// The free chat's, interview's or story chat's subjects: earlier chats' to leave alone, this
+// chat's own, and the next theme not had in this chat yet.
+function subjectHints(current, themes = []) {
+  const next = themeByName(themes.find((t) => !current.includes(t)));
+  const covered = store.get(SUBJECTS_KEY, []).filter((s) => !current.includes(s) && s !== next?.name).slice(0, MAX_SUBJECT_HINTS);
+  return { covered, current, next };
 }
 
 // A saved chat's title: its topic, or the kind of chat and its first subjects.
 function chatTitle(settings) {
   if (settings.topic) return settings.topic;
-  const kind = settings.request.mode === "interview" ? "Interview" : "Free chat";
+  const kind = { interview: "Interview", story: "Erzähl mal" }[settings.request.mode] ?? "Free chat";
   const subjects = settings.subjects ?? [];
   return subjects.length ? `${kind}: ${subjects.slice(0, 3).join(", ")}` : kind;
 }
@@ -3255,6 +3343,8 @@ $("start").addEventListener("click", async () => {
   if (MODES[mode]?.roleCard) state.settings.roleCard = makeRoleCard();
   // Free chats and interviews are kept too, with the subjects they cover.
   if (MODES[mode]?.subjects) state.settings.subjects = [];
+  // The chat opens on its first theme, which counts as its first subject.
+  if (MODES[mode]?.themes) state.settings.subjects.push(chatThemes(state.settings)[0]);
   if (MODES[mode]?.topics || MODES[mode]?.subjects) {
     chatId = String(Date.now()); // a new chat; it is saved with the first message
     chatStarted = Date.now();
