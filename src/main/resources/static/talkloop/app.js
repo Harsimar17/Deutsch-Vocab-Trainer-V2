@@ -990,12 +990,14 @@ function recordSentence(settings, message, coach) {
   const prev = deck[key];
   const stats = (settings.sayStats ??= { right: [], again: [] });
   const now = Date.now();
-  if (coach.understood && !coach.correction.trim()) {
+  // A "correction" that only changes capital letters isn't one.
+  const correction = coach.correction.trim().toLowerCase() === message.trim().toLowerCase() ? "" : coach.correction.trim();
+  if (coach.understood && !correction) {
     const stage = Math.min(4, (prev?.stage ?? 0) + 1);
     deck[key] = { say, de: message.trim(), stage, due: now + SPOKEN_DAYS[stage - 1] * 86_400_000, misses: prev?.misses ?? 0, updatedAt: now };
     if (!stats.right.includes(say)) stats.right.push(say);
   } else {
-    deck[key] = { say, de: coach.correction.trim() || prev?.de || "", stage: 0, due: now + 86_400_000, misses: (prev?.misses ?? 0) + 1, updatedAt: now };
+    deck[key] = { say, de: correction || prev?.de || "", stage: 0, due: now + 86_400_000, misses: (prev?.misses ?? 0) + 1, updatedAt: now };
     (settings.sayRetry ??= []).push({ say, at: (settings.sayTurn ?? 0) + SENTENCE_AGAIN_AFTER });
     if (!stats.again.includes(say)) stats.again.push(say);
   }
