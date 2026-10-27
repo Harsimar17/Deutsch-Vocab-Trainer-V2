@@ -282,6 +282,11 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   .rtable th, .rtable td { padding: 6px 5px; }
   .rtable tbody th { white-space: normal; }
 }
+/* Phones: cards, inputs and boxes sized from the screen width (e.g. min(440px, 92vw)) would
+   ignore the page padding and stick out past both edges, cutting off their comic shadows. */
+@media (max-width: 600px) {
+  #root [style*="vw)"] { max-width: 100%; box-sizing: border-box; }
+}
 /* Practice / Stories / Formulas switch: no icons and tighter on phones, so it fits between avatar and theme button */
 @media (max-width: 480px) {
   .modeseg .ic { display: none; }
