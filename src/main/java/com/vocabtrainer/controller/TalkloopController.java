@@ -97,4 +97,10 @@ public class TalkloopController {
     public Map<String, Object> spoken(Ctx ctx, @RequestBody Map<String, Object> body) {
         return talkloop.syncSpoken(ctx, body);
     }
+
+    /** Merges a device's Dolmetscher sentence deck and returns the whole deck. Needs the link too. */
+    @PostMapping("/sentences")
+    public Map<String, Object> sentences(Ctx ctx, @RequestBody Map<String, Object> body) {
+        return talkloop.syncSentences(ctx, body);
+    }
 }

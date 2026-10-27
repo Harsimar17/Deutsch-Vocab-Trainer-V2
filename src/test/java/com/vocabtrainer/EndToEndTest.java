@@ -491,6 +491,41 @@ class EndToEndTest {
 
     @Test
     @SuppressWarnings("unchecked")
+    void talkloopSyncsItsSentenceDeckAcrossDevices() throws Exception {
+        String t = login(BEN, "ben-test-pw");
+        String link = (String) ok(post("/api/talkloop/link"), t, null).get("token");
+        long now = System.currentTimeMillis();
+
+        // The laptop records two sentences; the phone then sends an older and a newer version.
+        ok(post("/api/talkloop/sentences"), link, Map.of("sentences", Map.of(
+                "i am looking for the station", Map.of("say", "I am looking for the station.", "de", "Ich suche den Bahnhof.",
+                        "stage", 2, "due", now + 86_400_000L, "misses", 1, "updatedAt", now - 5000),
+                "can i pay by card", Map.of("say", "Can I pay by card?", "de", "Kann ich mit Karte zahlen?",
+                        "stage", 1, "due", now, "updatedAt", now - 5000))));
+        Map<String, Object> deck = (Map<String, Object>) ok(post("/api/talkloop/sentences"), link, Map.of("sentences", Map.of(
+                "i am looking for the station", Map.of("say", "I am looking for the station.", "stage", 0, "updatedAt", now - 9000),
+                "can i pay by card", Map.of("say", "Can I pay by card?", "de", "Kann ich mit Karte bezahlen?", "stage", 0, "misses", 1, "updatedAt", now - 1000),
+                "no text", Map.of("stage", 1, "updatedAt", now),
+                "bad stage", Map.of("say", "Bad.", "stage", 9, "updatedAt", now)))).get("sentences");
+        Map<String, Object> station = (Map<String, Object>) deck.get("i am looking for the station");
+        Map<String, Object> card = (Map<String, Object>) deck.get("can i pay by card");
+        assertEquals(2, ((Number) station.get("stage")).intValue());
+        assertEquals("Ich suche den Bahnhof.", station.get("de"));
+        assertEquals(0, ((Number) card.get("stage")).intValue());
+        assertEquals("Kann ich mit Karte bezahlen?", card.get("de"));
+        assertNull(deck.get("no text"));
+        assertNull(deck.get("bad stage"));
+
+        // A pull alone costs no write; a session can't use it; a wrong shape is refused.
+        int writes = firestore.talkloopSentenceWrites();
+        assertEquals(2, ((Map<String, Object>) ok(post("/api/talkloop/sentences"), link, Map.of("sentences", Map.of())).get("sentences")).size());
+        assertEquals(writes, firestore.talkloopSentenceWrites());
+        assertEquals(401, status(post("/api/talkloop/sentences"), t, Map.of("sentences", Map.of())));
+        assertEquals(400, status(post("/api/talkloop/sentences"), link, Map.of("sentences", List.of())));
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
     void talkloopKeepsTopicChatsAndTheTopicsDiscussed() throws Exception {
         String t = login(BEN, "ben-test-pw");
         String link = (String) ok(post("/api/talkloop/link"), t, null).get("token");

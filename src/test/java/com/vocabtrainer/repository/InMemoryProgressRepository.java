@@ -30,6 +30,8 @@ public class InMemoryProgressRepository extends ProgressRepository {
     private int talkloopMistakeWrites;
     private final Map<String, Map<String, Object>> talkloopSpoken = new ConcurrentHashMap<>();
     private int talkloopSpokenWrites;
+    private final Map<String, Map<String, Object>> talkloopSentences = new ConcurrentHashMap<>();
+    private int talkloopSentenceWrites;
     private final Map<String, Map<String, Map<String, Object>>> talkloopChats = new ConcurrentHashMap<>();
     private final Map<String, Map<String, Object>> talkloopTopics = new ConcurrentHashMap<>();
 
@@ -145,6 +147,20 @@ public class InMemoryProgressRepository extends ProgressRepository {
     }
 
     @Override
+    public synchronized Map<String, Object> findTalkloopSentences(Ctx ctx) {
+        rules(ctx);
+        Map<String, Object> m = talkloopSentences.get(ctx.uid());
+        return m == null ? null : copy(m);
+    }
+
+    @Override
+    public synchronized void saveTalkloopSentences(Ctx ctx, Map<String, Object> data) {
+        rules(ctx);
+        talkloopSentences.put(ctx.uid(), copy(data));
+        talkloopSentenceWrites++;
+    }
+
+    @Override
     public synchronized List<Map<String, Object>> findTalkloopChats(Ctx ctx) {
         rules(ctx);
         List<Map<String, Object>> out = new ArrayList<>();
@@ -179,6 +195,11 @@ public class InMemoryProgressRepository extends ProgressRepository {
     public synchronized void saveTalkloopTopics(Ctx ctx, Map<String, Object> data) {
         rules(ctx);
         talkloopTopics.put(ctx.uid(), copy(data));
+    }
+
+    /** How many times the sentence deck was written (tests: a pull alone must not write). */
+    public synchronized int talkloopSentenceWrites() {
+        return talkloopSentenceWrites;
     }
 
     /** How many times the speaking schedule was written (tests: a pull alone must not write). */

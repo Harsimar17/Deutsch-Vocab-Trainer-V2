@@ -891,6 +891,12 @@ function renderRecap() {
   const said = Object.entries(status).filter(([, s]) => s.correct && !s.peeked).map(([de]) => de);
   const tried = Object.entries(status).filter(([de]) => !said.includes(de)).map(([de]) => de);
   const missed = todayWords ? todayWords.active.map((w) => w.de).filter((de) => !status[de]) : [];
+  // A Dolmetscher call: its sentences instead (one said wrong, then right, counts as right).
+  const sentences = state.settings?.sayStats;
+  if (sentences && (sentences.right.length || sentences.again.length)) {
+    renderSentenceRecap(box, sentences.right, sentences.again.filter((s) => !sentences.right.includes(s)));
+    return;
+  }
   if (!said.length && !tried.length) {
     box.hidden = true;
     return;
@@ -913,17 +919,37 @@ function renderRecap() {
   box.hidden = false;
 }
 
-let spokenSync = null; // the sync in flight, if any
+function renderSentenceRecap(box, right, again) {
+  const learnt = Object.values(store.get("sentences", {})).filter((s) => s.stage >= 4).length;
+  const head = document.createElement("h3");
+  head.textContent = "Last call";
+  const line = (label, list) => {
+    const p = document.createElement("p");
+    const b = document.createElement("strong");
+    b.textContent = `${label} (${list.length}): `;
+    p.append(b, list.join(" · "));
+    return p;
+  };
+  const total = document.createElement("p");
+  total.className = "muted";
+  total.textContent = `${learnt} sentence${learnt === 1 ? "" : "s"} learnt so far. Sentences come back after 1, 3, 7 and 21 days; the ones to practise come back tomorrow.`;
+  box.replaceChildren(head, ...[right.length && line("Said ✓", right), again.length && line("Practise again", again)].filter(Boolean), total);
+  box.hidden = false;
+}
 
-// Like syncMistakes: sends what changed here since the last sync, keeps the newer of each word.
-function syncSpoken({ keepalive = false } = {}) {
+const scheduleSyncs = {}; // the sync in flight per schedule, if any
+
+// Like syncMistakes: sends what changed here since the last sync, keeps the newer of each
+// entry. `name` is the stored schedule and its route ("spoken", "sentences"), `field` the
+// object the route sends and answers with.
+function syncSchedule(name, field, { keepalive = false } = {}) {
   const link = trainerLink();
-  if (!link || spokenSync) return;
+  if (!link || scheduleSyncs[name]) return;
   const startedAt = Date.now();
-  const since = store.get("spoken_synced_at", 0);
-  const words = Object.fromEntries(Object.entries(store.get("spoken", {})).filter(([, s]) => s.updatedAt >= since));
-  const body = JSON.stringify({ words });
-  spokenSync = fetch(`${link.api}/api/talkloop/spoken`, {
+  const since = store.get(`${name}_synced_at`, 0);
+  const changed = Object.fromEntries(Object.entries(store.get(name, {})).filter(([, s]) => s.updatedAt >= since));
+  const body = JSON.stringify({ [field]: changed });
+  scheduleSyncs[name] = fetch(`${link.api}/api/talkloop/${name}`, {
     method: "POST",
     headers: { Authorization: `Bearer ${link.token}`, "Content-Type": "application/json" },
     body,
@@ -931,16 +957,77 @@ function syncSpoken({ keepalive = false } = {}) {
   })
     .then(async (res) => {
       if (!res.ok) return;
-      const merged = (await res.json()).words ?? {};
-      const local = store.get("spoken", {});
-      for (const [de, s] of Object.entries(merged)) {
-        if (!local[de] || s.updatedAt > local[de].updatedAt) local[de] = s;
+      const merged = (await res.json())[field] ?? {};
+      const local = store.get(name, {});
+      for (const [key, s] of Object.entries(merged)) {
+        if (!local[key] || s.updatedAt > local[key].updatedAt) local[key] = s;
       }
-      store.set("spoken", local);
-      store.set("spoken_synced_at", startedAt);
+      store.set(name, local);
+      store.set(`${name}_synced_at`, startedAt);
     })
     .catch(() => {})
-    .finally(() => { spokenSync = null; });
+    .finally(() => { scheduleSyncs[name] = null; });
+}
+const syncSpoken = (options) => syncSchedule("spoken", "words", options);
+const syncSentences = (options) => syncSchedule("sentences", "sentences", options);
+
+// ---------- the Dolmetscher's sentence deck ----------
+// Every sentence the learner is given to say is kept with its right version and comes back
+// like a word in the speaking schedule: said right, it moves up a stage and is due again after
+// 1, 3, 7 and 21 days (stage 4 = learnt); said wrong, it goes back to stage 0, comes up again a
+// few sentences later in the same call, and is due tomorrow. Each call mixes the due ones in
+// with the partner's new ones. Kept in this browser ("sentences": {key: {say, de, stage, due,
+// misses, updatedAt}}) and synced with the trainer.
+const SENTENCE_AGAIN_AFTER = 3; // a sentence said wrong comes back after this many others
+const sentenceKey = (say) => (say ?? "").toLowerCase().replace(/[^\p{L}\p{N}\s]/gu, " ").replace(/\s+/g, " ").trim().slice(0, 200);
+
+// The learner's try at the sentence on screen, as the coach judged it.
+function recordSentence(settings, message, coach) {
+  const say = settings.sayThis;
+  const key = sentenceKey(say);
+  if (!key) return;
+  const deck = store.get("sentences", {});
+  const prev = deck[key];
+  const stats = (settings.sayStats ??= { right: [], again: [] });
+  const now = Date.now();
+  if (coach.understood && !coach.correction.trim()) {
+    const stage = Math.min(4, (prev?.stage ?? 0) + 1);
+    deck[key] = { say, de: message.trim(), stage, due: now + SPOKEN_DAYS[stage - 1] * 86_400_000, misses: prev?.misses ?? 0, updatedAt: now };
+    if (!stats.right.includes(say)) stats.right.push(say);
+  } else {
+    deck[key] = { say, de: coach.correction.trim() || prev?.de || "", stage: 0, due: now + 86_400_000, misses: (prev?.misses ?? 0) + 1, updatedAt: now };
+    (settings.sayRetry ??= []).push({ say, at: (settings.sayTurn ?? 0) + SENTENCE_AGAIN_AFTER });
+    if (!stats.again.includes(say)) stats.again.push(say);
+  }
+  store.set("sentences", deck);
+}
+
+// The next sentence to say: one said wrong earlier in this call once its turn has come, else
+// on every other turn a due one from the deck, else the partner's new one. A sentence already
+// given in this call never comes back otherwise, so if the partner repeats one (or gives none)
+// the deck's next sentence takes its place. `kind` labels it: "new", "review" or "again".
+function nextSentence(settings, offered) {
+  const turn = (settings.sayTurn = (settings.sayTurn ?? 0) + 1);
+  const given = new Set([...(settings.sayThisDone ?? []), settings.sayThis].map(sentenceKey).filter(Boolean));
+  const deck = Object.values(store.get("sentences", {})).filter((s) => !given.has(sentenceKey(s.say))).sort((a, b) => a.due - b.due);
+  const due = deck.find((s) => s.due <= Date.now());
+  const fresh = (offered ?? "").trim().slice(0, 200);
+  const retry = (settings.sayRetry ??= []).findIndex((r) => r.at <= turn);
+  let pick = null;
+  if (retry >= 0) pick = { say: settings.sayRetry.splice(retry, 1)[0].say, kind: "again" };
+  else if (due && turn % 2 === 1) pick = { say: due.say, kind: "review" };
+  else if (fresh && !given.has(sentenceKey(fresh))) pick = { say: fresh, kind: store.get("sentences", {})[sentenceKey(fresh)] ? "review" : "new" };
+  else if (deck.length) pick = { say: deck[0].say, kind: "review" };
+  if (!pick) return; // nothing new at all: the sentence on screen stays
+  if (settings.sayThis) (settings.sayThisDone ??= []).push(settings.sayThis);
+  settings.sayThis = pick.say;
+  settings.sayKind = pick.kind;
+}
+
+// What the partner must not give again: this call's sentences, then the deck's newest.
+function sentencesGiven(settings) {
+  const recent = Object.values(store.get("sentences", {})).sort((a, b) => b.updatedAt - a.updatedAt).map((s) => s.say);
+  return [...new Set([...(settings.sayThisDone ?? []), ...recent])].slice(0, 40);
 }
 
 // The model writes these fields in this order, so coach comes first: it judges the
@@ -1101,7 +1188,7 @@ function turnSystemPrompt({ language, nativeLanguage, level, scenario, mode, ten
   if (m.interpreter) {
     const given = hints?.given?.length ? ` Already given, never again: ${hints.given.map((g) => JSON.stringify(g)).join(" ")}.` : "";
     const judge = hints?.target ? ` They were asked to say: ${JSON.stringify(hints.target)}; coach judges whether their message says that correctly in ${language}, meaning included.` : "";
-    lines.push(`situation: the next sentence for the learner to say in ${language}, written in ${nativeLanguage}: short and everyday, at their level, a new situation or pattern each time (shopping, work, friends, travel, home, plans, problems).${given}${judge} reply: one short ${language} reaction to their try; never say the ${language} version of the new sentence.`);
+    lines.push(`situation: the next sentence for the learner to say in ${language}, written in ${nativeLanguage}: short and everyday, at their level, a new situation or pattern each time (shopping, work, friends, travel, home, plans, problems). Always a new one, also after a wrong try: the app brings that sentence back itself later.${given}${judge} reply: one short ${language} reaction to their try; never say the ${language} version of the new sentence.`);
   }
   if (m.subjects && hints) {
     const quote = (list) => list.map((s) => JSON.stringify(s)).join(", ");
@@ -1414,7 +1501,7 @@ async function chatTurn(settings, history, message) {
   const hints = mode.topics ? topicHints(history, settings.topic ?? "")
     : mode.subjects ? subjectHints(settings.subjects ?? [], mode.themes ? chatThemes(settings) : [])
     : mode.roleCard ? { card: settings.roleCard ?? "" }
-    : mode.interpreter ? { target: settings.sayThis ?? "", given: (settings.sayThisDone ?? []).slice(-8) }
+    : mode.interpreter ? { target: settings.sayThis ?? "", given: sentencesGiven(settings) }
     : null;
   const systemInstruction = turnSystemPrompt(settings.request, targetWords, learnt, message.trim(), recurringMistakes(settings.request.language), today, hints);
   // A drill is short, plain and only needs the last few turns: less to read and write, so
@@ -2889,10 +2976,11 @@ async function sendTurn(message) {
     state.history.push({ role: "user", content: message || userText });
     state.history.push({ role: "assistant", content: turn.reply });
     if (MODES[state.settings.request.mode]?.subjects) noteSubject(turn.subject);
-    // The interpreter's next sentence: kept with the call (it survives a reload) and shown with the reply.
-    if (MODES[state.settings.request.mode]?.interpreter && turn.situation?.trim()) {
-      if (state.settings.sayThis) (state.settings.sayThisDone ??= []).push(state.settings.sayThis);
-      state.settings.sayThis = turn.situation.trim().slice(0, 200);
+    // The interpreter's try goes into the sentence deck, and the next sentence is chosen: kept
+    // with the call (it survives a reload) and shown with the reply.
+    if (MODES[state.settings.request.mode]?.interpreter) {
+      if (message && state.settings.sayThis) recordSentence(state.settings, message, turn.coach);
+      nextSentence(state.settings, turn.situation);
     }
 
     state.rapport = Math.max(0, state.rapport + Math.max(-2, Math.min(2, turn.rapport_delta)));
@@ -2940,7 +3028,8 @@ function renderSayThis() {
   const text = MODES[state.settings?.request.mode]?.interpreter ? state.settings.sayThis ?? "" : "";
   const label = document.createElement("span");
   label.className = "muted";
-  label.textContent = `Say it in ${state.settings?.request.language ?? "German"}: `;
+  const kind = { review: "Review · ", again: "Once more · " }[state.settings?.sayKind] ?? "";
+  label.textContent = `${kind}Say it in ${state.settings?.request.language ?? "German"}: `;
   const sentence = document.createElement("strong");
   sentence.textContent = text;
   $("say-this").replaceChildren(label, sentence);
@@ -3672,6 +3761,7 @@ $("end").addEventListener("click", () => {
   renderChats();
   syncMistakes(); // the call is over: send its mistakes
   syncSpoken();
+  syncSentences();
   flushChatUploads(); // and the chat, without waiting
 });
 
@@ -3703,6 +3793,7 @@ vocabMeta()
     refreshLearntWords();
     syncMistakes();
     syncSpoken();
+    syncSentences();
     syncChats().catch(() => {});
   });
 // Leaving the page (closing the tab, switching apps) sends what this device recorded.
@@ -3710,6 +3801,7 @@ document.addEventListener("visibilitychange", () => {
   if (document.visibilityState === "hidden") {
     syncMistakes({ keepalive: true });
     syncSpoken({ keepalive: true });
+    syncSentences({ keepalive: true });
     flushChatUploads({ keepalive: true });
   }
 });
