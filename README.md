@@ -80,7 +80,9 @@ then the rest. If you have a B1 exam soon, do **Phases 5, 6 and 15** earlier.
      family, a big decision… Every chat starts on a different theme, never the weekend.
    - **Erzähl mal:** you tell real stories from your life (a trip, a funny mistake, your
      first day at work) and the AI asks for the details. Great for the past tense.
-   - **Dolmetscher:** the AI gives you everyday sentences to say in German.
+   - **Dolmetscher:** the AI gives you everyday sentences to say in German. Every sentence
+     is kept: one you got wrong comes back a few sentences later, and all of them come back
+     after 1, 3, 7 and 21 days (marked *Review*) until you know them.
    - **Rollenkarte:** you play a character from a role card and get interviewed as them.
    - **Discuss a topic:** you give your opinion and reasons. Good practice for B1.
    - **Scene role-play:** real situations like the doctor, the train station or a café.

@@ -35,6 +35,8 @@ public class TalkloopService {
     private static final int MAX_SPOKEN_WORDS = 5000;
     private static final int MAX_WORD = 100;
     private static final Pattern DAY = Pattern.compile("\\d{4}-\\d{2}-\\d{2}");
+    private static final int MAX_SENTENCES = 2000;
+    private static final int MAX_SENTENCE = 200;
     static final int MAX_CHATS = 20; // as many as Talkloop lists
     private static final int MAX_CHAT_BYTES = 900_000; // a Firestore document holds at most 1 MiB
     private static final int MAX_TOPIC = 200;
@@ -200,6 +202,43 @@ public class TalkloopService {
     }
 
     /**
+     * Talkloop's Dolmetscher sentence deck, merged with what one device sends; the whole
+     * deck comes back. The body and the answer are {sentences: {key: {say, de, stage, due,
+     * misses, updatedAt}}}: key the sentence to say, normalized; say it as shown (in the
+     * learner's language), de the right version in the language practised, stage 0–4 (4 =
+     * learnt), due and updatedAt in ms. Per sentence the newest updatedAt wins. Malformed
+     * sentences are skipped.
+     */
+    @SuppressWarnings("unchecked")
+    public Map<String, Object> syncSentences(Ctx ctx, Map<String, Object> body) {
+        if (!(body.get("sentences") instanceof Map<?, ?> incoming)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "sentences: expected an object");
+        }
+        synchronized (syncLocks[Math.floorMod(ctx.uid().hashCode(), syncLocks.length)]) {
+            Map<String, Object> stored = repo.findTalkloopSentences(ctx);
+            Map<String, Object> sentences = new TreeMap<>(
+                    stored != null && stored.get("sentences") instanceof Map<?, ?> m ? (Map<String, Object>) m : Map.of());
+            boolean changed = false;
+            for (Map.Entry<?, ?> e : incoming.entrySet()) {
+                Map<String, Object> sent = deckSentence(e.getValue());
+                if (!(e.getKey() instanceof String key) || key.isBlank() || key.length() > MAX_SENTENCE || sent == null
+                        || (!sentences.containsKey(key) && sentences.size() >= MAX_SENTENCES)) {
+                    continue;
+                }
+                long have = sentences.get(key) instanceof Map<?, ?> h ? Srs.num(h.get("updatedAt"), 0) : -1;
+                if ((long) sent.get("updatedAt") > have) {
+                    sentences.put(key, sent);
+                    changed = true;
+                }
+            }
+            if (changed) { // a device that only pulls costs no write
+                repo.saveTalkloopSentences(ctx, Map.of("sentences", sentences));
+            }
+            return Map.of("sentences", sentences);
+        }
+    }
+
+    /**
      * Talkloop's saved chats, newest first, every topic ever discussed in "Discuss a
      * topic" and every subject ever talked about in the other saved chats (free chat,
      * interview), newest first, so a new chat doesn't repeat them, on any device and
@@ -307,6 +346,26 @@ public class TalkloopService {
     }
 
     /** A valid entry, with its texts cut to {@value #MAX_TEXT} characters, or null. */
+    private static Map<String, Object> deckSentence(Object o) {
+        if (!(o instanceof Map<?, ?> m) || !(m.get("say") instanceof String say) || say.isBlank() || say.length() > MAX_SENTENCE
+                || !(m.get("stage") instanceof Number stage) || !(m.get("updatedAt") instanceof Number at)) {
+            return null;
+        }
+        long updatedAt = at.longValue();
+        if (stage.intValue() < 0 || stage.intValue() > 4 || updatedAt <= 0 || updatedAt > System.currentTimeMillis() + 86_400_000L) {
+            return null;
+        }
+        String de = m.get("de") instanceof String d ? d.strip() : "";
+        Map<String, Object> s = new LinkedHashMap<>();
+        s.put("say", say.strip());
+        s.put("de", de.length() > MAX_TEXT ? de.substring(0, MAX_TEXT) : de);
+        s.put("stage", (long) stage.intValue());
+        s.put("due", Math.max(0, Srs.num(m.get("due"), 0)));
+        s.put("misses", Math.max(0, Srs.num(m.get("misses"), 0)));
+        s.put("updatedAt", updatedAt);
+        return s;
+    }
+
     private static Map<String, Object> mistake(Object o) {
         if (!(o instanceof Map<?, ?> m) || !(m.get("type") instanceof String type) || !MISTAKE_TYPE.matcher(type).matches()
                 || !(m.get("at") instanceof Number at) || !(m.get("said") instanceof String said)

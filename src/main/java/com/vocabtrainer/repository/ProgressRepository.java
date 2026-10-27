@@ -312,6 +312,18 @@ public class ProgressRepository {
         commit(ctx.token(), List.of(update(progressName(ctx) + "/talkloop/spoken", data, null)));
     }
 
+    // Talkloop's Dolmetscher sentence deck (each sentence given, its right version and when
+    // it is due again), next to the speaking schedule.
+
+    public Map<String, Object> findTalkloopSentences(Ctx ctx) {
+        Map<String, Object> doc = getDocument(ctx.token(), progressName(ctx) + "/talkloop/sentences");
+        return doc == null ? null : fieldsOf(doc);
+    }
+
+    public void saveTalkloopSentences(Ctx ctx, Map<String, Object> data) {
+        commit(ctx.token(), List.of(update(progressName(ctx) + "/talkloop/sentences", data, null)));
+    }
+
     // Talkloop's topic chats: one document each in scores/{uid}/talkloopChats, as a
     // long chat can be large, and the topics ever discussed in talkloop/topics.
 
