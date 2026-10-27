@@ -3,11 +3,11 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta name="theme-color" content="#F6F1E5">
+<meta name="theme-color" content="#FFF0F7">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="Wortschatz">
-<title>Wortschatz · German Vocab Trainer</title>
+<title>Wortschatz 😏 · Naughty German Trainer</title>
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <link rel="icon" href="/favicon-32.png" type="image/png" sizes="32x32">
 <link rel="apple-touch-icon" href="/apple-touch-icon.png">
@@ -20,7 +20,7 @@
 
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,500;0,9..144,600;0,9..144,700;1,9..144,400;1,9..144,500&family=IBM+Plex+Mono:wght@400;500;600&family=Caveat:wght@500;700&family=Special+Elite&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,600;12..96,800&family=Space+Mono:wght@400;700&family=Caveat:wght@500;700&family=Special+Elite&display=swap" rel="stylesheet">
 
 <!-- React runtime -->
 <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
@@ -30,72 +30,75 @@
 <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 
 <style>
+/* Theme: "Naughty Deutsch" — bubblegum paper, aubergine ink, hot-pink buttons and
+   chunky sticker shadows. Dark mode turns the lights down and the neon up. */
 :root {
-  --paper: #F6F1E5;
-  --paper-raised: #FCF8EE;
-  --ink: #2b2620;
-  --ink-soft: #6f6654;
-  --ink-faint: #a89e88;
-  --line: #ddd3bd;
-  --accent: #8A6A2B;
-  --font-serif: 'Fraunces', Georgia, 'Times New Roman', serif;
-  --font-mono: 'IBM Plex Mono', 'Courier New', ui-monospace, monospace;
-  --shadow-soft: 0 1px 2px rgba(60,50,20,.05), 0 8px 22px -8px rgba(60,50,20,.14);
-  --shadow-card: 0 1px 2px rgba(60,50,20,.06), 0 18px 44px -14px rgba(60,50,20,.24);
-  --ink-muted: #8a8372;
-  --line-card: #e2d8c0;
-  --tint: #00000008;
-  --card-grad: linear-gradient(170deg, #FEFBF3 0%, #F7F1E1 100%);
-  --btn-grad: linear-gradient(180deg, #35302a 0%, #2b2620 100%);
-  --btn-border: #2b2620;
-  --good: #3F7A55;
-  --good-hi: #458860;
-  --good-soft: #3F7A5566;
-  --bad: #A5354A;
-  --bad-hi: #b23c52;
-  --glow-1: #FEFCF6;
-  --glow-1-fade: rgba(254,252,246,0);
-  --glow-2: #EFE7D3;
-  --glow-2-fade: rgba(239,231,211,0);
-  --word-hover: rgba(138,106,43,.16);
-  --target-line: rgba(138,106,43,.5);
-  --rule-case: #DCEBD3;
-  --rule-sing: #F3D9DE;
-  --rule-pl: #D3E0F2;
+  --paper: #FFF0F7;
+  --paper-raised: #FFFFFF;
+  --ink: #2A0A2E;
+  --ink-soft: #6B3A6E;
+  --ink-faint: #A9779F;
+  --line: #F2B3D3;
+  --accent: #D6136F;
+  --font-serif: 'Bricolage Grotesque', 'Trebuchet MS', system-ui, sans-serif;
+  --font-mono: 'Space Mono', 'Courier New', ui-monospace, monospace;
+  --shadow-soft: 3px 3px 0 #2A0A2E;
+  --shadow-card: 6px 6px 0 #2A0A2E;
+  --ink-muted: #8C5A88;
+  --line-card: #2A0A2E;
+  --tint: #D6136F12;
+  --card-grad: linear-gradient(160deg, #FFFFFF 0%, #FFE4F2 100%);
+  --btn-grad: linear-gradient(135deg, #E0127A 0%, #8A1FA0 100%);
+  --btn-border: #2A0A2E;
+  --good: #0E8A47;
+  --good-hi: #13A055;
+  --good-soft: #0E8A4766;
+  --bad: #D11A3C;
+  --bad-hi: #E5304F;
+  --glow-1: #FFD3EA;
+  --glow-1-fade: rgba(255,211,234,0);
+  --glow-2: #E8D7FF;
+  --glow-2-fade: rgba(232,215,255,0);
+  --word-hover: rgba(214,19,111,.18);
+  --target-line: rgba(214,19,111,.55);
+  --rule-case: #D5F5DF;
+  --rule-sing: #FFD6E7;
+  --rule-pl: #E2D9FF;
+  --tease-opacity: .07;
   color-scheme: light;
 }
-/* Dark mode: warm, low-glare — dark brown-grey paper (not pure black) and
-   soft cream ink, so long reading sessions are easy on the eyes. */
+/* Dark mode: lights off, neon on — deep plum paper, pink ink, glowing pink shadows. */
 :root[data-theme="dark"] {
-  --paper: #1b1915;
-  --paper-raised: #25221d;
-  --ink: #e6ddcb;
-  --ink-soft: #b3a892;
-  --ink-faint: #7f7562;
-  --ink-muted: #968b76;
-  --line: #3b352c;
-  --line-card: #3b352c;
-  --accent: #CDA864;
-  --tint: #ffffff0a;
-  --card-grad: linear-gradient(170deg, #2b2721 0%, #23201b 100%);
-  --btn-grad: linear-gradient(180deg, #4b4338 0%, #3d372e 100%);
-  --btn-border: #5c5346;
-  --good: #4E9468;
-  --good-hi: #57a174;
-  --good-soft: rgba(78,148,104,.45);
-  --bad: #C0566A;
-  --bad-hi: #ca6376;
-  --glow-1: #221f1a;
-  --glow-1-fade: rgba(34,31,26,0);
-  --glow-2: #1f1c17;
-  --glow-2-fade: rgba(31,28,23,0);
-  --shadow-soft: 0 1px 2px rgba(0,0,0,.3), 0 8px 22px -8px rgba(0,0,0,.55);
-  --shadow-card: 0 1px 2px rgba(0,0,0,.35), 0 18px 44px -14px rgba(0,0,0,.7);
-  --word-hover: rgba(205,168,100,.18);
-  --target-line: rgba(205,168,100,.55);
-  --rule-case: rgba(94,158,117,.26);
-  --rule-sing: rgba(201,100,119,.24);
-  --rule-pl: rgba(111,143,196,.28);
+  --paper: #1A0B1F;
+  --paper-raised: #2A1233;
+  --ink: #FFE6F3;
+  --ink-soft: #E3AACD;
+  --ink-faint: #9E6C95;
+  --ink-muted: #BB87B0;
+  --line: #4E2257;
+  --line-card: #FF5FB0;
+  --accent: #FF5FB0;
+  --tint: #FF5FB014;
+  --card-grad: linear-gradient(160deg, #331540 0%, #250E2C 100%);
+  --btn-grad: linear-gradient(135deg, #E0127A 0%, #8A1FC0 100%);
+  --btn-border: #FF8AC7;
+  --good: #1FA65B;
+  --good-hi: #27BA67;
+  --good-soft: rgba(31,166,91,.45);
+  --bad: #E5304F;
+  --bad-hi: #F04664;
+  --glow-1: #3A1240;
+  --glow-1-fade: rgba(58,18,64,0);
+  --glow-2: #23103F;
+  --glow-2-fade: rgba(35,16,63,0);
+  --shadow-soft: 3px 3px 0 #FF2E93;
+  --shadow-card: 6px 6px 0 #FF2E93;
+  --word-hover: rgba(255,95,176,.22);
+  --target-line: rgba(255,95,176,.6);
+  --rule-case: rgba(31,166,91,.26);
+  --rule-sing: rgba(255,95,176,.26);
+  --rule-pl: rgba(150,110,255,.3);
+  --tease-opacity: .09;
   color-scheme: dark;
 }
 html,body,#root {
@@ -114,6 +117,12 @@ body {
   -moz-osx-font-smoothing: grayscale;
   text-rendering: optimizeLegibility;
 }
+/* A faint wallpaper of cheeky emoji behind everything. */
+body::before {
+  content: ""; position: fixed; inset: 0; z-index: -1; pointer-events: none; opacity: var(--tease-opacity);
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='220' height='220' font-size='30'><text x='14' y='44'>💋</text><text x='124' y='74' transform='rotate(18 140 64)'>🍑</text><text x='54' y='138' transform='rotate(-14 70 128)'>😏</text><text x='160' y='176'>🌶️</text><text x='20' y='206' transform='rotate(10 36 196)'>🔥</text></svg>");
+  background-size: 220px 220px;
+}
 button,input,select,textarea { font:inherit; }
 button {
   touch-action:manipulation;
@@ -121,6 +130,18 @@ button {
               background-color .16s ease, color .16s ease, border-color .16s ease;
 }
 button:active { transform: translateY(1px) scale(.995); }
+/* Buttons get a little flirty when you hover them. */
+@media (hover: hover) {
+  button:not(:disabled):hover { transform: rotate(-1.2deg) scale(1.03); }
+  button:not(:disabled):active { transform: translateY(1px) scale(.98); }
+}
+input:focus, textarea:focus, select:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+@keyframes wiggle { 0%,100% { transform: rotate(0); } 25% { transform: rotate(-6deg); } 75% { transform: rotate(6deg); } }
+.tease { display: inline-block; animation: wiggle 2.4s ease-in-out infinite; transform-origin: 50% 80%; }
+@media (prefers-reduced-motion: reduce) {
+  .tease { animation: none; }
+  @media (hover: hover) { button:not(:disabled):hover { transform: none; } }
+}
 button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 ::selection { background: var(--word-hover); }
 ::-webkit-scrollbar { width: 10px; height: 10px; }
@@ -857,8 +878,8 @@ const CATEGORY_META = {
 // Category colours are concatenated with hex alpha (`${color}14`), so they
 // can't be CSS variables — dark mode swaps in lighter hexes instead.
 const CATEGORY_COLORS = {
-  light: { der: "#3A5A8C", die: "#A5354A", das: "#3F7A55", adj: "#8A6A2B", verb: "#6B4A8A", sep: "#2E7D74", func: "#4A7A8C", phrase: "#B0722E" },
-  dark: { der: "#6F8FC4", die: "#C96477", das: "#5E9E75", adj: "#BE9A55", verb: "#9C7CC0", sep: "#4FA398", func: "#6FA0B4", phrase: "#CC8E4E" },
+  light: { der: "#2F55C8", die: "#D1166F", das: "#0E8A47", adj: "#B5620B", verb: "#7A2BC2", sep: "#0B7F86", func: "#2E6E9E", phrase: "#C23B1E" },
+  dark: { der: "#6F95FF", die: "#FF5FB0", das: "#3CCB7A", adj: "#FFB347", verb: "#B98AFF", sep: "#3FD0D6", func: "#6FB6E8", phrase: "#FF7A59" },
 };
 function applyCategoryPalette(theme) {
   const pal = CATEGORY_COLORS[theme] || CATEGORY_COLORS.light;
@@ -952,7 +973,7 @@ function CatChip({ cat }) {
   );
 }
 
-function Loading({ text = "loading …" }) {
+function Loading({ text = "getting ready for you … 😘" }) {
   return <p style={{ ...srsNote, fontFamily: "var(--font-mono)", fontSize: "11px", letterSpacing: "0.1em" }}>{text}</p>;
 }
 
@@ -1177,7 +1198,7 @@ function Flashcards({ settings, version, onChange }) {
   if (done) {
     return (
       <div style={{ ...srsCol, padding: "40px 0" }}>
-        <div style={{ fontFamily: "var(--font-serif)", fontSize: "22px", color: "var(--ink)", textAlign: "center" }}>All {total} / {total} cards done 🎉</div>
+        <div style={{ fontFamily: "var(--font-serif)", fontSize: "22px", color: "var(--ink)", textAlign: "center" }}>All {total} / {total} cards done — you absolute animal 🔥</div>
         <button onClick={reshuffle} style={navBtnStyle}>⟲ start over</button>
       </div>
     );
@@ -1328,7 +1349,7 @@ function PhaseSentences({ idx, onChange }) {
         return (
           <div style={{ ...srsCol, padding: "30px 0" }}>
             {stat}
-            <div style={{ fontFamily: "var(--font-serif)", fontSize: "22px", color: "var(--ink)", textAlign: "center" }}>All {v.words} words written right 🎉</div>
+            <div style={{ fontFamily: "var(--font-serif)", fontSize: "22px", color: "var(--ink)", textAlign: "center" }}>All {v.words} words written right — show-off 😏</div>
             <p style={{ ...srsNote, fontSize: "14px" }}>Every word and verb of this phase, in a sentence of its own.</p>
             <button onClick={reset} style={navBtnStyle}>⟲ start the phase over</button>
           </div>
@@ -1338,7 +1359,7 @@ function PhaseSentences({ idx, onChange }) {
         return (
           <div style={{ ...srsCol, padding: "30px 0" }}>
             {stat}
-            <div style={{ fontFamily: "var(--font-serif)", fontSize: "22px", color: "var(--ink)", textAlign: "center" }}>{v.right} / {v.total} sentences right {v.missed === 0 ? "🎉" : ""}</div>
+            <div style={{ fontFamily: "var(--font-serif)", fontSize: "22px", color: "var(--ink)", textAlign: "center" }}>{v.right} / {v.total} sentences right {v.missed === 0 ? "— flawless, ooh la la 💋" : ""}</div>
             <div style={{ ...srsNote, fontSize: "14px" }}>
               {v.missed === 0 ? (v.retry ? "All the missed words are right now." : "Every word of this round, right first time.")
                 : `${v.missed} ${v.missed === 1 ? "word" : "words"} to practise again — each comes back with another sentence where there is one.`}
@@ -1450,7 +1471,7 @@ function StudyMode({ version, onChange, geminiKey }) {
       if (v.state === "caughtUp") {
         return (
           <div style={{ ...srsCol, padding: "36px 0" }}>
-            <div style={{ fontFamily: "var(--font-serif)", fontSize: "22px", textAlign: "center" }}>You're caught up for today 🎉</div>
+            <div style={{ fontFamily: "var(--font-serif)", fontSize: "22px", textAlign: "center" }}>You're all caught up — go take a cold shower 🚿</div>
             <p style={srsNote}>Every word that's due has been reviewed, and today's {v.newPerDay} new words are done. Come back tomorrow — or set <strong>focus → everything</strong> in settings ▸ to keep drilling now.</p>
           </div>
         );
@@ -1458,7 +1479,7 @@ function StudyMode({ version, onChange, geminiKey }) {
       if (v.state === "roundDone") {
         return (
           <div style={{ ...srsCol, padding: "36px 0" }}>
-            <div style={{ fontFamily: "var(--font-serif)", fontSize: "22px", textAlign: "center" }}>{v.graded} reviewed this round 🎉</div>
+            <div style={{ fontFamily: "var(--font-serif)", fontSize: "22px", textAlign: "center" }}>{v.graded} reviewed this round — you naughty overachiever 😈</div>
             <button onClick={() => act("keepGoing")} style={navBtnStyle}>⟲ keep going</button>
           </div>
         );
@@ -1558,7 +1579,7 @@ function WriteMode({ version, onChange, geminiKey }) {
       if (v.state === "roundDone") {
         return (
           <div style={{ ...srsCol, padding: "36px 0" }}>
-            <div style={{ fontFamily: "var(--font-serif)", fontSize: "22px", textAlign: "center" }}>{v.typed} typed this round 🎉</div>
+            <div style={{ fontFamily: "var(--font-serif)", fontSize: "22px", textAlign: "center" }}>{v.typed} typed this round — fast fingers 😏</div>
             <button onClick={() => act("keepGoing")} style={navBtnStyle}>⟲ keep going</button>
           </div>
         );
@@ -1588,7 +1609,7 @@ function WriteMode({ version, onChange, geminiKey }) {
           )}
           {answered && (
             <div style={{ ...srsCol, gap: "10px" }}>
-              <div style={{ fontFamily: "var(--font-mono)", fontSize: "12px", letterSpacing: "0.08em", color: tone }}>{ok ? "✓ RICHTIG" : close ? "≈ FAST" : "✗ NOCH NICHT"}</div>
+              <div style={{ fontFamily: "var(--font-mono)", fontSize: "12px", letterSpacing: "0.08em", color: tone }}>{ok ? "✓ RICHTIG — oh you're good 😏" : close ? "≈ FAST — so close it hurts" : "✗ NOCH NICHT — naughty, naughty 🙈"}</div>
               {!ok && <div style={{ fontFamily: "var(--font-serif)", fontWeight: 600, fontSize: "22px", color: "var(--ink)", textAlign: "center" }}>{v.forms}</div>}
               {ok && v.spelled && <div style={{ fontFamily: "var(--font-serif)", fontSize: "15px", color: "var(--ink-soft)", textAlign: "center" }}>accepted — the umlaut spelling is <strong style={{ color: "var(--ink)" }}>{v.spelled}</strong></div>}
               {v.hint && <div style={{ fontFamily: "var(--font-serif)", fontStyle: "italic", fontSize: "14px", color: "var(--ink-soft)", textAlign: "center" }}>{v.hint}</div>}
@@ -1672,7 +1693,7 @@ function Quiz({ settings, version, onChange, geminiKey }) {
     return (
       <div style={{ ...srsCol, padding: "40px 0" }}>
         <ScoreLine score={score} />
-        <div style={{ fontFamily: "var(--font-serif)", fontSize: "22px", color: "var(--ink)", textAlign: "center" }}>All {r.pool.length} / {r.pool.length} words done 🎉</div>
+        <div style={{ fontFamily: "var(--font-serif)", fontSize: "22px", color: "var(--ink)", textAlign: "center" }}>All {r.pool.length} / {r.pool.length} words done — someone's on fire 🔥</div>
         <div style={{ display: "flex", gap: "10px" }}>{saveBtn}<button onClick={() => update(reset)} style={navBtnStyle}>⟲ start over</button></div>
       </div>
     );
@@ -1744,7 +1765,7 @@ function ArticleQuiz({ settings, version, onChange, geminiKey }) {
     return (
       <div style={{ ...srsCol, padding: "40px 0" }}>
         <ScoreLine score={score} />
-        <div style={{ fontFamily: "var(--font-serif)", fontSize: "22px", color: "var(--ink)", textAlign: "center" }}>All {r.nouns.length} / {r.nouns.length} nouns done 🎉</div>
+        <div style={{ fontFamily: "var(--font-serif)", fontSize: "22px", color: "var(--ink)", textAlign: "center" }}>All {r.nouns.length} / {r.nouns.length} nouns done — der, die, das, done 💅</div>
         <button onClick={() => update(reset)} style={navBtnStyle}>⟲ start over</button>
       </div>
     );
@@ -1880,7 +1901,7 @@ function ClozeQuiz({ settings, version, onChange, geminiKey }) {
     return (
       <div style={{ ...srsCol, padding: "40px 0" }}>
         <ScoreLine score={score} />
-        <div style={{ fontFamily: "var(--font-serif)", fontSize: "22px", color: "var(--ink)", textAlign: "center" }}>All {r.clozePool.length} / {r.clozePool.length} sentences done 🎉</div>
+        <div style={{ fontFamily: "var(--font-serif)", fontSize: "22px", color: "var(--ink)", textAlign: "center" }}>All {r.clozePool.length} / {r.clozePool.length} sentences done — you filled every gap 😏</div>
         <button onClick={() => update(reset)} style={navBtnStyle}>⟲ start over</button>
       </div>
     );
@@ -2501,7 +2522,7 @@ function PhaseRound({ idx, set, refresh, retake, onExit, onNext, onChange }) {
     return wrap(
       <React.Fragment>
         <div style={{ textAlign: "center", padding: "20px 0 6px" }}>
-          <div style={{ fontFamily: "var(--font-serif)", fontWeight: 600, fontSize: "24px", color: "var(--ink)" }}>{retake ? "Wiederholung fertig" : v.passedNow ? "Phase bestanden 🎉" : v.refresh ? "Auffrischung fertig" : "Runde fertig"}</div>
+          <div style={{ fontFamily: "var(--font-serif)", fontWeight: 600, fontSize: "24px", color: "var(--ink)" }}>{retake ? "Wiederholung fertig" : v.passedNow ? "Phase bestanden — you dirty genius 🔥" : v.refresh ? "Auffrischung fertig" : "Runde fertig"}</div>
           <div style={{ fontFamily: "var(--font-mono)", fontSize: "11px", letterSpacing: "0.08em", color: "var(--ink-soft)", marginTop: "10px" }}>{v.right} / {v.first} {retake ? "richtig" : "beim ersten Versuch richtig"} ({pct}%)</div>
         </div>
         <MasteryBar status={v.status} />
@@ -2520,7 +2541,7 @@ function PhaseRound({ idx, set, refresh, retake, onExit, onNext, onChange }) {
   const deEn = v.dir === "de-en";
   const a = v.answer;
   const tone = a ? (a.correct ? "var(--good)" : "var(--bad)") : "var(--line)";
-  const verdictText = !a ? "" : a.correct ? "✓ RICHTIG" : retake ? "✗ FALSCH" : "✗ NOCH NICHT — kommt gleich nochmal";
+  const verdictText = !a ? "" : a.correct ? "✓ RICHTIG 😏" : retake ? "✗ FALSCH 🙈" : "✗ NOCH NICHT — kommt gleich nochmal 😉";
   return wrap(
     <React.Fragment>
       <MasteryBar status={v.status} />
@@ -2848,11 +2869,11 @@ function UserMenu({ user, onLogout }) {
         <div role="menu" style={{ position: "absolute", top: "44px", left: 0, zIndex: 20, minWidth: "200px", maxWidth: "min(280px, 80vw)", padding: "12px",
           borderRadius: "12px", border: "1px solid var(--line)", background: "var(--paper-raised)", boxShadow: "var(--shadow-soft)",
           display: "flex", flexDirection: "column", gap: "10px" }}>
-          <div style={{ ...monoLabel, fontSize: "9px" }}>logged in as</div>
+          <div style={{ ...monoLabel, fontSize: "9px" }}>currently flirting as</div>
           <div style={{ fontFamily: "var(--font-mono)", fontSize: "12px", color: "var(--ink)", overflowWrap: "anywhere" }}>{email}</div>
           <button role="menuitem" onClick={() => { setOpen(false); openTalkloop(); }}
-            style={{ ...miniBtn, alignSelf: "flex-start" }}>🗣 practise in Talkloop</button>
-          <button role="menuitem" onClick={() => { setOpen(false); onLogout(); }} style={{ ...miniBtn, color: "var(--bad)", borderColor: "var(--bad)", alignSelf: "flex-start" }}>⎋ log out</button>
+            style={{ ...miniBtn, alignSelf: "flex-start" }}>👄 talk German to me (Talkloop)</button>
+          <button role="menuitem" onClick={() => { setOpen(false); onLogout(); }} style={{ ...miniBtn, color: "var(--bad)", borderColor: "var(--bad)", alignSelf: "flex-start" }}>💔 leave me (log out)</button>
         </div>
       )}
     </div>
@@ -3293,14 +3314,14 @@ function TopBar({ storyMode, onStoryMode, formulas, onFormulas, theme, onTheme, 
   return (
     <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "10px", position: "relative", minHeight: "40px" }}>
       <div role="group" aria-label="mode" className="modeseg" style={{ display: "flex", gap: "3px", padding: "3px", background: "var(--tint)", border: "1px solid var(--line)", borderRadius: "999px" }}>
-        <button onClick={() => { onFormulas(false); if (storyMode) onStoryMode(false); }} aria-pressed={!formulas && !storyMode} style={seg(!formulas && !storyMode)}><span className="ic">✎ </span>Practice</button>
+        <button onClick={() => { onFormulas(false); if (storyMode) onStoryMode(false); }} aria-pressed={!formulas && !storyMode} style={seg(!formulas && !storyMode)}><span className="ic">🌶 </span>Practice</button>
         <button onClick={() => { onFormulas(false); if (!storyMode) onStoryMode(true); }} aria-pressed={!formulas && storyMode} style={seg(!formulas && storyMode)}><span className="ic">📖 </span>Stories</button>
-        <button onClick={() => onFormulas(true)} aria-pressed={formulas} style={seg(formulas)}><span className="ic">📐 </span>Rules</button>
+        <button onClick={() => onFormulas(true)} aria-pressed={formulas} style={seg(formulas)}><span className="ic">⛓ </span>Rules</button>
       </div>
       {user && <UserMenu user={user} onLogout={onLogout} />}
-      <button onClick={() => onTheme(dark ? "light" : "dark")} aria-label={dark ? "switch to light mode" : "switch to dark mode"} title={dark ? "Light mode" : "Dark mode"}
+      <button onClick={() => onTheme(dark ? "light" : "dark")} aria-label={dark ? "switch to light mode" : "switch to dark mode"} title={dark ? "Lights on, party's over" : "Lights off 😏"}
         style={{ position: "absolute", right: 0, width: "36px", height: "36px", borderRadius: "999px", border: "1px solid var(--line)", background: "var(--paper-raised)", color: "var(--ink-soft)", fontSize: "15px", lineHeight: 1, cursor: "pointer", boxShadow: "var(--shadow-soft)" }}>
-        {dark ? "☀" : "☾"}
+        {dark ? "☀" : "🕯"}
       </button>
     </div>
   );
@@ -3310,7 +3331,7 @@ function StreakHeader({ header, showCounts }) {
   return (
     <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "6px" }}>
       <div style={{ ...monoLabel, letterSpacing: "0.1em", color: "var(--ink-soft)", textAlign: "center" }}>
-        {header.streak > 0 ? "🔥 " + header.streak + "-day streak" : "start a streak today"} · {header.reviewed}/{header.goal} today
+        {header.streak > 0 ? "🔥 " + header.streak + "-day streak, hot stuff" : "no streak yet — commitment issues? 😏"} · {header.reviewed}/{header.goal} today
         {showCounts && (
           <span style={{ color: "var(--ink-faint)" }}>{"  ·  " + (header.focus === "all" ? "all-words mode" : header.focus === "trouble" ? "trouble-words mode" : header.due + " due · " + header.new + " new")}</span>
         )}
@@ -3321,6 +3342,19 @@ function StreakHeader({ header, showCounts }) {
     </div>
   );
 }
+
+// One cheeky line under the title, picked once per visit.
+const TEASES = [
+  "Learn German. Get a little naughty.",
+  "Your tongue needs the exercise. 👅",
+  "Der, die, das… and then some. 😏",
+  "Spaced repetition, but make it spicy. 🌶",
+  "Separable verbs: they split up, you don't have to.",
+  "Practice makes perfect. Perfekt makes you sexy.",
+  "Umlauts are just letters with piercings. ✨",
+  "Talk German to me. 💋",
+];
+const TEASE = TEASES[Math.floor(Math.random() * TEASES.length)];
 
 const SYSTEM_THEME = window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
 function LoginScreen({ onLoggedIn }) {
@@ -3339,11 +3373,12 @@ function LoginScreen({ onLoggedIn }) {
   const field = { fontFamily: "var(--font-mono)", fontSize: "13px", padding: "10px 12px", borderRadius: "8px", border: "1px solid var(--line)", background: "var(--paper-raised)", color: "var(--ink)", width: "100%", boxSizing: "border-box" };
   return (
     <form onSubmit={submit} style={{ width: "min(340px, 92vw)", display: "flex", flexDirection: "column", gap: "12px" }}>
-      <div style={{ textAlign: "center", fontSize: "26px", color: "var(--ink)" }}>Wortschatz</div>
-      <div style={{ ...monoLabel, textAlign: "center", marginBottom: "6px" }}>log in to your account</div>
+      <div style={{ textAlign: "center", fontSize: "34px", fontWeight: 800, letterSpacing: "-0.02em", color: "var(--ink)" }}>Wortschatz <span className="tease">😏</span></div>
+      <div style={{ textAlign: "center", fontSize: "15px", color: "var(--ink-soft)", marginTop: "-6px" }}>German so good it should be illegal.</div>
+      <div style={{ ...monoLabel, textAlign: "center", marginBottom: "6px" }}>slide in, we've missed you</div>
       <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="email" autoComplete="username" required style={field} />
       <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="password" autoComplete="current-password" required style={field} />
-      <button type="submit" disabled={state.busy} style={{ ...navBtnStyle, opacity: state.busy ? 0.6 : 1 }}>{state.busy ? "logging in …" : "log in"}</button>
+      <button type="submit" disabled={state.busy} style={{ ...navBtnStyle, opacity: state.busy ? 0.6 : 1 }}>{state.busy ? "warming up … 🔥" : "let me in 💋"}</button>
       {state.error && <div role="alert" style={{ fontFamily: "var(--font-mono)", fontSize: "11px", color: "var(--bad)", textAlign: "center" }}>{state.error}</div>}
     </form>
   );
@@ -3429,7 +3464,7 @@ function App() {
   useEffect(() => {
     document.documentElement.setAttribute("data-theme", theme);
     const meta = document.querySelector('meta[name="theme-color"]');
-    if (meta) meta.setAttribute("content", theme === "dark" ? "#1b1915" : "#F6F1E5");
+    if (meta) meta.setAttribute("content", theme === "dark" ? "#1A0B1F" : "#FFF0F7");
   }, [theme]);
 
   const shellStyle = { minHeight: "100%", padding: "36px 20px 48px", fontFamily: "var(--font-serif)", display: "flex", alignItems: "center", justifyContent: "center" };
@@ -3437,10 +3472,10 @@ function App() {
     return (
       <div style={shellStyle}>
         <div style={{ maxWidth: "440px", textAlign: "center", display: "flex", flexDirection: "column", gap: "16px" }}>
-          <div style={{ fontSize: "22px", color: "var(--ink)" }}>Couldn't reach the backend</div>
+          <div style={{ fontSize: "22px", color: "var(--ink)" }}>The backend ghosted us 👻</div>
           <div style={{ fontFamily: "var(--font-mono)", fontSize: "12px", color: "var(--bad)" }}>{status.error}</div>
           <div style={{ fontSize: "13px", color: "var(--ink-muted)" }}>Backend: <code>{API_CONFIGURED ? (API_BASE || location.origin) : "(not configured)"}</code></div>
-          <button onClick={() => setAttempt((n) => n + 1)} style={navBtnStyle}>⟲ retry</button>
+          <button onClick={() => setAttempt((n) => n + 1)} style={navBtnStyle}>⟲ slide into its DMs again</button>
         </div>
       </div>
     );
@@ -3449,7 +3484,7 @@ function App() {
     return <div style={shellStyle}><LoginScreen onLoggedIn={setUser} /></div>;
   }
   if (status === "loading" || !summary) {
-    return <div style={shellStyle}><div style={{ ...counterStyle, fontSize: "13px" }}>loading …</div></div>;
+    return <div style={shellStyle}><div style={{ ...counterStyle, fontSize: "13px" }}>getting ready for you … 😘</div></div>;
   }
 
   const s = Object.assign({}, summary.settings, nav);
@@ -3487,8 +3522,10 @@ function App() {
         )}
         <div style={{ display: page === "practice" ? "flex" : "none", flexDirection: "column", gap: "18px" }}>
           <div style={{ textAlign: "center" }}>
-            <div style={{ display: "inline-block", ...monoLabel, fontSize: "9px", letterSpacing: "0.16em", border: "1px solid var(--line)", borderRadius: "999px", padding: "3px 11px", marginBottom: "14px" }}>⇣ everything served by the Java backend</div>
+            <div style={{ display: "inline-block", ...monoLabel, fontSize: "9px", letterSpacing: "0.16em", border: "1px solid var(--line)", borderRadius: "999px", padding: "3px 11px", marginBottom: "14px" }}>⇣ served hot by a Java backend 🔥</div>
             <div style={{ fontFamily: "var(--font-mono)", fontSize: "10px", fontWeight: 500, letterSpacing: "0.28em", color: "var(--accent)", marginBottom: "8px" }}>{summary.levelTitle}</div>
+            <div style={{ fontSize: "30px", fontWeight: 800, letterSpacing: "-0.02em", color: "var(--ink)", lineHeight: 1.1 }}>Wortschatz <span className="tease">😏</span></div>
+            <div style={{ fontSize: "15px", color: "var(--accent)", fontWeight: 600, marginTop: "6px" }}>{TEASE}</div>
             <div style={{ fontSize: "13px", fontStyle: "italic", color: "var(--ink-soft)", marginTop: "8px" }}>{summary.cardCount} cards — nouns, verbs, separable verbs, adjectives, connectors &amp; phrases</div>
             <div style={{ width: "48px", height: "2px", background: "var(--accent)", opacity: 0.5, borderRadius: "2px", margin: "18px auto 0" }} />
           </div>

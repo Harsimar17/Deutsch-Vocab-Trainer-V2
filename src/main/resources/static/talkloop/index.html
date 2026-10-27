@@ -3,24 +3,24 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-    <title>Talkloop</title>
+    <title>Talkloop 💋</title>
     <link rel="icon" href="favicon.svg" type="image/svg+xml" />
     <link rel="apple-touch-icon" href="favicon.svg" />
-    <meta name="theme-color" content="#2f5fd0" />
+    <meta name="theme-color" content="#d6136f" />
     <!-- ?v= makes phones fetch the new file after a change instead of a cached copy: bump it with each change. -->
-    <link rel="stylesheet" href="styles.css?v=21" />
+    <link rel="stylesheet" href="styles.css?v=22" />
   </head>
   <body>
     <header class="topbar">
-      <h1><a href="/" class="home" title="Back to the Vocab Trainer">←</a> Talkloop</h1>
+      <h1><a href="/" class="home" title="Back to the Vocab Trainer">←</a> Talkloop <span class="tease">💋</span></h1>
       <div class="stats">
         <span id="streak" title="Days in a row you practised">🔥 0</span>
-        <span id="rapport" title="How much the character likes chatting with you">♥ 0</span>
+        <span id="rapport" title="How much the character fancies chatting with you">♥ 0</span>
       </div>
     </header>
 
     <section id="keygate" class="card" hidden>
-      <h2>Connect an AI</h2>
+      <h2>Hook up with an AI 😏</h2>
       <p class="muted">
         Talkloop runs entirely in your browser and talks to the AI you pick with your own free key.
         Keys are stored only in this browser and are sent only to that service (the Cloudflare backup goes through the Vocab Trainer, which forwards it without storing it).
@@ -81,7 +81,7 @@
         <button id="change-key" type="button">Change</button>
       </div>
       <div id="recap" class="recap" hidden></div>
-      <h2>Start a conversation</h2>
+      <h2>Let's get talking 😏</h2>
       <div class="grid">
         <label>Practise
           <select id="language">
@@ -183,7 +183,7 @@
         After a correction, say the corrected sentence before the conversation moves on
       </label>
 
-      <button id="start" class="primary">Start</button>
+      <button id="start" class="primary">Start 💋</button>
 
       <details id="chats" class="chats" hidden>
         <summary id="chats-summary">Chat history</summary>
@@ -214,7 +214,7 @@
         <div id="focus" class="focus" hidden aria-label="Vocabulary being practised"></div>
         <!-- Say it again: after a correction, the corrected sentence is said before the reply comes. -->
         <div id="drill" class="drill" hidden aria-live="polite">
-          <p class="drill-label">Say it correctly:</p>
+          <p class="drill-label">Say it properly this time 😤</p>
           <p id="drill-target" class="drill-target"></p>
           <p id="drill-feedback" class="drill-feedback"></p>
           <div class="drill-actions">
@@ -248,7 +248,7 @@
           <button type="button" id="umlaut-shift" aria-pressed="false" title="Capital letter for the next one (a sentence start is capital anyway)">⇧</button>
         </div>
         <form id="composer" class="composer">
-          <input id="text" autocomplete="off" placeholder="Type your reply…" />
+          <input id="text" autocomplete="off" placeholder="Whisper something in German…" />
           <button type="button" id="lookup-open" title="Look up a word" aria-label="Look up a word">🔍</button>
           <button class="primary" type="submit">Send</button>
         </form>
@@ -276,7 +276,7 @@
 
     <section class="card">
       <div class="card-head">
-        <h2>Your recurring mistakes</h2>
+        <h2>Your naughty little habits 🙈 <span class="muted">(recurring mistakes)</span></h2>
         <button type="button" id="reset-mistakes" hidden>Reset</button>
       </div>
       <ul id="mistakes" class="bookmarks"></ul>
@@ -284,7 +284,7 @@
     </section>
 
     <section class="card">
-      <h2>Saved words</h2>
+      <h2>Words you saved for later 😉</h2>
       <ul id="bookmarks" class="bookmarks"></ul>
     </section>
 

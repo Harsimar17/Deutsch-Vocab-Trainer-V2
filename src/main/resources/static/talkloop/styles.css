@@ -1,30 +1,37 @@
+@import url("https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,600;12..96,800&display=swap");
+
+/* Theme: "Naughty Deutsch" — same bubblegum-and-aubergine look as the Vocab Trainer. */
 :root {
-  --bg: #f6f4ef;
+  --bg: #fff0f7;
   --surface: #ffffff;
-  --text: #1d1b16;
-  --muted: #6b665c;
-  --accent: #2f6fde;
+  --text: #2a0a2e;
+  --muted: #7d4c7a;
+  --accent: #d6136f;
   --accent-text: #ffffff;
-  --character: #eef3fc;
-  --learner: #fff4dc;
-  --good: #1f8a4c;
-  --warn: #b5541a;
-  --border: #e3dfd5;
+  --character: #ffe1f0;
+  --learner: #ece2ff;
+  --good: #0e8a47;
+  --warn: #c2410c;
+  --border: #f2b3d3;
+  --edge: #2a0a2e;
+  --pop: 3px 3px 0 #2a0a2e;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg: #15171b;
-    --surface: #1f2227;
-    --text: #ecebe7;
-    --muted: #a19d94;
-    --accent: #6b9cff;
-    --accent-text: #0d1220;
-    --character: #22304a;
-    --learner: #3a3220;
-    --good: #5fd08f;
-    --warn: #f09a5f;
-    --border: #33373e;
+    --bg: #1a0b1f;
+    --surface: #2a1233;
+    --text: #ffe6f3;
+    --muted: #c995bd;
+    --accent: #ff5fb0;
+    --accent-text: #1a0b1f;
+    --character: #3a1745;
+    --learner: #2b1d4f;
+    --good: #3ccb7a;
+    --warn: #ff9a5c;
+    --border: #4e2257;
+    --edge: #ff5fb0;
+    --pop: 3px 3px 0 #ff2e93;
   }
 }
 
@@ -36,7 +43,7 @@ body {
   padding: 16px;
   background: var(--bg);
   color: var(--text);
-  font: 16px/1.5 system-ui, sans-serif;
+  font: 16px/1.5 'Bricolage Grotesque', system-ui, sans-serif;
 }
 
 h1 { font-size: 1.4rem; margin: 0; }
@@ -375,3 +382,36 @@ button.focus-word { border: 1px solid transparent; color: inherit; font: inherit
 /* Dolmetscher: the sentence to say next */
 .say-this { margin: 0; padding: 10px 12px; border: 1px solid var(--accent); border-radius: 12px; background: var(--character); font-size: 1.05rem; line-height: 1.35; }
 .say-this strong { font-weight: 600; }
+
+/* ---------- the cheeky skin: chunky outlines, sticker shadows, a bit of wiggle ---------- */
+h1, h2 { font-weight: 800; letter-spacing: -0.02em; }
+h1 { font-size: 1.6rem; }
+.card { border: 2px solid var(--edge); border-radius: 16px; box-shadow: var(--pop); }
+.explorer { box-shadow: 6px 6px 0 var(--edge); }
+button { border-width: 2px; border-color: var(--edge); font-weight: 600; transition: transform .12s ease, box-shadow .12s ease; }
+button.primary { background: linear-gradient(135deg, #e0127a 0%, #8a1fa0 100%); color: #fff; border-color: var(--edge); box-shadow: var(--pop); }
+@media (hover: hover) {
+  button:not(:disabled):hover { transform: rotate(-1.2deg) scale(1.03); }
+}
+button:not(:disabled):active { transform: translate(2px, 2px); box-shadow: none; }
+select, input { border-width: 2px; }
+select:focus, input:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+.msg { border: 2px solid var(--edge); box-shadow: var(--pop); }
+.msg.character { border-bottom-left-radius: 4px; }
+.msg.learner { border-bottom-right-radius: 4px; }
+.avatar { border: 2px solid var(--edge); background: linear-gradient(135deg, #e0127a 0%, #8a1fa0 100%); color: #fff; }
+.call-head, .call-dock { border-color: var(--edge); border-width: 2px; }
+.round svg { border: 2px solid var(--edge); box-shadow: var(--pop); }
+.round:active svg { box-shadow: none; }
+.end svg { background: #e0213f; border-color: var(--edge); }
+.mic[aria-pressed="true"] svg { border-color: var(--edge); }
+.round:not(:disabled):hover { transform: none; }
+.round:not(:disabled):active { transform: none; box-shadow: none; }
+.say-this, .drill { border-width: 2px; }
+.focus-word { border: 2px solid transparent; }
+.tease { display: inline-block; animation: wiggle 2.4s ease-in-out infinite; transform-origin: 50% 80%; }
+@keyframes wiggle { 0%,100% { transform: rotate(0); } 25% { transform: rotate(-8deg); } 75% { transform: rotate(8deg); } }
+@media (prefers-reduced-motion: reduce) {
+  .tease { animation: none; }
+  button:not(:disabled):hover { transform: none; }
+}
