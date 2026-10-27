@@ -3,11 +3,11 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta name="theme-color" content="#F6F1E5">
+<meta name="theme-color" content="#FFF8E1">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="Wortschatz">
-<title>Wortschatz · German Vocab Trainer</title>
+<title>Wortschatz 💥 · German Vocab Trainer</title>
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <link rel="icon" href="/favicon-32.png" type="image/png" sizes="32x32">
 <link rel="apple-touch-icon" href="/apple-touch-icon.png">
@@ -20,7 +20,7 @@
 
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,500;0,9..144,600;0,9..144,700;1,9..144,400;1,9..144,500&family=IBM+Plex+Mono:wght@400;500;600&family=Caveat:wght@500;700&family=Special+Elite&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Bangers&family=Comic+Neue:wght@400;700&family=Space+Mono:wght@400;700&family=Caveat:wght@500;700&family=Special+Elite&display=swap" rel="stylesheet">
 
 <!-- React runtime -->
 <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
@@ -30,72 +30,78 @@
 <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 
 <style>
+/* Theme: comic book — newsprint paper, heavy black ink outlines, hard offset
+   shadows, red/yellow pop colours and halftone dots. Dark mode is the night panel. */
 :root {
-  --paper: #F6F1E5;
-  --paper-raised: #FCF8EE;
-  --ink: #2b2620;
-  --ink-soft: #6f6654;
-  --ink-faint: #a89e88;
-  --line: #ddd3bd;
-  --accent: #8A6A2B;
-  --font-serif: 'Fraunces', Georgia, 'Times New Roman', serif;
-  --font-mono: 'IBM Plex Mono', 'Courier New', ui-monospace, monospace;
-  --shadow-soft: 0 1px 2px rgba(60,50,20,.05), 0 8px 22px -8px rgba(60,50,20,.14);
-  --shadow-card: 0 1px 2px rgba(60,50,20,.06), 0 18px 44px -14px rgba(60,50,20,.24);
-  --ink-muted: #8a8372;
-  --line-card: #e2d8c0;
-  --tint: #00000008;
-  --card-grad: linear-gradient(170deg, #FEFBF3 0%, #F7F1E1 100%);
-  --btn-grad: linear-gradient(180deg, #35302a 0%, #2b2620 100%);
-  --btn-border: #2b2620;
-  --good: #3F7A55;
-  --good-hi: #458860;
-  --good-soft: #3F7A5566;
-  --bad: #A5354A;
-  --bad-hi: #b23c52;
-  --glow-1: #FEFCF6;
-  --glow-1-fade: rgba(254,252,246,0);
-  --glow-2: #EFE7D3;
-  --glow-2-fade: rgba(239,231,211,0);
-  --word-hover: rgba(138,106,43,.16);
-  --target-line: rgba(138,106,43,.5);
-  --rule-case: #DCEBD3;
-  --rule-sing: #F3D9DE;
-  --rule-pl: #D3E0F2;
+  --paper: #FFF8E1;
+  --paper-raised: #FFFFFF;
+  --ink: #111111;
+  --ink-soft: #3d3a33;
+  --ink-faint: #8a8577;
+  --line: #2b2b2b;
+  --accent: #E62429;
+  --font-serif: 'Comic Neue', 'Comic Sans MS', 'Trebuchet MS', sans-serif;
+  --font-mono: 'Space Mono', 'Courier New', ui-monospace, monospace;
+  --font-comic: 'Bangers', 'Impact', sans-serif;
+  --shadow-soft: 3px 3px 0 #111111;
+  --shadow-card: 6px 6px 0 #111111;
+  --ink-muted: #6b665a;
+  --line-card: #111111;
+  --tint: #FFD60040;
+  --card-grad: linear-gradient(160deg, #FFFFFF 0%, #FFF3C4 100%);
+  --btn-grad: linear-gradient(180deg, #F0353A 0%, #C81B20 100%);
+  --btn-border: #111111;
+  --good: #1B8F3A;
+  --good-hi: #22A846;
+  --good-soft: #1B8F3A66;
+  --bad: #D11A20;
+  --bad-hi: #E62429;
+  --glow-1: #FFE98A;
+  --glow-1-fade: rgba(255,233,138,0);
+  --glow-2: #BDEBFF;
+  --glow-2-fade: rgba(189,235,255,0);
+  --word-hover: rgba(255,214,0,.45);
+  --target-line: rgba(230,36,41,.6);
+  --rule-case: #D3F4D9;
+  --rule-sing: #FFD9D9;
+  --rule-pl: #CFEFFF;
+  --dots: rgba(0,0,0,.09);
+  --pow: #FFD600;
   color-scheme: light;
 }
-/* Dark mode: warm, low-glare — dark brown-grey paper (not pure black) and
-   soft cream ink, so long reading sessions are easy on the eyes. */
+/* Dark mode: the night panel — deep navy, cream ink, yellow outlines and shadows. */
 :root[data-theme="dark"] {
-  --paper: #1b1915;
-  --paper-raised: #25221d;
-  --ink: #e6ddcb;
-  --ink-soft: #b3a892;
-  --ink-faint: #7f7562;
-  --ink-muted: #968b76;
-  --line: #3b352c;
-  --line-card: #3b352c;
-  --accent: #CDA864;
-  --tint: #ffffff0a;
-  --card-grad: linear-gradient(170deg, #2b2721 0%, #23201b 100%);
-  --btn-grad: linear-gradient(180deg, #4b4338 0%, #3d372e 100%);
-  --btn-border: #5c5346;
-  --good: #4E9468;
-  --good-hi: #57a174;
-  --good-soft: rgba(78,148,104,.45);
-  --bad: #C0566A;
-  --bad-hi: #ca6376;
-  --glow-1: #221f1a;
-  --glow-1-fade: rgba(34,31,26,0);
-  --glow-2: #1f1c17;
-  --glow-2-fade: rgba(31,28,23,0);
-  --shadow-soft: 0 1px 2px rgba(0,0,0,.3), 0 8px 22px -8px rgba(0,0,0,.55);
-  --shadow-card: 0 1px 2px rgba(0,0,0,.35), 0 18px 44px -14px rgba(0,0,0,.7);
-  --word-hover: rgba(205,168,100,.18);
-  --target-line: rgba(205,168,100,.55);
-  --rule-case: rgba(94,158,117,.26);
-  --rule-sing: rgba(201,100,119,.24);
-  --rule-pl: rgba(111,143,196,.28);
+  --paper: #14182B;
+  --paper-raised: #1F2540;
+  --ink: #FFF6D6;
+  --ink-soft: #D3CBAE;
+  --ink-faint: #858170;
+  --ink-muted: #ABA48D;
+  --line: #4A537A;
+  --line-card: #FFD600;
+  --accent: #FFD600;
+  --tint: #FFD6001a;
+  --card-grad: linear-gradient(160deg, #262D4D 0%, #1C2139 100%);
+  --btn-grad: linear-gradient(180deg, #F0353A 0%, #C81B20 100%);
+  --btn-border: #FFD600;
+  --good: #22A846;
+  --good-hi: #2BBD52;
+  --good-soft: rgba(34,168,70,.45);
+  --bad: #E62429;
+  --bad-hi: #F0454A;
+  --glow-1: #232A4A;
+  --glow-1-fade: rgba(35,42,74,0);
+  --glow-2: #1A2A44;
+  --glow-2-fade: rgba(26,42,68,0);
+  --shadow-soft: 3px 3px 0 #000000;
+  --shadow-card: 6px 6px 0 #FFD600;
+  --word-hover: rgba(255,214,0,.25);
+  --target-line: rgba(255,214,0,.6);
+  --rule-case: rgba(34,168,70,.26);
+  --rule-sing: rgba(230,36,41,.26);
+  --rule-pl: rgba(80,180,255,.28);
+  --dots: rgba(255,255,255,.06);
+  --pow: #FFD600;
   color-scheme: dark;
 }
 html,body,#root {
@@ -114,6 +120,12 @@ body {
   -moz-osx-font-smoothing: grayscale;
   text-rendering: optimizeLegibility;
 }
+/* Halftone dots over the whole page, like cheap comic-book print. */
+body::before {
+  content: ""; position: fixed; inset: 0; z-index: -1; pointer-events: none;
+  background-image: radial-gradient(circle, var(--dots) 1.3px, transparent 1.7px);
+  background-size: 10px 10px;
+}
 button,input,select,textarea { font:inherit; }
 button {
   touch-action:manipulation;
@@ -121,6 +133,25 @@ button {
               background-color .16s ease, color .16s ease, border-color .16s ease;
 }
 button:active { transform: translateY(1px) scale(.995); }
+/* Buttons jump a little when you hover them, like a panel that wants your attention. */
+@media (hover: hover) {
+  button:not(:disabled):hover { transform: rotate(-1.2deg) scale(1.03); }
+  button:not(:disabled):active { transform: translateY(1px) scale(.98); }
+}
+input:focus, textarea:focus, select:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+@keyframes wiggle { 0%,100% { transform: rotate(0); } 25% { transform: rotate(-6deg); } 75% { transform: rotate(6deg); } }
+.tease { display: inline-block; animation: wiggle 2.4s ease-in-out infinite; transform-origin: 50% 80%; }
+/* Comic-book logo lettering and the speech bubble under it */
+.comic-title { font-family: var(--font-comic); font-weight: 400; letter-spacing: .05em; color: var(--pow);
+  -webkit-text-stroke: 1.5px #111; paint-order: stroke fill; text-shadow: 3px 3px 0 #111; display: inline-block; transform: rotate(-2deg); }
+.bubble { position: relative; display: inline-block; padding: 8px 16px; border: 2.5px solid var(--line-card); border-radius: 18px;
+  background: var(--paper-raised); box-shadow: var(--shadow-soft); }
+.bubble::after { content: ""; position: absolute; left: 50%; top: -10px; width: 16px; height: 16px; margin-left: -8px;
+  background: var(--paper-raised); border-left: 2.5px solid var(--line-card); border-top: 2.5px solid var(--line-card); transform: rotate(45deg); }
+@media (prefers-reduced-motion: reduce) {
+  .tease { animation: none; }
+  @media (hover: hover) { button:not(:disabled):hover { transform: none; } }
+}
 button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 ::selection { background: var(--word-hover); }
 ::-webkit-scrollbar { width: 10px; height: 10px; }
@@ -250,6 +281,11 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   .rtable { font-size: 12px; }
   .rtable th, .rtable td { padding: 6px 5px; }
   .rtable tbody th { white-space: normal; }
+}
+/* Phones: cards, inputs and boxes sized from the screen width (e.g. min(440px, 92vw)) would
+   ignore the page padding and stick out past both edges, cutting off their comic shadows. */
+@media (max-width: 600px) {
+  #root [style*="vw)"] { max-width: 100%; box-sizing: border-box; }
 }
 /* Practice / Stories / Formulas switch: no icons and tighter on phones, so it fits between avatar and theme button */
 @media (max-width: 480px) {
@@ -857,8 +893,8 @@ const CATEGORY_META = {
 // Category colours are concatenated with hex alpha (`${color}14`), so they
 // can't be CSS variables — dark mode swaps in lighter hexes instead.
 const CATEGORY_COLORS = {
-  light: { der: "#3A5A8C", die: "#A5354A", das: "#3F7A55", adj: "#8A6A2B", verb: "#6B4A8A", sep: "#2E7D74", func: "#4A7A8C", phrase: "#B0722E" },
-  dark: { der: "#6F8FC4", die: "#C96477", das: "#5E9E75", adj: "#BE9A55", verb: "#9C7CC0", sep: "#4FA398", func: "#6FA0B4", phrase: "#CC8E4E" },
+  light: { der: "#2F55C8", die: "#D1166F", das: "#0E8A47", adj: "#B5620B", verb: "#7A2BC2", sep: "#0B7F86", func: "#2E6E9E", phrase: "#C23B1E" },
+  dark: { der: "#6F95FF", die: "#FF5FB0", das: "#3CCB7A", adj: "#FFB347", verb: "#B98AFF", sep: "#3FD0D6", func: "#6FB6E8", phrase: "#FF7A59" },
 };
 function applyCategoryPalette(theme) {
   const pal = CATEGORY_COLORS[theme] || CATEGORY_COLORS.light;
@@ -952,7 +988,7 @@ function CatChip({ cat }) {
   );
 }
 
-function Loading({ text = "loading …" }) {
+function Loading({ text = "loading … (dramatic music) 🎵" }) {
   return <p style={{ ...srsNote, fontFamily: "var(--font-mono)", fontSize: "11px", letterSpacing: "0.1em" }}>{text}</p>;
 }
 
@@ -1177,7 +1213,7 @@ function Flashcards({ settings, version, onChange }) {
   if (done) {
     return (
       <div style={{ ...srsCol, padding: "40px 0" }}>
-        <div style={{ fontFamily: "var(--font-serif)", fontSize: "22px", color: "var(--ink)", textAlign: "center" }}>All {total} / {total} cards done 🎉</div>
+        <div style={{ fontFamily: "var(--font-serif)", fontSize: "22px", color: "var(--ink)", textAlign: "center" }}>All {total} / {total} cards done — KAPOW! 💥</div>
         <button onClick={reshuffle} style={navBtnStyle}>⟲ start over</button>
       </div>
     );
@@ -1328,7 +1364,7 @@ function PhaseSentences({ idx, onChange }) {
         return (
           <div style={{ ...srsCol, padding: "30px 0" }}>
             {stat}
-            <div style={{ fontFamily: "var(--font-serif)", fontSize: "22px", color: "var(--ink)", textAlign: "center" }}>All {v.words} words written right 🎉</div>
+            <div style={{ fontFamily: "var(--font-serif)", fontSize: "22px", color: "var(--ink)", textAlign: "center" }}>All {v.words} words written right — WHAM! spelling champ ✍️</div>
             <p style={{ ...srsNote, fontSize: "14px" }}>Every word and verb of this phase, in a sentence of its own.</p>
             <button onClick={reset} style={navBtnStyle}>⟲ start the phase over</button>
           </div>
@@ -1338,7 +1374,7 @@ function PhaseSentences({ idx, onChange }) {
         return (
           <div style={{ ...srsCol, padding: "30px 0" }}>
             {stat}
-            <div style={{ fontFamily: "var(--font-serif)", fontSize: "22px", color: "var(--ink)", textAlign: "center" }}>{v.right} / {v.total} sentences right {v.missed === 0 ? "🎉" : ""}</div>
+            <div style={{ fontFamily: "var(--font-serif)", fontSize: "22px", color: "var(--ink)", textAlign: "center" }}>{v.right} / {v.total} sentences right {v.missed === 0 ? "— FLAWLESS VICTORY! 🏆" : ""}</div>
             <div style={{ ...srsNote, fontSize: "14px" }}>
               {v.missed === 0 ? (v.retry ? "All the missed words are right now." : "Every word of this round, right first time.")
                 : `${v.missed} ${v.missed === 1 ? "word" : "words"} to practise again — each comes back with another sentence where there is one.`}
@@ -1450,7 +1486,7 @@ function StudyMode({ version, onChange, geminiKey }) {
       if (v.state === "caughtUp") {
         return (
           <div style={{ ...srsCol, padding: "36px 0" }}>
-            <div style={{ fontFamily: "var(--font-serif)", fontSize: "22px", textAlign: "center" }}>You're caught up for today 🎉</div>
+            <div style={{ fontFamily: "var(--font-serif)", fontSize: "22px", textAlign: "center" }}>All caught up — the city is safe for today 🦸</div>
             <p style={srsNote}>Every word that's due has been reviewed, and today's {v.newPerDay} new words are done. Come back tomorrow — or set <strong>focus → everything</strong> in settings ▸ to keep drilling now.</p>
           </div>
         );
@@ -1458,7 +1494,7 @@ function StudyMode({ version, onChange, geminiKey }) {
       if (v.state === "roundDone") {
         return (
           <div style={{ ...srsCol, padding: "36px 0" }}>
-            <div style={{ fontFamily: "var(--font-serif)", fontSize: "22px", textAlign: "center" }}>{v.graded} reviewed this round 🎉</div>
+            <div style={{ fontFamily: "var(--font-serif)", fontSize: "22px", textAlign: "center" }}>{v.graded} reviewed this round — BOOM! 💥</div>
             <button onClick={() => act("keepGoing")} style={navBtnStyle}>⟲ keep going</button>
           </div>
         );
@@ -1558,7 +1594,7 @@ function WriteMode({ version, onChange, geminiKey }) {
       if (v.state === "roundDone") {
         return (
           <div style={{ ...srsCol, padding: "36px 0" }}>
-            <div style={{ fontFamily: "var(--font-serif)", fontSize: "22px", textAlign: "center" }}>{v.typed} typed this round 🎉</div>
+            <div style={{ fontFamily: "var(--font-serif)", fontSize: "22px", textAlign: "center" }}>{v.typed} typed this round — ZING! fast fingers ⚡</div>
             <button onClick={() => act("keepGoing")} style={navBtnStyle}>⟲ keep going</button>
           </div>
         );
@@ -1588,7 +1624,7 @@ function WriteMode({ version, onChange, geminiKey }) {
           )}
           {answered && (
             <div style={{ ...srsCol, gap: "10px" }}>
-              <div style={{ fontFamily: "var(--font-mono)", fontSize: "12px", letterSpacing: "0.08em", color: tone }}>{ok ? "✓ RICHTIG" : close ? "≈ FAST" : "✗ NOCH NICHT"}</div>
+              <div style={{ fontFamily: "var(--font-mono)", fontSize: "12px", letterSpacing: "0.08em", color: tone }}>{ok ? "✓ RICHTIG — POW! 💥" : close ? "≈ FAST — ARGH, so close!" : "✗ NOCH NICHT — OOF! 🤕"}</div>
               {!ok && <div style={{ fontFamily: "var(--font-serif)", fontWeight: 600, fontSize: "22px", color: "var(--ink)", textAlign: "center" }}>{v.forms}</div>}
               {ok && v.spelled && <div style={{ fontFamily: "var(--font-serif)", fontSize: "15px", color: "var(--ink-soft)", textAlign: "center" }}>accepted — the umlaut spelling is <strong style={{ color: "var(--ink)" }}>{v.spelled}</strong></div>}
               {v.hint && <div style={{ fontFamily: "var(--font-serif)", fontStyle: "italic", fontSize: "14px", color: "var(--ink-soft)", textAlign: "center" }}>{v.hint}</div>}
@@ -1672,7 +1708,7 @@ function Quiz({ settings, version, onChange, geminiKey }) {
     return (
       <div style={{ ...srsCol, padding: "40px 0" }}>
         <ScoreLine score={score} />
-        <div style={{ fontFamily: "var(--font-serif)", fontSize: "22px", color: "var(--ink)", textAlign: "center" }}>All {r.pool.length} / {r.pool.length} words done 🎉</div>
+        <div style={{ fontFamily: "var(--font-serif)", fontSize: "22px", color: "var(--ink)", textAlign: "center" }}>All {r.pool.length} / {r.pool.length} words done — KAPOW! 💥</div>
         <div style={{ display: "flex", gap: "10px" }}>{saveBtn}<button onClick={() => update(reset)} style={navBtnStyle}>⟲ start over</button></div>
       </div>
     );
@@ -1744,7 +1780,7 @@ function ArticleQuiz({ settings, version, onChange, geminiKey }) {
     return (
       <div style={{ ...srsCol, padding: "40px 0" }}>
         <ScoreLine score={score} />
-        <div style={{ fontFamily: "var(--font-serif)", fontSize: "22px", color: "var(--ink)", textAlign: "center" }}>All {r.nouns.length} / {r.nouns.length} nouns done 🎉</div>
+        <div style={{ fontFamily: "var(--font-serif)", fontSize: "22px", color: "var(--ink)", textAlign: "center" }}>All {r.nouns.length} / {r.nouns.length} nouns done — der, die, das: DEFEATED! 🥊</div>
         <button onClick={() => update(reset)} style={navBtnStyle}>⟲ start over</button>
       </div>
     );
@@ -1880,7 +1916,7 @@ function ClozeQuiz({ settings, version, onChange, geminiKey }) {
     return (
       <div style={{ ...srsCol, padding: "40px 0" }}>
         <ScoreLine score={score} />
-        <div style={{ fontFamily: "var(--font-serif)", fontSize: "22px", color: "var(--ink)", textAlign: "center" }}>All {r.clozePool.length} / {r.clozePool.length} sentences done 🎉</div>
+        <div style={{ fontFamily: "var(--font-serif)", fontSize: "22px", color: "var(--ink)", textAlign: "center" }}>All {r.clozePool.length} / {r.clozePool.length} sentences done — every gap filled. SPLAT! 🎯</div>
         <button onClick={() => update(reset)} style={navBtnStyle}>⟲ start over</button>
       </div>
     );
@@ -2501,7 +2537,7 @@ function PhaseRound({ idx, set, refresh, retake, onExit, onNext, onChange }) {
     return wrap(
       <React.Fragment>
         <div style={{ textAlign: "center", padding: "20px 0 6px" }}>
-          <div style={{ fontFamily: "var(--font-serif)", fontWeight: 600, fontSize: "24px", color: "var(--ink)" }}>{retake ? "Wiederholung fertig" : v.passedNow ? "Phase bestanden 🎉" : v.refresh ? "Auffrischung fertig" : "Runde fertig"}</div>
+          <div style={{ fontFamily: "var(--font-serif)", fontWeight: 600, fontSize: "24px", color: "var(--ink)" }}>{retake ? "Wiederholung fertig" : v.passedNow ? "Phase bestanden — BAM! 🏆" : v.refresh ? "Auffrischung fertig" : "Runde fertig"}</div>
           <div style={{ fontFamily: "var(--font-mono)", fontSize: "11px", letterSpacing: "0.08em", color: "var(--ink-soft)", marginTop: "10px" }}>{v.right} / {v.first} {retake ? "richtig" : "beim ersten Versuch richtig"} ({pct}%)</div>
         </div>
         <MasteryBar status={v.status} />
@@ -2520,7 +2556,7 @@ function PhaseRound({ idx, set, refresh, retake, onExit, onNext, onChange }) {
   const deEn = v.dir === "de-en";
   const a = v.answer;
   const tone = a ? (a.correct ? "var(--good)" : "var(--bad)") : "var(--line)";
-  const verdictText = !a ? "" : a.correct ? "✓ RICHTIG" : retake ? "✗ FALSCH" : "✗ NOCH NICHT — kommt gleich nochmal";
+  const verdictText = !a ? "" : a.correct ? "✓ RICHTIG — BAM! 💥" : retake ? "✗ FALSCH — OOF! 🤕" : "✗ NOCH NICHT — kommt gleich nochmal 🔁";
   return wrap(
     <React.Fragment>
       <MasteryBar status={v.status} />
@@ -2848,11 +2884,11 @@ function UserMenu({ user, onLogout }) {
         <div role="menu" style={{ position: "absolute", top: "44px", left: 0, zIndex: 20, minWidth: "200px", maxWidth: "min(280px, 80vw)", padding: "12px",
           borderRadius: "12px", border: "1px solid var(--line)", background: "var(--paper-raised)", boxShadow: "var(--shadow-soft)",
           display: "flex", flexDirection: "column", gap: "10px" }}>
-          <div style={{ ...monoLabel, fontSize: "9px" }}>logged in as</div>
+          <div style={{ ...monoLabel, fontSize: "9px" }}>secret identity</div>
           <div style={{ fontFamily: "var(--font-mono)", fontSize: "12px", color: "var(--ink)", overflowWrap: "anywhere" }}>{email}</div>
           <button role="menuitem" onClick={() => { setOpen(false); openTalkloop(); }}
-            style={{ ...miniBtn, alignSelf: "flex-start" }}>🗣 practise in Talkloop</button>
-          <button role="menuitem" onClick={() => { setOpen(false); onLogout(); }} style={{ ...miniBtn, color: "var(--bad)", borderColor: "var(--bad)", alignSelf: "flex-start" }}>⎋ log out</button>
+            style={{ ...miniBtn, alignSelf: "flex-start" }}>🗯 practise talking (Talkloop)</button>
+          <button role="menuitem" onClick={() => { setOpen(false); onLogout(); }} style={{ ...miniBtn, color: "var(--bad)", borderColor: "var(--bad)", alignSelf: "flex-start" }}>🚪 exit stage left (log out)</button>
         </div>
       )}
     </div>
@@ -3293,14 +3329,14 @@ function TopBar({ storyMode, onStoryMode, formulas, onFormulas, theme, onTheme, 
   return (
     <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "10px", position: "relative", minHeight: "40px" }}>
       <div role="group" aria-label="mode" className="modeseg" style={{ display: "flex", gap: "3px", padding: "3px", background: "var(--tint)", border: "1px solid var(--line)", borderRadius: "999px" }}>
-        <button onClick={() => { onFormulas(false); if (storyMode) onStoryMode(false); }} aria-pressed={!formulas && !storyMode} style={seg(!formulas && !storyMode)}><span className="ic">✎ </span>Practice</button>
+        <button onClick={() => { onFormulas(false); if (storyMode) onStoryMode(false); }} aria-pressed={!formulas && !storyMode} style={seg(!formulas && !storyMode)}><span className="ic">💥 </span>Practice</button>
         <button onClick={() => { onFormulas(false); if (!storyMode) onStoryMode(true); }} aria-pressed={!formulas && storyMode} style={seg(!formulas && storyMode)}><span className="ic">📖 </span>Stories</button>
-        <button onClick={() => onFormulas(true)} aria-pressed={formulas} style={seg(formulas)}><span className="ic">📐 </span>Rules</button>
+        <button onClick={() => onFormulas(true)} aria-pressed={formulas} style={seg(formulas)}><span className="ic">📜 </span>Rules</button>
       </div>
       {user && <UserMenu user={user} onLogout={onLogout} />}
-      <button onClick={() => onTheme(dark ? "light" : "dark")} aria-label={dark ? "switch to light mode" : "switch to dark mode"} title={dark ? "Light mode" : "Dark mode"}
+      <button onClick={() => onTheme(dark ? "light" : "dark")} aria-label={dark ? "switch to light mode" : "switch to dark mode"} title={dark ? "Day patrol" : "Night patrol"}
         style={{ position: "absolute", right: 0, width: "36px", height: "36px", borderRadius: "999px", border: "1px solid var(--line)", background: "var(--paper-raised)", color: "var(--ink-soft)", fontSize: "15px", lineHeight: 1, cursor: "pointer", boxShadow: "var(--shadow-soft)" }}>
-        {dark ? "☀" : "☾"}
+        {dark ? "☀" : "🦇"}
       </button>
     </div>
   );
@@ -3310,7 +3346,7 @@ function StreakHeader({ header, showCounts }) {
   return (
     <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "6px" }}>
       <div style={{ ...monoLabel, letterSpacing: "0.1em", color: "var(--ink-soft)", textAlign: "center" }}>
-        {header.streak > 0 ? "🔥 " + header.streak + "-day streak" : "start a streak today"} · {header.reviewed}/{header.goal} today
+        {header.streak > 0 ? "🔥 " + header.streak + "-day streak — unstoppable!" : "no streak yet — every hero starts somewhere 🦸"} · {header.reviewed}/{header.goal} today
         {showCounts && (
           <span style={{ color: "var(--ink-faint)" }}>{"  ·  " + (header.focus === "all" ? "all-words mode" : header.focus === "trouble" ? "trouble-words mode" : header.due + " due · " + header.new + " new")}</span>
         )}
@@ -3321,6 +3357,19 @@ function StreakHeader({ header, showCounts }) {
     </div>
   );
 }
+
+// One comic-book line under the title, picked once per visit.
+const TEASES = [
+  "Meanwhile, in Germany…",
+  "With great vocab comes great responsibility.",
+  "Der, die, das: the eternal villains. 🦹",
+  "Separable verbs split up mid-sentence. DRAMA!",
+  "Umlauts: letters wearing tiny dot hats. 🎩",
+  "Today's mission: remember the article.",
+  "Our hero faces… THE DATIV! ⚡",
+  "To be continued… tomorrow, same streak time.",
+];
+const TEASE = TEASES[Math.floor(Math.random() * TEASES.length)];
 
 const SYSTEM_THEME = window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
 function LoginScreen({ onLoggedIn }) {
@@ -3339,11 +3388,12 @@ function LoginScreen({ onLoggedIn }) {
   const field = { fontFamily: "var(--font-mono)", fontSize: "13px", padding: "10px 12px", borderRadius: "8px", border: "1px solid var(--line)", background: "var(--paper-raised)", color: "var(--ink)", width: "100%", boxSizing: "border-box" };
   return (
     <form onSubmit={submit} style={{ width: "min(340px, 92vw)", display: "flex", flexDirection: "column", gap: "12px" }}>
-      <div style={{ textAlign: "center", fontSize: "26px", color: "var(--ink)" }}>Wortschatz</div>
-      <div style={{ ...monoLabel, textAlign: "center", marginBottom: "6px" }}>log in to your account</div>
+      <div style={{ textAlign: "center", fontSize: "44px", color: "var(--ink)" }}><span className="comic-title">Wortschatz!</span> <span className="tease">💥</span></div>
+      <div style={{ textAlign: "center", fontSize: "16px", fontWeight: 700, color: "var(--ink-soft)", marginTop: "-4px" }}>Your daily dose of German superpowers.</div>
+      <div style={{ ...monoLabel, textAlign: "center", marginBottom: "6px" }}>secret identity required</div>
       <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="email" autoComplete="username" required style={field} />
       <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="password" autoComplete="current-password" required style={field} />
-      <button type="submit" disabled={state.busy} style={{ ...navBtnStyle, opacity: state.busy ? 0.6 : 1 }}>{state.busy ? "logging in …" : "log in"}</button>
+      <button type="submit" disabled={state.busy} style={{ ...navBtnStyle, opacity: state.busy ? 0.6 : 1 }}>{state.busy ? "KA-CHUNK … 🔧" : "POW! let me in 💥"}</button>
       {state.error && <div role="alert" style={{ fontFamily: "var(--font-mono)", fontSize: "11px", color: "var(--bad)", textAlign: "center" }}>{state.error}</div>}
     </form>
   );
@@ -3429,7 +3479,7 @@ function App() {
   useEffect(() => {
     document.documentElement.setAttribute("data-theme", theme);
     const meta = document.querySelector('meta[name="theme-color"]');
-    if (meta) meta.setAttribute("content", theme === "dark" ? "#1b1915" : "#F6F1E5");
+    if (meta) meta.setAttribute("content", theme === "dark" ? "#14182B" : "#FFF8E1");
   }, [theme]);
 
   const shellStyle = { minHeight: "100%", padding: "36px 20px 48px", fontFamily: "var(--font-serif)", display: "flex", alignItems: "center", justifyContent: "center" };
@@ -3437,10 +3487,10 @@ function App() {
     return (
       <div style={shellStyle}>
         <div style={{ maxWidth: "440px", textAlign: "center", display: "flex", flexDirection: "column", gap: "16px" }}>
-          <div style={{ fontSize: "22px", color: "var(--ink)" }}>Couldn't reach the backend</div>
+          <div style={{ fontSize: "22px", color: "var(--ink)" }}>KO! The backend got knocked out 😵</div>
           <div style={{ fontFamily: "var(--font-mono)", fontSize: "12px", color: "var(--bad)" }}>{status.error}</div>
           <div style={{ fontSize: "13px", color: "var(--ink-muted)" }}>Backend: <code>{API_CONFIGURED ? (API_BASE || location.origin) : "(not configured)"}</code></div>
-          <button onClick={() => setAttempt((n) => n + 1)} style={navBtnStyle}>⟲ retry</button>
+          <button onClick={() => setAttempt((n) => n + 1)} style={navBtnStyle}>⟲ revive it</button>
         </div>
       </div>
     );
@@ -3449,7 +3499,7 @@ function App() {
     return <div style={shellStyle}><LoginScreen onLoggedIn={setUser} /></div>;
   }
   if (status === "loading" || !summary) {
-    return <div style={shellStyle}><div style={{ ...counterStyle, fontSize: "13px" }}>loading …</div></div>;
+    return <div style={shellStyle}><div style={{ ...counterStyle, fontSize: "13px" }}>loading … (dramatic music) 🎵</div></div>;
   }
 
   const s = Object.assign({}, summary.settings, nav);
@@ -3487,8 +3537,10 @@ function App() {
         )}
         <div style={{ display: page === "practice" ? "flex" : "none", flexDirection: "column", gap: "18px" }}>
           <div style={{ textAlign: "center" }}>
-            <div style={{ display: "inline-block", ...monoLabel, fontSize: "9px", letterSpacing: "0.16em", border: "1px solid var(--line)", borderRadius: "999px", padding: "3px 11px", marginBottom: "14px" }}>⇣ everything served by the Java backend</div>
+            <div style={{ display: "inline-block", ...monoLabel, fontSize: "9px", letterSpacing: "0.16em", border: "1px solid var(--line)", borderRadius: "999px", padding: "3px 11px", marginBottom: "14px" }}>⇣ powered by a mighty Java backend ⚡</div>
             <div style={{ fontFamily: "var(--font-mono)", fontSize: "10px", fontWeight: 500, letterSpacing: "0.28em", color: "var(--accent)", marginBottom: "8px" }}>{summary.levelTitle}</div>
+            <div style={{ fontSize: "44px", lineHeight: 1.05 }}><span className="comic-title">Wortschatz!</span> <span className="tease">💥</span></div>
+            <div className="bubble" style={{ fontSize: "15px", color: "var(--ink)", fontWeight: 700, marginTop: "14px" }}>{TEASE}</div>
             <div style={{ fontSize: "13px", fontStyle: "italic", color: "var(--ink-soft)", marginTop: "8px" }}>{summary.cardCount} cards — nouns, verbs, separable verbs, adjectives, connectors &amp; phrases</div>
             <div style={{ width: "48px", height: "2px", background: "var(--accent)", opacity: 0.5, borderRadius: "2px", margin: "18px auto 0" }} />
           </div>
