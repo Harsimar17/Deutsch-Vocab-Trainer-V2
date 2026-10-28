@@ -14,6 +14,7 @@ import java.util.Map;
 public final class TalkloopScreen {
 
     static final int DONE_AFTER = 2; // correct uses in one practice before a word makes room for the next
+    static final int SENTENCE_AGAIN_AFTER = 3; // a Dolmetscher sentence said wrong comes back after this many others
 
     record Word(String de, String en) {
     }
@@ -24,8 +25,12 @@ public final class TalkloopScreen {
         boolean peeked;
     }
 
+    private record Retry(String say, int at) {
+    }
+
     private final String owner;
     private final String partner;
+    private final String modeKey;
     private final String mode;
     private final String level;
     private final String subtitle;
@@ -33,13 +38,19 @@ public final class TalkloopScreen {
     private final List<Word> waiting;
     private final Map<String, Status> status = new LinkedHashMap<>();
     private final List<Map<String, Object>> messages = new ArrayList<>();
+    private final List<String> subjects = new ArrayList<>();
+    private final List<String> given = new ArrayList<>(); // Dolmetscher: the sentences given in this practice, as keys
+    private final List<Retry> retries = new ArrayList<>();
+    private String sayThis = "";
+    private int sayTurn;
     private String id;
     private String nextWord = "";
     private int version = 1;
 
-    TalkloopScreen(String owner, String partner, String mode, String level, String subtitle, List<Word> active, List<Word> waiting) {
+    TalkloopScreen(String owner, String partner, String modeKey, String mode, String level, String subtitle, List<Word> active, List<Word> waiting) {
         this.owner = owner;
         this.partner = partner;
+        this.modeKey = modeKey;
         this.mode = mode;
         this.level = level;
         this.subtitle = subtitle;
@@ -100,6 +111,78 @@ public final class TalkloopScreen {
         version++;
     }
 
+    /** A subject not talked about yet in this practice (true: it is new). */
+    synchronized boolean newSubject(String subject) {
+        String clean = subject == null ? "" : subject.strip().toLowerCase();
+        if (clean.isEmpty() || subjects.contains(clean)) {
+            return false;
+        }
+        subjects.add(clean);
+        return true;
+    }
+
+    /** A grammar check's correction for the learner's last message, if it is still uncorrected (true: added). */
+    synchronized boolean addCorrection(String said, String correction, String tip) {
+        for (int i = messages.size() - 1; i >= 0; i--) {
+            Map<String, Object> m = messages.get(i);
+            if ("learner".equals(m.get("who"))) {
+                if (!said.equals(m.get("text")) || !"".equals(m.get("correction"))) {
+                    return false;
+                }
+                Map<String, Object> fixed = new LinkedHashMap<>(m);
+                fixed.put("correction", correction);
+                fixed.put("tip", tip);
+                fixed.put("checked", true);
+                messages.set(i, fixed);
+                version++;
+                return true;
+            }
+        }
+        return false;
+    }
+
+    // ---- Dolmetscher ----
+
+    boolean interpreter() {
+        return modeKey.equals("interpret");
+    }
+
+    synchronized String sayThis() {
+        return sayThis;
+    }
+
+    synchronized int nextSayTurn() {
+        return ++sayTurn;
+    }
+
+    synchronized boolean given(String key) {
+        return given.contains(key) || TalkloopChatGptService.sentenceKey(sayThis).equals(key);
+    }
+
+    /** The sentence to say now; the one before counts as given. */
+    synchronized String say(String sentence) {
+        if (!sayThis.isEmpty()) {
+            given.add(TalkloopChatGptService.sentenceKey(sayThis));
+        }
+        sayThis = sentence;
+        return sentence;
+    }
+
+    synchronized void retryLater(String say) {
+        retries.add(new Retry(say, sayTurn + SENTENCE_AGAIN_AFTER));
+    }
+
+    /** A sentence said wrong earlier whose turn has come, or null. */
+    synchronized String takeRetry() {
+        for (Retry r : retries) {
+            if (r.at() <= sayTurn) {
+                retries.remove(r);
+                return r.say();
+            }
+        }
+        return null;
+    }
+
     synchronized List<String> notYetSaid() {
         return active.stream().filter(w -> !status.containsKey(w.de()) || status.get(w.de()).correct == 0).map(Word::de).toList();
     }
@@ -124,6 +207,7 @@ public final class TalkloopScreen {
         v.put("version", version);
         v.put("partner", partner);
         v.put("mode", mode);
+        v.put("modeKey", modeKey);
         v.put("level", level);
         v.put("subtitle", subtitle);
         v.put("words", words);

@@ -11,6 +11,7 @@ import java.util.concurrent.ThreadLocalRandom;
 import java.util.stream.Stream;
 
 import com.vocabtrainer.model.Ctx;
+import com.vocabtrainer.model.Gloss;
 import com.vocabtrainer.repository.TalkloopScreenRepository;
 import com.vocabtrainer.util.Rand;
 import org.springframework.http.HttpStatus;
@@ -61,6 +62,58 @@ public class TalkloopChatGptService {
             "A2", "Use common everyday words and short sentences of about 6–10 words. Präsens, Perfekt and the simple future are fine; at most simple weil/dass/wenn clauses. Ask concrete questions about routines, plans, past weekends and preferences.",
             "B1", "Speak naturally but plainly, in sentences of up to about 15 words. Use all common tenses, subordinate clauses (weil, obwohl, dass, wenn, als) and the occasional everyday idiom. Ask the learner for opinions, reasons and short stories about experiences.");
     static final Map<String, String> MISTAKE_TYPES = new LinkedHashMap<>();
+    // "Mein Leben" and "Erzähl mal" start from a theme the app picks, one about the learner's own
+    // life that takes a lot to tell (the AI's own easy questions are nearly always about free
+    // time). As THEMES in static/talkloop/app.js: name (also the subject saved), what to ask about.
+    record Theme(String name, String ask) {
+    }
+
+    static final List<Theme> LIFE_THEMES = List.of(
+            new Theme("your hometown", "the town or city where they grew up: what it is like, what people do there, what they miss and what has changed"),
+            new Theme("yesterday in detail", "what they did yesterday, from getting up to going to bed, with the small details"),
+            new Theme("your work or studies", "what they actually do all day at work or in their studies, what they like about it and what annoys them"),
+            new Theme("your family", "the people in their family: who they are, what they do, who they are closest to, how they spend time together"),
+            new Theme("food from your country", "a dish from where they come from: what is in it, how it is made, when people eat it"),
+            new Theme("learning german", "why they learn German, how they learn it, what is hard, and a funny mistake they have made"),
+            new Theme("your home", "where they live: the rooms, their favourite place in it, the neighbours, what they would change"),
+            new Theme("your best friend", "their best friend: how they met, what this person is like, what they do together"),
+            new Theme("your childhood", "what they were like as a child: where they lived, what they played, what school was like"),
+            new Theme("your city now", "the place they live now: what they like and don't like, how they get around, which place they would show a visitor"),
+            new Theme("shopping and money", "how they shop for food and clothes: where, what is expensive, how they save money"),
+            new Theme("health and sleep", "how they stay healthy: sleep, sport, food, what they do when they are ill"),
+            new Theme("festivals and traditions", "a festival or tradition from their culture: what happens, what people eat, how their family celebrates it"),
+            new Theme("plans for the future", "where they want to be in five years: work, home, family, a dream they have"),
+            new Theme("your last trip", "their last trip: where they went, with whom, what they did, what went well or wrong"),
+            new Theme("phone and internet", "how they use their phone: which apps, how many hours, what they read or watch, whether it is too much"),
+            new Theme("cooking at home", "what they cook at home, what they cook well, and one recipe step by step"),
+            new Theme("getting around", "how they get to work or around town, how long it takes, what happens on the way"),
+            new Theme("habits", "a habit they are proud of and one they would like to change, and why"),
+            new Theme("a perfect day", "what their perfect day would look like, from morning to night"),
+            new Theme("a big decision", "a big decision in their life (a move, a job, studies): why they made it, how it went, whether they would do it again"),
+            new Theme("a person you admire", "a person they admire, from their life or not: who it is and why"),
+            new Theme("life in germany", "what surprises them about Germany or German people, what they like and what they find strange"),
+            new Theme("your daily routine", "a normal workday for them, step by step, and how a good day differs from a bad one"));
+    static final List<Theme> STORY_THEMES = List.of(
+            new Theme("something went wrong", "the last time something went really wrong"),
+            new Theme("first day somewhere new", "their first day at a new job, school or course"),
+            new Theme("an unforgettable trip", "a trip they will never forget"),
+            new Theme("getting lost", "a time they got lost or missed a train, bus or flight"),
+            new Theme("a memorable meal", "the best (or worst) meal they ever had"),
+            new Theme("helping someone", "a time they helped someone, or someone helped them"),
+            new Theme("a funny misunderstanding", "a funny misunderstanding, maybe because of a language"),
+            new Theme("meeting a friend", "how they met their best friend or partner"),
+            new Theme("a perfect day remembered", "a day when everything went right"),
+            new Theme("a big surprise", "the last time they were really surprised"),
+            new Theme("a childhood memory", "a memory from their childhood that they still think about"),
+            new Theme("moving house", "a move to a new flat, city or country"),
+            new Theme("a celebration", "a birthday, wedding or festival they remember well"),
+            new Theme("a scary moment", "a time they were really scared"),
+            new Theme("a problem solved", "a problem with a shop, an office or a landlord, and how it ended"),
+            new Theme("a proud moment", "a moment they were really proud of"),
+            new Theme("an embarrassing moment", "a slightly embarrassing moment they can laugh about now"),
+            new Theme("a lucky day", "a time they were very lucky"));
+    private static final int THEMES_GIVEN = 8;
+
     private static final List<String> EASY_TOPICS = List.of(
             "Lieber Kaffee oder lieber Tee?", "Wohnen in der Stadt oder auf dem Land",
             "Sommer oder Winter: Welche Jahreszeit ist besser?", "Hund oder Katze als Haustier",
@@ -79,10 +132,19 @@ public class TalkloopChatGptService {
                 "Interview the learner about their life, day, hobbies, work and opinions. Ask one question at a time, react to the answer, then ask a natural follow-up. Start by greeting them and asking their name or how their day is going."));
         MODES.put("lead", new Mode("Free chat — the partner leads",
                 "You lead the whole conversation. Always finish your reply with a question that keeps it going. Follow up on what the learner says, gently change topic when one runs dry, and keep it light and encouraging. Start by greeting the learner warmly and asking one easy opening question."));
+        MODES.put("life", new Mode("Mein Leben — talk about my life",
+                "Get the learner talking about their own life, like a curious friend. Ask one question at a time, react to the answer, then dig deeper with a natural follow-up before moving on; now and then add a short line about yourself. "
+                        + "Ask open questions that take a few sentences to answer (Erzähl mal…, Wie war das…, Warum…, Beschreib mal…), not yes/no ones; when an answer is short, ask for one concrete detail (who, where, what exactly, how it felt). Never bring up hobbies, free time (Freizeit) or the weekend yourself."));
+        MODES.put("story", new Mode("Erzähl mal — tell a story",
+                "The learner tells real stories from their own life and you are the curious listener. Take one story at a time and get it out of them piece by piece: when and where it happened, who was there, what happened first, then, and in the end, and how they felt. "
+                        + "React like a friend (Echt? Und dann?) in one or two short sentences, so they do the talking. Get them to tell it in the past (Perfekt, and war, hatte) with words like zuerst, dann, plötzlich, am Ende, als and weil. "
+                        + "Once a story is told (about six exchanges), say in a few words what you liked about it and ask for the next one. If they have no story like that, offer a small variation they might have."));
         MODES.put("topic", new Mode("Discuss a topic",
                 "You and the learner are discussing one topic, like two people with different opinions. Start by naming the topic and giving your own opinion in one or two short sentences, then ask what they think and why: no weather, no greeting chat. Stay on it. Each turn: react to what the learner said, add a short opinion, reason or example of your own, then ask one easy question they can answer from their own life or taste, each time from a new angle (their own experience, an advantage, a disadvantage, which option they would choose, whether they agree with you, advice to a friend, their daily life, what they would change); never ask a question you already asked. If they don't know, offer two options to pick from. Keep the opinion you gave first: you may add to it or soften it, but never switch sides. Where the learner holds the other view, disagree politely, so they have to defend it. Don't change to small talk or another topic until this one is clearly used up (about eight exchanges); then say so in a few words and name a new topic the same way."));
         MODES.put("interpret", new Mode("Dolmetscher — say it in German",
-                "This is an interpreter drill. Each turn, give the learner one short everyday sentence to say in German, written in their native language: at their level, a new situation or pattern each time (shopping, work, friends, travel, home, plans, problems), never one already given. Never say the German version of the sentence you give. When they answer, judge whether their German says that sentence correctly, meaning included, react in one very short German line, then give the next sentence. Keep your own replies very short, so they do the talking."));
+                "This is an interpreter drill. Each turn, put one short everyday sentence for the learner to say in German into task, written in their native language: at their level, a new situation or pattern each time (shopping, work, friends, travel, home, plans, problems), never one already given, also after a wrong try (the screen brings that one back itself later). "
+                        + "The screen sometimes shows a sentence from the learner's deck instead of yours: each tool result names the sentence the learner now has to say. Never say the German version of it. When they answer, judge whether their German says that sentence correctly, meaning included (a wrong or missing part gets a correction with the right German sentence), and react in one very short German line. Keep your own replies very short, so they do the talking.\n"
+                        + "Start with one short line saying you will give everyday sentences to say, and the first sentence in task."));
         MODES.put("rolecard", new Mode("Rollenkarte — play a character",
                 "The learner plays the character on their role card (below). Greet them warmly and ask their name, then interview them about the card: one question at a time about one detail, in a natural order, react briefly, and ask small follow-ups; they may invent extra details that fit the card. If an answer contradicts the card, point it out kindly."));
         MODES.put("sentences", new Mode("Sentence drill — my learnt words",
@@ -123,18 +185,24 @@ public class TalkloopChatGptService {
         MISTAKE_TYPES.put("other", "other");
     }
 
-    /** What a tool gives back: text for ChatGPT, and the practice whose screen to show (or null). */
-    public record ToolResult(String text, TalkloopScreen screen) {
+    /** What a tool gives back: text for ChatGPT, and the practice whose screen to show (or null) or other data for the screen. */
+    public record ToolResult(String text, TalkloopScreen screen, Map<String, Object> data) {
+
+        ToolResult(String text, TalkloopScreen screen) {
+            this(text, screen, null);
+        }
     }
 
     static final String SCREEN_URI = "ui://talkloop/screen.html";
 
     private final TalkloopService talkloop;
     private final TalkloopScreenRepository screens;
+    private final StoryService stories;
 
-    public TalkloopChatGptService(TalkloopService talkloop, TalkloopScreenRepository screens) {
+    public TalkloopChatGptService(TalkloopService talkloop, TalkloopScreenRepository screens, StoryService stories) {
         this.talkloop = talkloop;
         this.screens = screens;
+        this.stories = stories;
     }
 
     /** The tools ChatGPT is offered, in MCP's tools/list shape. */
@@ -190,6 +258,7 @@ public class TalkloopChatGptService {
         turnProps.put("suggestions", Map.of("type", "array", "items", Map.of("type", "string"), "description", "2–3 short German answers the learner could give."));
         turnProps.put("next_word", Map.of("type", "string", "description", "The one of today's words your reply asks for, as written in the list, else empty."));
         turnProps.put("task", Map.of("type", "string", "description", "Dolmetscher: the next sentence to say, in the learner's language. Sentence drill: the current situation's title. Else empty."));
+        turnProps.put("subject", Map.of("type", "string", "description", "Free chat, interview, Mein Leben, Erzähl mal: what your reply's question is about, in two to four English words. Else empty."));
         turn.put("inputSchema", schema(turnProps, List.of("screen_id", "said", "reply")));
         turn.put("annotations", annotations);
         turn.put("_meta", onScreen);
@@ -204,7 +273,27 @@ public class TalkloopChatGptService {
                 List.of("screen_id", "key")));
         peek.put("annotations", annotations);
         peek.put("_meta", Map.of("ui", Map.of("resourceUri", SCREEN_URI, "visibility", List.of("app")), "ui/resourceUri", SCREEN_URI));
-        return List.of(start, turn, peek);
+        Map<String, Object> check = new LinkedHashMap<>();
+        check.put("name", "talkloop_check");
+        check.put("title", "Add a grammar check's correction");
+        check.put("description", "Called by the Talkloop screen when LanguageTool finds a mistake in the learner's last message that the partner didn't correct.");
+        check.put("inputSchema", schema(Map.of(
+                "screen_id", Map.of("type", "string"),
+                "said", Map.of("type", "string"),
+                "correction", Map.of("type", "string"),
+                "mistakes", Map.of("type", "array", "items", Map.of("type", "string", "enum", List.copyOf(MISTAKE_TYPES.keySet()))),
+                "tip", Map.of("type", "string")),
+                List.of("screen_id", "said", "correction")));
+        check.put("annotations", annotations);
+        check.put("_meta", Map.of("ui", Map.of("resourceUri", SCREEN_URI, "visibility", List.of("app")), "ui/resourceUri", SCREEN_URI));
+        Map<String, Object> lookup = new LinkedHashMap<>();
+        lookup.put("name", "talkloop_lookup");
+        lookup.put("title", "Look up a word");
+        lookup.put("description", "Called by the Talkloop screen when the learner taps a word in a reply: its meaning from the learner's vocabulary.");
+        lookup.put("inputSchema", schema(Map.of("word", Map.of("type", "string")), List.of("word")));
+        lookup.put("annotations", annotations);
+        lookup.put("_meta", Map.of("ui", Map.of("resourceUri", SCREEN_URI, "visibility", List.of("app")), "ui/resourceUri", SCREEN_URI));
+        return List.of(start, turn, peek, check, lookup);
     }
 
     /** Runs one tool; a ResponseStatusException is a bad call that ChatGPT can correct. */
@@ -213,6 +302,8 @@ public class TalkloopChatGptService {
             case "start_talkloop" -> start(ctx, args);
             case "talkloop_turn" -> turn(ctx, args);
             case "talkloop_peek" -> peek(ctx, args);
+            case "talkloop_check" -> check(ctx, args);
+            case "talkloop_lookup" -> lookup(args);
             default -> throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "unknown tool: " + name);
         };
     }
@@ -268,18 +359,29 @@ public class TalkloopChatGptService {
             String topic = pickTopic(level, strings(chats.get("topics")));
             lines.add("Today's topic: \"" + topic + "\". Every question is about this topic itself, never about something the learner only mentioned in passing.");
             subtitle = topic;
+            talkloop.noteTopics(ctx, topic, List.of()); // a later chat, here or on Talkloop's page, picks another
         }
         if (mode.equals("rolecard")) {
             String card = roleCard();
             lines.add("The learner's role card (they play this person; the screen shows it to them): " + card + ".");
             subtitle = "Your role: " + card;
         }
-        if (mode.equals("interview") || mode.equals("lead")) {
+        boolean subjects = List.of("interview", "lead", "life", "story").contains(mode);
+        if (subjects) {
             List<String> covered = strings(chats.get("subjects"));
-            if (!covered.isEmpty()) {
-                lines.add("Talked about in earlier chats, so never bring these up yourself (follow the learner if they do): "
-                        + quoted(covered.subList(0, Math.min(MAX_SUBJECT_HINTS, covered.size()))) + ".");
+            List<Theme> themes = List.of();
+            if (mode.equals("life") || mode.equals("story")) {
+                themes = pickThemes(mode.equals("story") ? STORY_THEMES : LIFE_THEMES, covered).subList(0, THEMES_GIVEN);
+                lines.add("Start by greeting the learner in one short line, then " + (mode.equals("story") ? "ask them to tell you about " : "ask an open question about ")
+                        + themes.get(0).ask() + ". " + (mode.equals("story") ? "When a story is told, ask for the next of these, in order: " : "When a subject runs dry (after about five or six exchanges on it), move on to the next of these, in order: ")
+                        + String.join("; ", themes.subList(1, themes.size()).stream().map(Theme::ask).toList())
+                        + ". Set subject to exactly the theme's name while you are on it: " + quoted(themes.stream().map(Theme::name).toList()) + ".");
+                subtitle = themes.get(0).name();
             }
+            List<String> themeNames = themes.stream().map(Theme::name).toList();
+            List<String> leave = covered.stream().filter(c -> !themeNames.contains(c)).limit(MAX_SUBJECT_HINTS).toList();
+            lines.add("subject: what the question in your reply is about, in two to four English words (e.g. \"weekend plans\"); keep it the same while you stay on it, and move on to a new one, not back, when it runs dry."
+                    + (leave.isEmpty() ? "" : " Talked about in earlier chats, so never bring these up yourself (follow the learner if they do): " + quoted(leave) + "."));
         }
 
         // Like unticking "Weave my vocab into the conversation" on Talkloop's page.
@@ -305,12 +407,12 @@ public class TalkloopChatGptService {
                     + "stay natural, never say you're testing, and don't explain grammar unless you correct a mistake.");
         }
 
-        TalkloopScreen screen = new TalkloopScreen(ctx.uid(), character, m.label(), level, subtitle, words(active), words(waiting));
+        TalkloopScreen screen = new TalkloopScreen(ctx.uid(), character, mode, m.label(), level, subtitle, words(active), words(waiting));
         String id = screens.save(screen);
         screen.id(id);
         lines.add("The learner talks to you on the Talkloop screen shown in this chat: they speak or type there, and what they say arrives as their message. "
                 + "For every learner message, call talkloop_turn with screen_id \"" + id + "\" and your whole turn: said, correction, mistakes, tip (in " + nativeLanguage + "), "
-                + "used_words, reply, reply_translation (in " + nativeLanguage + "), suggestions, next_word, task. The screen shows all of it and reads your reply aloud, "
+                + "used_words, reply, reply_translation (in " + nativeLanguage + "), suggestions, next_word, task" + (subjects ? ", subject" : "") + ". The screen shows all of it and reads your reply aloud, "
                 + "so after the call write only your German reply, nothing else. If the learner just repeats a correction you gave, praise it in tip and ask your question again.");
         lines.add("If the learner says \"zwei Minuten\", pause until they say \"zurück\".");
         lines.add("Start now: call talkloop_turn with said empty and your opening line as reply.");
@@ -332,9 +434,10 @@ public class TalkloopChatGptService {
         if (!said.isBlank()) {
             List<String> types = strings(args.get("mistakes")).stream().filter(MISTAKE_TYPES::containsKey).distinct().toList();
             if (!correction.isBlank()) {
-                List<Map<String, Object>> entries = (types.isEmpty() ? List.of("other") : types).stream()
-                        .map(type -> Map.<String, Object>of("type", type, "at", now, "said", said, "fix", correction)).toList();
-                talkloop.syncMistakes(ctx, Map.of("languages", Map.of(LANGUAGE, Map.of("resetAt", 0, "entries", entries))));
+                saveMistakes(ctx, said, correction, types, now);
+            }
+            if (screen.interpreter()) {
+                recordSentence(ctx, screen, said, correction, now);
             }
             Map<String, Object> changed = new LinkedHashMap<>();
             Map<String, Object> spoken = null;
@@ -369,12 +472,116 @@ public class TalkloopChatGptService {
         partner.put("text", reply);
         partner.put("translation", clip(text(args, "reply_translation", "")));
         partner.put("suggestions", strings(args.get("suggestions")).stream().limit(3).map(TalkloopChatGptService::clip).toList());
-        partner.put("task", clip(text(args, "task", "")));
+        String task = clip(text(args, "task", ""));
+        String sayNext = screen.interpreter() ? nextSentence(ctx, screen, task) : null;
+        partner.put("task", sayNext != null ? sayNext : task);
         screen.turn(learner, partner, text(args, "next_word", ""));
+        String subject = text(args, "subject", "");
+        if (screen.newSubject(subject)) {
+            talkloop.noteTopics(ctx, null, List.of(subject)); // a later chat, here or on Talkloop's page, leaves it alone
+        }
 
         List<String> notYet = screen.notYetSaid();
         return new ToolResult("Shown on the Talkloop screen. Now write only your German reply."
+                + (sayNext != null ? " The learner now has to say: \"" + sayNext + "\" (shown on the screen); judge their next message against it, and never say its German version." : "")
                 + (notYet.isEmpty() ? "" : " Today's words not said yet: " + String.join("; ", notYet) + "."), screen);
+    }
+
+    /** LanguageTool found a mistake in the learner's last message that ChatGPT didn't correct: as on Talkloop's page, it becomes the correction. */
+    ToolResult check(Ctx ctx, Map<String, Object> args) {
+        TalkloopScreen screen = screens.find(text(args, "screen_id", ""), ctx.uid());
+        String said = clip(text(args, "said", ""));
+        String correction = clip(text(args, "correction", ""));
+        if (!correction.isBlank() && !correction.equals(said) && screen.addCorrection(said, correction, clip(text(args, "tip", "")))) {
+            saveMistakes(ctx, said, correction, strings(args.get("mistakes")).stream().filter(MISTAKE_TYPES::containsKey).distinct().toList(), System.currentTimeMillis());
+        }
+        return new ToolResult("ok", screen);
+    }
+
+    /** A tapped word's meaning, as the story reader finds it; found false when the vocabulary hasn't got it. */
+    ToolResult lookup(Map<String, Object> args) {
+        String word = clip(text(args, "word", ""));
+        Gloss g = word.isBlank() ? null : stories.lookupWord(word);
+        Map<String, Object> data = new LinkedHashMap<>();
+        data.put("word", word);
+        data.put("found", g != null);
+        if (g != null) {
+            data.putAll(g.view());
+        }
+        return new ToolResult(g == null ? "not found" : g.head() + ": " + g.en(), null, data);
+    }
+
+    private void saveMistakes(Ctx ctx, String said, String correction, List<String> types, long now) {
+        List<Map<String, Object>> entries = (types.isEmpty() ? List.of("other") : types).stream()
+                .map(type -> Map.<String, Object>of("type", type, "at", now, "said", said, "fix", correction)).toList();
+        talkloop.syncMistakes(ctx, Map.of("languages", Map.of(LANGUAGE, Map.of("resetAt", 0, "entries", entries))));
+    }
+
+    // ---- the Dolmetscher's sentence deck, as Talkloop's page keeps it (recordSentence, nextSentence) ----
+
+    /** The learner's try at the sentence on screen: right moves it up a stage, wrong brings it back later in this practice and tomorrow. */
+    private void recordSentence(Ctx ctx, TalkloopScreen screen, String said, String correction, long now) {
+        String say = screen.sayThis();
+        String key = sentenceKey(say);
+        if (key.isEmpty()) {
+            return;
+        }
+        Map<String, Object> prev = deck(ctx).get(key) instanceof Map<?, ?> p ? asMap(p) : null;
+        // A "correction" that only changes capital letters isn't one.
+        boolean right = correction.isBlank() || correction.strip().equalsIgnoreCase(said.strip());
+        Map<String, Object> entry = new LinkedHashMap<>();
+        entry.put("say", say);
+        if (right) {
+            long stage = Math.min(4, (prev == null ? 0 : Srs.num(prev.get("stage"), 0)) + 1);
+            entry.put("de", said.strip());
+            entry.put("stage", stage);
+            entry.put("due", now + SPOKEN_DAYS[(int) stage - 1] * DAY_MS);
+            entry.put("misses", prev == null ? 0 : Srs.num(prev.get("misses"), 0));
+        } else {
+            entry.put("de", !correction.isBlank() ? correction.strip() : prev != null && prev.get("de") instanceof String d ? d : "");
+            entry.put("stage", 0L);
+            entry.put("due", now + DAY_MS);
+            entry.put("misses", (prev == null ? 0 : Srs.num(prev.get("misses"), 0)) + 1);
+            screen.retryLater(say);
+        }
+        entry.put("updatedAt", now);
+        talkloop.syncSentences(ctx, Map.of("sentences", Map.of(key, entry)));
+    }
+
+    /**
+     * The next sentence to say: one said wrong earlier in this practice once its turn has come,
+     * else on every other turn a due one from the deck, else ChatGPT's new one, else the deck's
+     * soonest; null keeps the one on screen.
+     */
+    private String nextSentence(Ctx ctx, TalkloopScreen screen, String offered) {
+        int turn = screen.nextSayTurn();
+        String retry = screen.takeRetry();
+        if (retry != null) {
+            return screen.say(retry);
+        }
+        List<Map<String, Object>> deck = deck(ctx).values().stream().filter(o -> o instanceof Map<?, ?>).map(o -> asMap((Map<?, ?>) o))
+                .filter(e -> e.get("say") instanceof String say && !screen.given(sentenceKey(say)))
+                .sorted(Comparator.comparingLong(e -> Srs.num(e.get("due"), 0))).toList();
+        long now = System.currentTimeMillis();
+        String fresh = offered.length() > 200 ? offered.substring(0, 200) : offered;
+        String pick = deck.stream().filter(e -> Srs.num(e.get("due"), 0) <= now).findFirst()
+                .filter(e -> turn % 2 == 1).map(e -> (String) e.get("say")).orElse(null);
+        if (pick == null && !fresh.isBlank() && !screen.given(sentenceKey(fresh))) {
+            pick = fresh;
+        }
+        if (pick == null && !deck.isEmpty()) {
+            pick = (String) deck.get(0).get("say");
+        }
+        return pick == null ? null : screen.say(pick);
+    }
+
+    private Map<String, Object> deck(Ctx ctx) {
+        return talkloop.syncSentences(ctx, Map.of("sentences", Map.of())).get("sentences") instanceof Map<?, ?> m ? asMap(m) : Map.of();
+    }
+
+    static String sentenceKey(String say) {
+        String k = say == null ? "" : say.toLowerCase(Locale.ROOT).replaceAll("[^\\p{L}\\p{N}\\s]", " ").replaceAll("\\s+", " ").trim();
+        return k.length() > 200 ? k.substring(0, 200) : k;
     }
 
     /** The learner tapped a word to see its German: as in Talkloop, it counts as not recalled. */
@@ -500,6 +707,12 @@ public class TalkloopChatGptService {
 
     private Map<String, Object> spokenWords(Ctx ctx) {
         return talkloop.syncSpoken(ctx, Map.of("words", Map.of())).get("words") instanceof Map<?, ?> m ? asMap(m) : Map.of();
+    }
+
+    /** The chat's themes in the order to bring them up: ones not talked about lately first, shuffled. */
+    static List<Theme> pickThemes(List<Theme> pool, List<String> used) {
+        return Stream.concat(Rand.shuffle(pool.stream().filter(t -> !used.contains(t.name())).toList()).stream(),
+                Rand.shuffle(pool.stream().filter(t -> used.contains(t.name())).toList()).stream()).toList();
     }
 
     /** A random topic for the level not had yet; once all are used, any but the last three. */

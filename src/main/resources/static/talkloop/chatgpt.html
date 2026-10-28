@@ -3,9 +3,10 @@
   Talkloop's screen inside ChatGPT (an MCP App, served by McpService as ui://talkloop/screen.html).
   ChatGPT is the partner: what the learner says here goes into the chat as their message, ChatGPT
   answers with the talkloop_turn tool, and its turn comes back here (as the tool result, or from
-  __TALKLOOP_ORIGIN__/talkloop-screen/{id} while waiting) to be shown and read aloud. Listening is
-  the browser's speech recognition and the voice the browser's own, as on Talkloop's page.
-  Self-contained: ChatGPT's sandbox loads nothing else but the fonts.
+  the server's /talkloop-screen/{id} while waiting) to be shown and read aloud. As on Talkloop's
+  page: the browser's speech recognition listens, Thorsten's Piper voice (or the browser's) speaks,
+  LanguageTool double-checks the grammar, a tapped word shows its meaning, "zwei Minuten" pauses,
+  and a recap follows the call. New practices start from the settings here, through the chat.
 -->
 <html lang="en">
 <head>
@@ -39,26 +40,32 @@
     font: 700 16px/1.45 'Comic Neue', 'Comic Sans MS', system-ui, sans-serif;
     background-image: radial-gradient(circle, var(--dots) 1.3px, transparent 1.7px); background-size: 10px 10px;
   }
-  button, input { font: inherit; color: inherit; }
+  button, input, select { font: inherit; color: inherit; }
   button {
     background: var(--surface); border: 2.5px solid var(--edge); border-radius: 12px; box-shadow: var(--pop);
     padding: 6px 12px; min-height: 38px; cursor: pointer; font-weight: 700;
   }
   button:active { transform: translate(2px, 2px); box-shadow: none; }
   button:disabled { opacity: .5; cursor: default; }
-  .call { display: flex; flex-direction: column; height: 620px; max-width: 760px; margin: 0 auto; }
+  button.primary { background: var(--accent); color: var(--accent-text); }
+  select { padding: 7px 10px; border: 2.5px solid var(--edge); border-radius: 12px; background: var(--bg); width: 100%; }
+  [hidden] { display: none !important; }
+  .call { display: flex; flex-direction: column; height: 640px; max-width: 760px; margin: 0 auto; position: relative; }
   .call.full { height: 100vh; }
 
-  .head { display: flex; align-items: center; gap: 12px; padding: 10px 12px; background: var(--surface); border-bottom: 2.5px solid var(--edge); }
+  .head { display: flex; align-items: center; gap: 10px; padding: 10px 12px; background: var(--surface); border-bottom: 2.5px solid var(--edge); }
   .avatar { width: 46px; height: 46px; flex: none; border-radius: 50%; display: grid; place-items: center; background: var(--accent); color: var(--accent-text); border: 2.5px solid var(--edge); font-family: 'Bangers', Impact, sans-serif; font-size: 1.5rem; }
   .call[data-state="speaking"] .avatar { animation: talk 1.2s ease-in-out infinite; }
   @keyframes talk { 50% { transform: scale(1.08); } }
   .caller { flex: 1; min-width: 0; }
   .caller-name { font-family: 'Bangers', Impact, sans-serif; font-weight: 400; letter-spacing: .05em; font-size: 1.35rem; line-height: 1.1; }
-  .caller-sub { font-size: .85rem; color: var(--muted); overflow: hidden; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+  .caller-sub { font-size: .85rem; color: var(--muted); overflow: hidden; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; cursor: pointer; }
+  .caller-sub.open { -webkit-line-clamp: unset; }
   .pill { font-size: .8rem; padding: 2px 10px; border: 2px solid var(--muted); border-radius: 999px; color: var(--muted); white-space: nowrap; }
-  .call[data-state="listening"] .pill { color: var(--warn); border-color: currentColor; }
+  .call[data-state="listening"] .pill, .call[data-state="sayagain"] .pill { color: var(--warn); border-color: currentColor; }
   .call[data-state="speaking"] .pill, .call[data-state="thinking"] .pill { color: var(--accent); border-color: currentColor; }
+  .call[data-state="paused"] .pill { color: var(--text); border-color: currentColor; }
+  .call[data-state="paused"] .scroll { opacity: .6; }
   .icon { min-width: 38px; padding: 4px 8px; }
 
   .words { display: flex; gap: 8px; overflow-x: auto; padding: 8px 12px; scrollbar-width: none; }
@@ -68,7 +75,6 @@
   .words button.next { outline: 3px dashed var(--accent); outline-offset: 2px; }
   .words button.peeked { opacity: .75; }
   .task { margin: 0 12px 6px; padding: 8px 12px; background: var(--surface); border: 2.5px dashed var(--accent); border-radius: 12px; }
-  .task[hidden] { display: none; }
 
   .scroll { flex: 1; min-height: 0; overflow-y: auto; padding: 12px 14px 4px; display: flex; flex-direction: column; gap: 18px; }
   .msg { position: relative; padding: 10px 14px; border: 2.5px solid var(--edge); border-radius: 18px; box-shadow: var(--pop); max-width: 85%; }
@@ -76,8 +82,11 @@
   .msg.learner { background: var(--learner); align-self: flex-end; }
   .msg.pending { opacity: .7; }
   .who { display: block; font-size: .75rem; color: var(--muted); }
+  .w { cursor: pointer; border-radius: 4px; }
+  .w:hover { background: rgba(127, 127, 127, .2); }
   .translation { font-size: .85rem; color: var(--muted); margin-top: 4px; font-style: italic; }
-  .tools { display: flex; gap: 8px; margin-top: 6px; }
+  .gloss { font-size: .85rem; margin-top: 6px; padding: 6px 10px; border: 2px dashed var(--muted); border-radius: 10px; background: var(--surface); }
+  .tools { display: flex; gap: 8px; margin-top: 6px; flex-wrap: wrap; }
   .tools button { min-height: 30px; padding: 1px 10px; font-size: .8rem; }
   .coach { align-self: stretch; padding: 10px 14px; border: 2.5px solid var(--warn); border-radius: 14px; background: var(--surface); }
   .coach.good { border-color: var(--good); }
@@ -86,7 +95,7 @@
   .coach .tools button { min-height: 34px; }
   .suggest { display: flex; gap: 8px; flex-wrap: wrap; padding: 0 14px 6px; }
   .suggest button { border-radius: 999px; font-size: .85rem; min-height: 32px; padding: 2px 12px; }
-  .note { font-size: .8rem; color: var(--muted); text-align: center; padding: 0 14px; }
+  .note { font-size: .8rem; color: var(--muted); text-align: center; padding: 0 14px; margin: 4px 0; }
   .note:empty { display: none; }
 
   .dock { padding: 8px 12px 12px; background: var(--surface); border-top: 2.5px solid var(--edge); }
@@ -97,9 +106,18 @@
   .composer input { flex: 1; min-width: 0; padding: 9px 12px; border: 2.5px solid var(--edge); border-radius: 12px; background: var(--bg); }
   .mic { width: 54px; height: 54px; border-radius: 50%; padding: 0; font-size: 1.4rem; flex: none; }
   .mic[aria-pressed="true"] { background: var(--warn); color: #fff; animation: talk 1.2s ease-in-out infinite; }
-  .switches { display: flex; gap: 14px; flex-wrap: wrap; margin-top: 6px; font-size: .8rem; color: var(--muted); }
+  .switches { display: flex; gap: 6px 14px; flex-wrap: wrap; margin-top: 6px; font-size: .8rem; color: var(--muted); }
   .switches label { display: flex; gap: 4px; align-items: center; cursor: pointer; }
   .empty { margin: auto; text-align: center; color: var(--muted); padding: 24px; }
+
+  /* The settings for a new practice, and the recap after a call: panels over the conversation. */
+  .panel { position: absolute; inset: 69px 0 0; overflow-y: auto; padding: 16px; background: var(--bg); z-index: 2; }
+  .card { max-width: 520px; margin: 0 auto; padding: 16px; background: var(--surface); border: 2.5px solid var(--edge); border-radius: 16px; box-shadow: var(--pop); }
+  .card h2 { font-family: 'Bangers', Impact, sans-serif; font-weight: 400; letter-spacing: .05em; margin: 0 0 12px; }
+  .card label.field { display: block; margin-bottom: 10px; font-size: .9rem; }
+  .card .row { display: flex; gap: 8px; justify-content: flex-end; margin-top: 12px; }
+  .card p { margin: 6px 0; }
+  .muted { color: var(--muted); font-size: .85rem; }
 </style>
 </head>
 <body>
@@ -108,9 +126,11 @@
     <div id="avatar" class="avatar" aria-hidden="true">T</div>
     <div class="caller">
       <div id="name" class="caller-name">Talkloop</div>
-      <div id="sub" class="caller-sub">Starting…</div>
+      <div id="sub" class="caller-sub" title="Tap to read it all">Starting…</div>
     </div>
     <span id="pill" class="pill">Ready</span>
+    <button id="settings-btn" class="icon" type="button" title="New practice" aria-label="New practice">⚙️</button>
+    <button id="end-btn" class="icon" type="button" title="End the call" aria-label="End the call">⏹</button>
     <button id="full" class="icon" type="button" title="Full screen" aria-label="Full screen">⛶</button>
   </header>
   <div id="words" class="words" aria-label="Today's words"></div>
@@ -135,14 +155,80 @@
       <label><input id="autosend" type="checkbox" checked /> Send after a pause</label>
       <label><input id="handsfree" type="checkbox" checked /> Listen again after each reply</label>
       <label><input id="speakreplies" type="checkbox" checked /> Read replies aloud</label>
+      <label><input id="piper" type="checkbox" /> Thorsten's voice (downloads 60 MB)</label>
+      <label><input id="grammar" type="checkbox" checked /> Double-check my grammar with LanguageTool</label>
     </div>
   </footer>
+
+  <section id="settings" class="panel" hidden>
+    <div class="card">
+      <h2>New practice</h2>
+      <label class="field">Mode
+        <select id="mode">
+          <option value="interview">Interview me</option>
+          <option value="lead">Free chat — the partner leads</option>
+          <option value="life">Mein Leben — talk about my life</option>
+          <option value="story">Erzähl mal — tell a story</option>
+          <option value="topic">Discuss a topic</option>
+          <option value="interpret">Dolmetscher — say it in German</option>
+          <option value="rolecard">Rollenkarte — play a character</option>
+          <option value="sentences">Sentence drill — my learnt words</option>
+          <option value="scene">Scene role-play</option>
+        </select>
+      </label>
+      <label class="field" id="scene-field">Scene
+        <select id="scenario">
+          <option value="cafe">Café</option><option value="market">Market</option><option value="station">Train station</option>
+          <option value="doctor">Doctor</option><option value="flat">Flat viewing</option><option value="job">Job interview</option>
+          <option value="office">Registration office</option><option value="restaurant">Restaurant</option><option value="hotel">Hotel</option>
+          <option value="neighbour">New neighbour</option><option value="dentist">Dentist (phone)</option><option value="shop">Returning a jacket</option>
+        </select>
+      </label>
+      <label class="field">Level
+        <select id="level"><option>A1</option><option selected>A2</option><option>B1</option></select>
+      </label>
+      <label class="field">Tense to practise
+        <select id="tense">
+          <option value="any">Any</option><option value="present">Präsens</option><option value="perfekt">Perfekt</option>
+          <option value="praeteritum">Präteritum</option><option value="future">Futur I</option>
+        </select>
+      </label>
+      <label class="field"><input id="usevocab" type="checkbox" checked /> Weave my vocab into the conversation (my words to say today)</label>
+      <p class="muted">Starts a new practice in this chat; ChatGPT opens a new Talkloop screen for it.</p>
+      <div class="row">
+        <button id="settings-cancel" type="button">Cancel</button>
+        <button id="settings-start" class="primary" type="button">Start</button>
+      </div>
+    </div>
+  </section>
+
+  <section id="recap" class="panel" hidden>
+    <div class="card">
+      <h2>Last call</h2>
+      <div id="recap-body"></div>
+      <div class="row">
+        <button id="recap-back" type="button">Back to the call</button>
+        <button id="recap-new" class="primary" type="button">New practice</button>
+      </div>
+    </div>
+  </section>
 </main>
 <script>
 (() => {
   const ORIGIN = "__TALKLOOP_ORIGIN__";
   const SILENCE_MS = 1500; // as on Talkloop's page: a pause this long ends the turn
+  const LOCALE = "de-DE";
   const $ = (id) => document.getElementById(id);
+
+  // Switches are remembered in this browser where the sandbox allows it.
+  const store = {
+    get(k, d) { try { const v = localStorage.getItem(`talkloop_gpt_${k}`); return v === null ? d : JSON.parse(v); } catch { return d; } },
+    set(k, v) { try { localStorage.setItem(`talkloop_gpt_${k}`, JSON.stringify(v)); } catch { /* sandboxed */ } },
+  };
+  for (const id of ["autosend", "handsfree", "speakreplies", "piper", "grammar"]) {
+    $(id).checked = store.get(id, $(id).checked);
+    $(id).addEventListener("change", () => store.set(id, $(id).checked));
+  }
 
   // ---------- the MCP Apps bridge (JSON-RPC with ChatGPT through postMessage) ----------
   let nextId = 1;
@@ -171,21 +257,24 @@
     else if (m.method === "ui/notifications/host-context-changed") applyContext(m.params);
     else if (m.id !== undefined) post({ jsonrpc: "2.0", id: m.id, result: {} }); // ping, teardown
   });
+  const callTool = (name, args) => request("tools/call", { name, arguments: args });
 
   // ChatGPT's own extras, where present (older hosts use only these).
   const openai = () => window.openai ?? null;
   window.addEventListener("openai:set_globals", () => { if (openai()?.toolOutput) showResult({ structuredContent: openai().toolOutput }); });
 
+  let platform = "web";
   function applyContext(ctx) {
     if (!ctx) return;
     if (ctx.theme) document.documentElement.dataset.theme = ctx.theme;
     if (ctx.displayMode) $("call").classList.toggle("full", ctx.displayMode === "fullscreen");
+    if (ctx.platform) platform = ctx.platform;
   }
 
   async function connect() {
     try {
       const r = await request("ui/initialize", {
-        appInfo: { name: "talkloop", version: "1.0.0" },
+        appInfo: { name: "talkloop", version: "1.1.0" },
         appCapabilities: { availableDisplayModes: ["inline", "fullscreen"] },
         protocolVersion: "2026-01-26",
       });
@@ -195,6 +284,9 @@
       console.warn("Talkloop: no MCP Apps host", e);
     }
     if (openai()?.toolOutput) showResult({ structuredContent: openai().toolOutput });
+    // Thorsten's voice is 60 MB: on by default only off phones (the switch remembers a choice).
+    if (store.get("piper", null) === null) $("piper").checked = platform !== "mobile";
+    if ($("piper").checked) preloadPiper();
     new ResizeObserver(() => notify("ui/notifications/size-changed", { height: document.documentElement.scrollHeight })).observe(document.body);
   }
 
@@ -207,11 +299,15 @@
   }
 
   // ---------- the practice ----------
-  let screen = null;   // the server's view: {id, version, partner, mode, level, subtitle, words, messages}
+  let screen = null;   // the server's view: {id, version, partner, mode, modeKey, level, subtitle, words, messages}
   let pending = null;  // what the learner just said, until ChatGPT's turn shows it
+  let check = null;    // LanguageTool's check of it, running while ChatGPT answers
   let spokenVersion = 0;
   let sayAgain = null; // the correction to repeat, while "Say it again" waits for it
+  let paused = false;
   let poll = null;
+  const seenWords = new Map(); // every word of today shown in this practice, with its latest state (for the recap)
+  const sentences = { right: 0, again: 0 };
 
   function showResult(result) {
     const sc = result?.structuredContent;
@@ -222,13 +318,17 @@
     if (screen && next.id === screen.id && next.version <= screen.version) return;
     const first = !screen;
     screen = next;
+    for (const w of screen.words) seenWords.set(w.key, w);
     const last = screen.messages[screen.messages.length - 1];
+    const sent = pending;
     if (pending && last?.who === "partner") pending = null;
     render();
     if (last?.who === "partner" && screen.version > spokenVersion) {
       spokenVersion = screen.version;
       const learnerMsg = screen.messages[screen.messages.length - 2];
       sayAgain = learnerMsg?.who === "learner" && learnerMsg.correction ? learnerMsg.correction : null;
+      if (screen.modeKey === "interpret" && learnerMsg?.who === "learner") sentences[learnerMsg.correction ? "again" : "right"]++;
+      if (sent && learnerMsg?.who === "learner" && !learnerMsg.correction) addGrammarCheck(sent);
       setState("idle");
       if (!first || screen.messages.length <= 1) speak(last.text, () => maybeListen());
     }
@@ -249,8 +349,10 @@
   }
 
   function setState(state) {
+    if (paused && state !== "paused" && state !== "listening") state = "paused";
     $("call").dataset.state = state;
-    $("pill").textContent = { idle: "Your turn", listening: "Listening…", thinking: `${screen?.partner ?? "Partner"} is thinking…`, speaking: "Speaking", sayagain: "Say it again" }[state] ?? state;
+    $("pill").textContent = { idle: "Your turn", listening: paused ? "Paused · say „zurück“" : "Listening…", thinking: `${screen?.partner ?? "Partner"} is thinking…`,
+      speaking: "Speaking", sayagain: "Say it again", paused: "Paused" }[state] ?? state;
   }
 
   function el(tag, cls, text) {
@@ -265,8 +367,7 @@
     $("avatar").textContent = (screen.partner || "T").charAt(0);
     $("sub").textContent = `${screen.level} · ${screen.subtitle}`;
 
-    const words = $("words");
-    words.replaceChildren(...screen.words.map((w) => {
+    $("words").replaceChildren(...screen.words.map((w) => {
       const b = el("button", [w.state === "said" ? "said" : "", w.state === "peeked" ? "peeked" : "", w.next ? "next" : ""].join(" ").trim(),
         w.de ? `${w.state === "said" ? "✓ " : ""}${w.de}` : w.en);
       b.type = "button";
@@ -277,7 +378,7 @@
 
     const last = screen.messages[screen.messages.length - 1];
     $("task").hidden = !last?.task;
-    $("task").textContent = last?.task ? `🎯 ${last.task}` : "";
+    $("task").textContent = last?.task ? (screen.modeKey === "interpret" ? `🎯 Say in German: ${last.task}` : `🎯 ${last.task}`) : "";
 
     const scroll = $("scroll");
     const items = [];
@@ -293,8 +394,7 @@
     scroll.replaceChildren(...(items.length ? items : [el("p", "empty", "Waiting for your partner…")]));
     scroll.scrollTop = scroll.scrollHeight;
 
-    const sug = $("suggest");
-    sug.replaceChildren(...(!pending && last?.who === "partner" ? last.suggestions ?? [] : []).map((s) => {
+    $("suggest").replaceChildren(...(!pending && last?.who === "partner" ? last.suggestions ?? [] : []).map((s) => {
       const b = el("button", "", s);
       b.type = "button";
       b.addEventListener("click", () => { $("input").value = s; $("input").focus(); });
@@ -308,8 +408,18 @@
     return d;
   }
 
+  // A reply's words can be tapped for their meaning, as on Talkloop's page.
   function partnerBubble(m) {
-    const d = bubble(m.text, "partner", screen.partner);
+    const d = el("div", "msg partner");
+    const line = el("div");
+    const gloss = el("div", "gloss");
+    gloss.hidden = true;
+    for (const part of m.text.split(/(\p{L}[\p{L}-]*)/u)) {
+      if (!/^\p{L}/u.test(part)) { line.append(part); continue; }
+      const w = el("span", "w", part);
+      w.addEventListener("click", () => lookup(part, gloss));
+      line.append(w);
+    }
     const tr = el("div", "translation", m.translation);
     tr.hidden = true;
     const tools = el("div", "tools");
@@ -323,8 +433,21 @@
       t.addEventListener("click", () => { tr.hidden = !tr.hidden; });
       tools.append(t);
     }
-    d.append(tr, tools);
+    d.append(el("span", "who", screen.partner), line, tr, gloss, tools);
     return d;
+  }
+
+  async function lookup(word, box) {
+    box.hidden = false;
+    box.textContent = `${word}: …`;
+    box.scrollIntoView({ block: "nearest" });
+    try {
+      const r = (await callTool("talkloop_lookup", { word }))?.structuredContent;
+      box.textContent = r?.found ? `${r.head} = ${r.en}${r.example ? ` · ${r.example}` : ""}` : `${word}: not in your vocabulary (tap 🔊 Again or ask ${screen.partner})`;
+      box.scrollIntoView({ block: "nearest" });
+    } catch (e) {
+      box.textContent = `${word}: couldn't look it up (${e.message})`;
+    }
   }
 
   function coach(m, current) {
@@ -347,7 +470,7 @@
 
   async function peek(w) {
     try {
-      const r = await request("tools/call", { name: "talkloop_peek", arguments: { screen_id: screen.id, key: w.key } });
+      const r = await callTool("talkloop_peek", { screen_id: screen.id, key: w.key });
       if (r?.structuredContent) update(r.structuredContent);
     } catch (e) {
       note(`Couldn't show the word: ${e.message}`);
@@ -356,21 +479,75 @@
 
   function note(text) { $("note").textContent = text; }
 
+  // ---------- second grammar check (LanguageTool), as on Talkloop's page ----------
+  function languageToolCheck(text) {
+    return fetch("https://api.languagetool.org/v2/check", {
+      method: "POST",
+      headers: { "content-type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({ text, language: LOCALE }),
+    })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => (data?.matches ?? []).filter((m) => m.rule?.category?.id === "GRAMMAR" || m.rule?.issueType === "misspelling"))
+      .catch(() => null);
+  }
+  function languageToolMistake(m, said) {
+    const id = m.rule?.id ?? "";
+    if (/HILFSVERB/.test(id)) return "perfekt_auxiliary";
+    if (/PRAEP|AGREEMENT|KONGRUENZ|ARTIKEL|GENUS|DE_CASE/.test(id)) return "case_article";
+    if (m.rule?.issueType === "misspelling" && /^ge/i.test(said.slice(m.offset, m.offset + m.length))) return "participle";
+    return "other";
+  }
+  // When ChatGPT found nothing, LanguageTool's fixes become the correction.
+  async function addGrammarCheck(said) {
+    const running = check;
+    check = null;
+    if (!running) return;
+    const matches = await Promise.race([running, new Promise((r) => setTimeout(() => r(null), 2500))]);
+    const fixes = (matches ?? []).filter((m) => m.replacements?.[0]?.value);
+    if (!fixes.length) return;
+    let corrected = said, end = Infinity;
+    for (const m of [...fixes].sort((a, b) => b.offset - a.offset)) {
+      if (m.offset + m.length > end) continue;
+      corrected = corrected.slice(0, m.offset) + m.replacements[0].value + corrected.slice(m.offset + m.length);
+      end = m.offset;
+    }
+    if (corrected === said) return;
+    try {
+      const r = await callTool("talkloop_check", { screen_id: screen.id, said, correction: corrected,
+        mistakes: [...new Set(fixes.map((m) => languageToolMistake(m, said)))],
+        tip: `Grammar check: ${fixes.map((m) => m.shortMessage || m.message).join(" ")}` });
+      if (r?.structuredContent) { update(r.structuredContent); sayAgain = corrected; }
+    } catch { /* the partner's coach alone */ }
+  }
+
   // ---------- sending ----------
-  const normalize = (s) => s.toLowerCase().replace(/[^\p{L}\p{N}\s]/gu, " ").replace(/\s+/g, " ").trim();
-  // How much of the correction a message says (0–1), and whether it is that sentence.
+  const normalize = (s) => s.toLowerCase().replace(/[^\p{L}\p{N}\s]/gu, " ").replace(/\b2\b/g, "zwei").replace(/\s+/g, " ").trim();
+  // How much of the correction a message says (0–1).
   function overlap(said, target) {
     const x = normalize(said).split(" "), y = normalize(target).split(" ");
     return y.filter((w) => x.includes(w)).length / Math.max(y.length, 1);
   }
+  const isPause = (t) => normalize(t).split(" ").length <= 4 && /\bzwei minuten\b/.test(normalize(t));
+  const isResume = (t) => normalize(t).split(" ").length <= 4 && /\b(zurück|weiter|ich bin zurück)\b/.test(normalize(t));
 
   async function send(text) {
     text = text.trim();
     if (!text || !screen) return;
     $("input").value = "";
     note("");
-    // "Say it again" is checked here, as on Talkloop's page: a repeat stays on the screen,
-    // anything that isn't one (an answer to the question) goes on to ChatGPT.
+    // "zwei Minuten" pauses the call until "zurück", as on Talkloop's page.
+    if (paused) {
+      if (isResume(text)) { paused = false; setState("idle"); note("Weiter geht's!"); return maybeListen(); }
+      return maybeListen();
+    }
+    if (isPause(text)) {
+      paused = true;
+      setState("paused");
+      note("Paused. Say „zurück“ (or tap 🎙️ and say it) to go on.");
+      return maybeListen();
+    }
+    // "Say it again" is checked here: a repeat stays on the screen, anything that isn't one
+    // (an answer to the question) goes on to ChatGPT.
     if (sayAgain) {
       const o = overlap(text, sayAgain);
       if (o >= 0.8 && normalize(text).split(" ").length <= normalize(sayAgain).split(" ").length + 2) {
@@ -386,6 +563,7 @@
       sayAgain = null;
     }
     pending = text;
+    check = $("grammar").checked ? languageToolCheck(text) : null;
     render();
     setState("thinking");
     try {
@@ -429,6 +607,15 @@
       input.setSelectionRange(at - 1, at - 1);
     }
   });
+  // Alt+A / O / U / S on a physical keyboard (Shift for a capital; AltGr is left alone).
+  $("input").addEventListener("keydown", (e) => {
+    if (!e.altKey || e.ctrlKey || e.metaKey || e.getModifierState?.("AltGraph")) return;
+    const ch = { KeyA: "ä", KeyO: "ö", KeyU: "ü", KeyS: "ß" }[e.code];
+    if (!ch) return;
+    e.preventDefault();
+    if (e.shiftKey && ch !== "ß") { shift = true; }
+    insert(ch);
+  });
 
   // ---------- listening: the browser's speech recognition ----------
   const Recognition = window.SpeechRecognition ?? window.webkitSpeechRecognition;
@@ -437,9 +624,10 @@
     if (!Recognition) return note("This browser can't listen here: type, or use ChatGPT's own microphone.");
     stopSpeaking();
     stopListening();
+    unlockAudio();
     heard = "";
     rec = new Recognition();
-    rec.lang = "de-DE";
+    rec.lang = LOCALE;
     rec.continuous = true;
     rec.interimResults = true;
     rec.onresult = (event) => {
@@ -483,39 +671,147 @@
     const text = heard;
     stopListening();
     if (!text) return setState("idle");
-    if ($("autosend").checked) send(text);
+    if ($("autosend").checked || paused) send(text);
     else setState("idle");
   }
   function maybeListen() {
-    if ($("handsfree").checked && Recognition && $("call").dataset.state !== "thinking") listen();
+    if ($("handsfree").checked && Recognition && $("call").dataset.state !== "thinking" && $("recap").hidden && $("settings").hidden) listen();
   }
   $("mic").addEventListener("click", () => (rec ? endTurn() : listen()));
 
-  // ---------- the voice: the browser's own German voice ----------
+  // ---------- the voice: Thorsten's (Piper, on this device) or the browser's own ----------
+  let piper = null, piperFailed = false, audioCtx = null, source = null;
+  function preloadPiper() {
+    if (piper || piperFailed) return;
+    piper = import(`${ORIGIN}/talkloop/piper.js?v=5`).then(async (mod) => {
+      note("Downloading Thorsten's voice…");
+      await mod.loadPiperVoice(LOCALE, (got, total) => { if (total) note(`Downloading Thorsten's voice… ${Math.round((got / total) * 100)}%`); });
+      note("");
+      return mod;
+    }).catch((e) => {
+      piperFailed = true;
+      piper = null;
+      note(`Thorsten's voice can't run here (${e.message}); using the browser's voice.`);
+      return null;
+    });
+  }
+  $("piper").addEventListener("change", () => { if ($("piper").checked) preloadPiper(); });
+  function unlockAudio() {
+    try { audioCtx ??= new AudioContext(); if (audioCtx.state === "suspended") audioCtx.resume(); } catch { /* no Web Audio */ }
+  }
+  document.addEventListener("pointerdown", unlockAudio);
+
   const ROBOTIC = /^(eddy|flo|grandma|grandpa|reed|rocko|sandy|shelley|albert|bad news|bahh|bells|boing|bubbles|cellos|good news|jester|organ|superstar|trinoids|whisper|wobble|zarvox|fred|junior|ralph|kathy)\b/i;
   function germanVoice() {
     const voices = speechSynthesis.getVoices().filter((v) => v.lang?.toLowerCase().startsWith("de") && !ROBOTIC.test(v.name));
     return voices.find((v) => /natural|neural|google|premium|enhanced/i.test(v.name)) ?? voices[0] ?? null;
   }
-  function speak(text, onDone) {
-    if (!("speechSynthesis" in window) || !$("speakreplies").checked) return onDone?.();
+  let speakToken = 0;
+  async function speak(text, onDone) {
+    if (!$("speakreplies").checked) return onDone?.();
     stopSpeaking();
+    const token = ++speakToken;
+    let done = false;
+    const finish = () => { if (done || token !== speakToken) return; done = true; if ($("call").dataset.state === "speaking") setState("idle"); onDone?.(); };
+    setState("speaking");
+    const mod = $("piper").checked && piper ? await Promise.race([piper, new Promise((r) => setTimeout(() => r(null), 100))]) : null;
+    if (token !== speakToken) return;
+    if (mod?.piperLoaded(LOCALE) && audioCtx) {
+      try {
+        const { pcm, sampleRate } = await mod.piperSpeak(text, LOCALE, { speed: 0.95 });
+        if (token !== speakToken) return;
+        const view = new DataView(pcm.buffer, pcm.byteOffset, pcm.byteLength);
+        const buffer = audioCtx.createBuffer(1, pcm.byteLength / 2, sampleRate);
+        const data = buffer.getChannelData(0);
+        for (let i = 0; i < data.length; i++) data[i] = view.getInt16(i * 2, true) / 32768;
+        source = audioCtx.createBufferSource();
+        source.buffer = buffer;
+        source.connect(audioCtx.destination);
+        source.onended = finish;
+        source.start();
+        return;
+      } catch (e) {
+        console.warn("Piper voice failed", e);
+      }
+    }
+    if (!("speechSynthesis" in window)) return finish();
     const u = new SpeechSynthesisUtterance(text);
-    u.lang = "de-DE";
+    u.lang = LOCALE;
     u.rate = 0.95;
     const v = germanVoice();
     if (v) u.voice = v;
-    let done = false;
-    const finish = () => { if (done) return; done = true; if ($("call").dataset.state === "speaking") setState("idle"); onDone?.(); };
     u.onend = finish;
     u.onerror = finish;
-    setState("speaking");
     speechSynthesis.speak(u);
     // Some browsers stay silent until the page was tapped once: don't wait for ever.
     setTimeout(() => { if (!speechSynthesis.speaking) finish(); }, 1500);
   }
-  function stopSpeaking() { if ("speechSynthesis" in window) speechSynthesis.cancel(); }
-  if ("speechSynthesis" in window) speechSynthesis.onvoiceschanged = () => {};
+  function stopSpeaking() {
+    speakToken++;
+    if ("speechSynthesis" in window) speechSynthesis.cancel();
+    try { source?.stop(); } catch { /* not playing */ }
+    source = null;
+  }
+
+  // ---------- a new practice, and the recap after a call ----------
+  function showPanel(id) {
+    stopListening();
+    stopSpeaking();
+    $("settings").hidden = id !== "settings";
+    $("recap").hidden = id !== "recap";
+  }
+  $("mode").addEventListener("change", () => { $("scene-field").hidden = $("mode").value !== "scene"; });
+  $("scene-field").hidden = true;
+  $("settings-btn").addEventListener("click", () => {
+    if (screen) {
+      $("mode").value = screen.modeKey ?? "interview";
+      $("level").value = screen.level ?? "A2";
+      $("scene-field").hidden = $("mode").value !== "scene";
+    }
+    showPanel("settings");
+  });
+  $("settings-cancel").addEventListener("click", () => showPanel(null));
+  $("settings-start").addEventListener("click", async () => {
+    const mode = $("mode").value;
+    const parts = [`mode ${mode}`, `level ${$("level").value}`];
+    if (mode === "scene") parts.push(`scenario ${$("scenario").value}`);
+    if ($("tense").value !== "any") parts.push(`tense ${$("tense").value}`);
+    if (!$("usevocab").checked) parts.push("use_vocab false");
+    showPanel(null);
+    setState("thinking");
+    try {
+      await sendToChat(`Start a new Talkloop practice (start_talkloop): ${parts.join(", ")}.`);
+      note("Starting a new practice: it opens below in the chat.");
+    } catch (e) {
+      note(`Couldn't start it: ${e.message}`);
+    }
+    setState("idle");
+  });
+
+  $("end-btn").addEventListener("click", () => {
+    paused = false;
+    const words = [...seenWords.values()];
+    const said = words.filter((w) => w.state === "said").map((w) => w.de ?? w.en);
+    const again = words.filter((w) => w.state === "tried" || w.state === "peeked").map((w) => w.de ?? w.en);
+    const missed = words.filter((w) => w.state === "new").map((w) => w.en);
+    const body = $("recap-body");
+    const line = (label, list) => { if (!list.length) return null; const p = el("p"); p.append(el("strong", "", `${label}: `), list.join(", ")); return p; };
+    const fixes = (screen?.messages ?? []).filter((m) => m.who === "learner" && m.correction).map((m) => m.correction);
+    const told = (screen?.messages ?? []).filter((m) => m.who === "learner").length;
+    body.replaceChildren(...[
+      el("p", "", `${told} message${told === 1 ? "" : "s"} from you.`),
+      line("Said ✓", said),
+      line("Practise again", again),
+      line("Not reached", missed),
+      screen?.modeKey === "interpret" ? el("p", "", `Sentences: ${sentences.right} right, ${sentences.again} to say again (they come back after 1, 3, 7 and 21 days).`) : null,
+      line("Corrections", fixes.slice(-5)),
+      el("p", "muted", "Words come back after 1, 3, 7 and 21 days. Your mistakes and words are saved in your Vocab Trainer."),
+    ].filter(Boolean));
+    showPanel("recap");
+  });
+  $("recap-back").addEventListener("click", () => showPanel(null));
+  $("recap-new").addEventListener("click", () => $("settings-btn").click());
+  $("sub").addEventListener("click", () => $("sub").classList.toggle("open"));
 
   // ---------- full screen ----------
   $("full").addEventListener("click", async () => {

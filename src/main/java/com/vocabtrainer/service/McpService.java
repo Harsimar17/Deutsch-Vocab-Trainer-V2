@@ -105,6 +105,8 @@ public class McpService {
                 answer.put("structuredContent", view);
                 // One screen for the whole practice: without this, every turn would open a new one.
                 answer.put("_meta", Map.of("openai/widgetSessionId", view.get("id")));
+            } else if (r.data() != null) {
+                answer.put("structuredContent", r.data());
             }
             return answer;
         } catch (ResponseStatusException e) {
@@ -115,13 +117,15 @@ public class McpService {
     }
 
     /**
-     * The screen's HTML, told where this server is. ChatGPT runs it sandboxed: it may reach only
-     * this origin (for its state) and load Talkloop's fonts, and asks for the microphone.
+     * The screen's HTML, told where this server is. ChatGPT runs it sandboxed: it may reach this
+     * origin (its state, Talkloop's Piper voice code), LanguageTool, and where the Piper voice and
+     * its runtime download from, load Talkloop's fonts, and asks for the microphone.
      */
     private Map<String, Object> screen(String origin) {
         Map<String, Object> csp = new LinkedHashMap<>();
-        csp.put("connectDomains", List.of(origin));
-        csp.put("resourceDomains", List.of("https://fonts.googleapis.com", "https://fonts.gstatic.com"));
+        csp.put("connectDomains", List.of(origin, "https://api.languagetool.org", "https://cdn.jsdelivr.net",
+                "https://huggingface.co", "https://*.huggingface.co", "https://*.hf.co"));
+        csp.put("resourceDomains", List.of(origin, "https://cdn.jsdelivr.net", "https://fonts.googleapis.com", "https://fonts.gstatic.com"));
         Map<String, Object> ui = new LinkedHashMap<>();
         ui.put("csp", csp);
         ui.put("permissions", Map.of("microphone", Map.of()));

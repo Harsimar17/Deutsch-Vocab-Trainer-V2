@@ -41,6 +41,8 @@ public class WebConfig implements WebMvcConfigurer {
                 .maxAge(3600);
         // The Talkloop screen in ChatGPT runs in a sandbox with no origin of its own.
         registry.addMapping("/talkloop-screen/**").allowedOrigins("*").allowedMethods("GET");
+        // …and loads Talkloop's Piper voice code from here, which a cross-origin module import needs CORS for.
+        registry.addMapping("/talkloop/piper.js").allowedOrigins("*").allowedMethods("GET");
     }
 
     /** Talkloop, the speaking practice, lives in static/talkloop: serve its page at /talkloop/. */
