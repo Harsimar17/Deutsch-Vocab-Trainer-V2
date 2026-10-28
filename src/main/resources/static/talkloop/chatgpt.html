@@ -292,9 +292,8 @@
 
   // What the learner says goes into the chat as their message; ChatGPT answers with talkloop_turn.
   async function sendToChat(text) {
-    if (openai()?.sendFollowUpMessage) {
-      try { await openai().sendFollowUpMessage({ prompt: text, scrollToBottom: false }); return; } catch { /* the standard way below */ }
-    }
+    // One way only: falling back after an error could deliver the message twice.
+    if (openai()?.sendFollowUpMessage) return openai().sendFollowUpMessage({ prompt: text, scrollToBottom: false });
     await request("ui/message", { role: "user", content: [{ type: "text", text }] });
   }
 
@@ -540,9 +539,12 @@
   const isPause = (t) => normalize(t).split(" ").length <= 4 && /\bzwei minuten\b/.test(normalize(t));
   const isResume = (t) => normalize(t).split(" ").length <= 4 && /\b(zurück|weiter|ich bin zurück)\b/.test(normalize(t));
 
+  let lastSent = { text: "", at: 0 };
   async function send(text) {
     text = text.trim();
     if (!text || !screen) return;
+    // The same words again straight away are a double send, not a new answer.
+    if (normalize(text) === lastSent.text && Date.now() - lastSent.at < 8000) return;
     $("input").value = "";
     note("");
     // "zwei Minuten" pauses the call until "zurück", as on Talkloop's page.
@@ -573,6 +575,7 @@
       sayAgain = null;
     }
     pending = text;
+    lastSent = { text: normalize(text), at: Date.now() };
     check = $("grammar").checked ? languageToolCheck(text) : null;
     render();
     setState("thinking");
@@ -636,11 +639,15 @@
     stopListening();
     unlockAudio();
     heard = "";
-    rec = new Recognition();
+    // A stopped recognizer still reports its last words: only the current one counts, or the
+    // learner's answer was sent twice (and ChatGPT answered it twice).
+    const me = new Recognition();
+    rec = me;
     rec.lang = LOCALE;
     rec.continuous = true;
     rec.interimResults = true;
     rec.onresult = (event) => {
+      if (rec !== me) return;
       let finalText = "", interim = "";
       for (let i = 0; i < event.results.length; i++) {
         const r = event.results[i];
@@ -654,6 +661,7 @@
       silence = setTimeout(() => endTurn(), SILENCE_MS);
     };
     rec.onerror = (event) => {
+      if (rec !== me) return;
       if (event.error === "not-allowed" || event.error === "service-not-allowed") {
         $("handsfree").checked = false;
         note("ChatGPT didn't allow the microphone here. Type, or use ChatGPT's own microphone in the message box.");
@@ -662,7 +670,7 @@
       }
     };
     rec.onend = () => {
-      if (rec) { rec = null; $("mic").setAttribute("aria-pressed", "false"); if ($("call").dataset.state === "listening") setState("idle"); }
+      if (rec === me) { rec = null; $("mic").setAttribute("aria-pressed", "false"); if ($("call").dataset.state === "listening") setState("idle"); }
     };
     try {
       rec.start();
@@ -679,6 +687,7 @@
   }
   function endTurn() {
     const text = heard;
+    heard = "";
     stopListening();
     if (!text) return setState("idle");
     if ($("autosend").checked || paused) send(text);
