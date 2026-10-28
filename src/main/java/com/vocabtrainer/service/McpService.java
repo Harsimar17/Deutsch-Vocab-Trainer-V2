@@ -23,8 +23,9 @@ import org.springframework.web.server.ResponseStatusException;
  *
  * The Talkloop screen is an MCP App (the "MCP Apps" extension ChatGPT implements): the
  * resource {@value TalkloopChatGptService#SCREEN_URI} is static/talkloop/chatgpt.html,
- * which ChatGPT shows in the chat when start_talkloop runs. Every tool answer carries the
- * screen's state as structuredContent, tied to that one screen by openai/widgetSessionId.
+ * which ChatGPT shows in the chat when start_talkloop runs (and only then: the screen reads
+ * later turns from /talkloop-screen/{id}). Every tool answer carries the screen's state as
+ * structuredContent, tied to that one screen by openai/widgetSessionId.
  */
 @Service
 public class McpService {

@@ -211,6 +211,7 @@ public class TalkloopChatGptService {
         // writes the learner's own practice log (as Talkloop's page does after every turn).
         Map<String, Object> annotations = Map.of("readOnlyHint", true, "destructiveHint", false, "openWorldHint", false);
         Map<String, Object> onScreen = Map.of("ui", Map.of("resourceUri", SCREEN_URI), "ui/resourceUri", SCREEN_URI);
+        Map<String, Object> screenOnly = Map.of("ui", Map.of("visibility", List.of("app"))); // called by the screen, never by ChatGPT
 
         Map<String, Object> start = new LinkedHashMap<>();
         start.put("name", "start_talkloop");
@@ -261,7 +262,8 @@ public class TalkloopChatGptService {
         turnProps.put("subject", Map.of("type", "string", "description", "Free chat, interview, Mein Leben, Erzähl mal: what your reply's question is about, in two to four English words. Else empty."));
         turn.put("inputSchema", schema(turnProps, List.of("screen_id", "said", "reply")));
         turn.put("annotations", annotations);
-        turn.put("_meta", onScreen);
+        // No screen of its own: a turn updates the screen start_talkloop opened (which reads it from
+        // /talkloop-screen/{id}); with one, ChatGPT showed a new screen under every reply.
 
         Map<String, Object> peek = new LinkedHashMap<>();
         peek.put("name", "talkloop_peek");
@@ -272,7 +274,7 @@ public class TalkloopChatGptService {
                 "key", Map.of("type", "string", "description", "The word's key on the screen.")),
                 List.of("screen_id", "key")));
         peek.put("annotations", annotations);
-        peek.put("_meta", Map.of("ui", Map.of("resourceUri", SCREEN_URI, "visibility", List.of("app")), "ui/resourceUri", SCREEN_URI));
+        peek.put("_meta", screenOnly);
         Map<String, Object> check = new LinkedHashMap<>();
         check.put("name", "talkloop_check");
         check.put("title", "Add a grammar check's correction");
@@ -285,14 +287,14 @@ public class TalkloopChatGptService {
                 "tip", Map.of("type", "string")),
                 List.of("screen_id", "said", "correction")));
         check.put("annotations", annotations);
-        check.put("_meta", Map.of("ui", Map.of("resourceUri", SCREEN_URI, "visibility", List.of("app")), "ui/resourceUri", SCREEN_URI));
+        check.put("_meta", screenOnly);
         Map<String, Object> lookup = new LinkedHashMap<>();
         lookup.put("name", "talkloop_lookup");
         lookup.put("title", "Look up a word");
         lookup.put("description", "Called by the Talkloop screen when the learner taps a word in a reply: its meaning from the learner's vocabulary.");
         lookup.put("inputSchema", schema(Map.of("word", Map.of("type", "string")), List.of("word")));
         lookup.put("annotations", annotations);
-        lookup.put("_meta", Map.of("ui", Map.of("resourceUri", SCREEN_URI, "visibility", List.of("app")), "ui/resourceUri", SCREEN_URI));
+        lookup.put("_meta", screenOnly);
         return List.of(start, turn, peek, check, lookup);
     }
 
