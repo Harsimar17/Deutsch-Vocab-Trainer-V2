@@ -471,7 +471,7 @@
       const tools = el("div", "tools");
       const again = el("button", "", "🎙️ Say it again");
       again.type = "button";
-      again.addEventListener("click", () => { sayAgain = m.correction; listen(); });
+      again.addEventListener("click", () => { sayAgain = m.correction; listen(true); });
       const hear = el("button", "", "🔊 Hear it");
       hear.type = "button";
       hear.addEventListener("click", () => speak(m.correction));
@@ -641,8 +641,10 @@
   const Recognition = window.SpeechRecognition ?? window.webkitSpeechRecognition;
   let rec = null, silence = null, heard = "", carried = "", wanted = false, quickEnds = 0;
   const pauseMs = () => Number($("pausems").value) || 3000;
-  function listen() {
+  let byTap = false; // whether listening was started by a tap on the screen (or by itself, hands-free)
+  function listen(tapped = false) {
     if (!Recognition) return note("This browser can't listen here: type, or use ChatGPT's own microphone.");
+    byTap = tapped;
     stopSpeaking();
     stopListening();
     unlockAudio();
@@ -681,8 +683,9 @@
       if (rec !== me) return;
       if (event.error === "not-allowed" || event.error === "service-not-allowed") {
         wanted = false;
-        $("handsfree").checked = false;
-        note("ChatGPT didn't allow the microphone here. Type, or use ChatGPT's own microphone in the message box.");
+        // Refused when it started by itself: a tap usually works (and hands-free stays on for later).
+        note(byTap ? "ChatGPT didn't allow the microphone here. Type, or use ChatGPT's own microphone in the message box."
+          : "Tap 🎙️ to answer: the microphone needs a tap here.");
       } else if (event.error !== "no-speech" && event.error !== "aborted") {
         note(`Listening stopped: ${event.error}`);
       }
@@ -709,7 +712,8 @@
       rec = null;
       wanted = false;
       $("mic").setAttribute("aria-pressed", "false");
-      note(`Can't listen: ${e.message}`);
+      if (["listening", "sayagain"].includes($("call").dataset.state)) setState("idle");
+      note(byTap ? `Can't listen: ${e.message}` : "Tap 🎙️ to answer.");
     }
   }
   function stopListening() {
@@ -730,7 +734,7 @@
   function maybeListen() {
     if ($("handsfree").checked && Recognition && $("call").dataset.state !== "thinking" && $("recap").hidden && $("settings").hidden) listen();
   }
-  $("mic").addEventListener("click", () => (wanted ? endTurn() : listen()));
+  $("mic").addEventListener("click", () => (wanted ? endTurn() : listen(true)));
 
   // ---------- the voice: Thorsten's (Piper, on this device) or the browser's own ----------
   let piper = null, piperFailed = false, audioCtx = null, source = null;
@@ -760,12 +764,16 @@
     return voices.find((v) => /natural|neural|google|premium|enhanced/i.test(v.name)) ?? voices[0] ?? null;
   }
   let speakToken = 0;
+  let utterance = null;
   async function speak(text, onDone) {
     if (!$("speakreplies").checked) return onDone?.();
     stopSpeaking();
     const token = ++speakToken;
     let done = false;
-    const finish = () => { if (done || token !== speakToken) return; done = true; if ($("call").dataset.state === "speaking") setState("idle"); onDone?.(); };
+    const finish = () => { if (done || token !== speakToken) return; done = true; clearTimeout(watchdog); if ($("call").dataset.state === "speaking") setState("idle"); onDone?.(); };
+    // The mic comes back when the reply has been spoken, but the end of speech isn't always
+    // reported (a voice that is blocked, or Chrome losing an utterance): so not later than this.
+    const watchdog = setTimeout(finish, 3000 + text.length * 90);
     setState("speaking");
     const mod = $("piper").checked && piper ? await Promise.race([piper, new Promise((r) => setTimeout(() => r(null), 100))]) : null;
     if (token !== speakToken) return;
@@ -781,6 +789,7 @@
         source.buffer = buffer;
         source.connect(audioCtx.destination);
         source.onended = finish;
+        if (audioCtx.state !== "running") throw new Error("audio not allowed yet"); // would never end: the browser's voice instead
         source.start();
         return;
       } catch (e) {
@@ -788,7 +797,8 @@
       }
     }
     if (!("speechSynthesis" in window)) return finish();
-    const u = new SpeechSynthesisUtterance(text);
+    // Kept until it has been spoken: Chrome drops the end event of an utterance it has cleaned up.
+    const u = utterance = new SpeechSynthesisUtterance(text);
     u.lang = LOCALE;
     u.rate = 0.95;
     const v = germanVoice();
