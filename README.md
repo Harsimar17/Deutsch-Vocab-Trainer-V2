@@ -204,7 +204,8 @@ it was issued, so a session ends after 24 h without a request. Send
 | `GET /api/talkloop/words` (with the link as `Bearer`, not a session) | learnt words (every card with a schedule), least secure first → `{count, words: [{de, en, cat, lvl, example, box, lapses, last}]}` |
 | `POST /api/talkloop/mistakes` (with the link) `{languages: {German: {resetAt, entries: [{type, at, said, fix}]}}}` | Talkloop's mistake log: merges what a device recorded since its last sync (newest `resetAt` wins and drops older entries; duplicates removed; newest 300 per language kept) → the whole log in the same shape. Stored in `scores/{uid}/talkloop/mistakes` |
 | `POST /api/talkloop/spoken` (with the link) `{words: {"die Haltestelle": {stage, due, uses, lastDay, updatedAt}}}` | Talkloop's speaking schedule: merges what a device changed since its last sync (per word the newest `updatedAt` wins) → the whole schedule. Stored in `scores/{uid}/talkloop/spoken` |
-| `POST /mcp/{link}?tz=<IANA zone>` (the Talkloop link in the address) | Talkloop for ChatGPT: a Model Context Protocol server (stateless Streamable HTTP, plain JSON answers) with two tools, `start_talkloop` and `record_turn`; see *Talkloop in ChatGPT* below |
+| `POST /mcp/{link}?tz=<IANA zone>` (the Talkloop link in the address) | Talkloop for ChatGPT: a Model Context Protocol server (stateless Streamable HTTP, plain JSON answers) with the tools `start_talkloop`, `talkloop_turn`, `talkloop_peek` and the Talkloop screen as an MCP App; see *Talkloop in ChatGPT* below |
+| `GET /talkloop-screen/{id}` (public, any origin) | what the Talkloop screen in ChatGPT shows for one practice |
 | `POST /api/talkloop/cloudflare` (with the link, + `X-Cloudflare-Account`, `X-Cloudflare-Token`) `{messages, response_format?, temperature?, max_tokens?, reasoning_effort?}` | Talkloop's Cloudflare Workers AI backup: forwards the chat request to `@cf/openai/gpt-oss-120b` with the learner's own account and token (never stored), as Cloudflare refuses calls from web pages; Cloudflare's answer and status come back as they are |
 
 Rounds are kept in memory (`repository/DrillRepository`, 6 h idle limit) and belong
@@ -300,22 +301,37 @@ imported words of the chosen level.
 ChatGPT can be Talkloop's conversation partner instead of Groq, Gemini or OpenAI's API, on
 the learner's own ChatGPT plan with no API key. The trainer is an MCP server at
 `/mcp/{link}` (`McpController`, `McpService`); Talkloop's page shows the learner's own address
-under **Use Talkloop in ChatGPT**, with the steps: in ChatGPT, Settings → Apps → Advanced
-settings → Developer mode, then **Create app** with that address and no authentication.
+under **Use Talkloop in ChatGPT**, with the steps: in ChatGPT, add it as a custom MCP server
+(Settings → Apps/Plugins → Add custom MCP server, or Create app in Developer mode), no authentication.
+
+**The screen.** `start_talkloop` opens Talkloop's screen inside the chat (an MCP App:
+`static/talkloop/chatgpt.html`, served as `ui://talkloop/screen.html`): the call header, today's
+words as chips in the learner's language (tap one for its German, which counts as a miss), the
+conversation with translations and replay, the correction with *Say it again* (a repeat is checked
+on the screen, as on the page) and *Hear it*, suggestions, umlaut keys and a microphone. Listening
+is the browser's speech recognition (the turn ends 1.5 s after the last words heard), the voice the
+browser's own German voice; no key, nothing paid. What the learner says goes into the chat as their
+message, and ChatGPT answers with `talkloop_turn`, whose result the screen shows and reads aloud.
+The screen asks for the microphone; where ChatGPT doesn't allow it, typing (or ChatGPT's own
+microphone) works the same.
 
 - `start_talkloop {mode, level, native_language?, scenario?, tense?, use_vocab?}` gives ChatGPT the
   partner's instructions for the whole chat, as Talkloop's page builds them for its AIs
   (`TalkloopChatGptService`, ported from `turnSystemPrompt` in `talkloop/app.js`: change both),
-  written for a plain chat: correction ✏️, reply, translation, suggestions 💬. With them come
-  today's words from the speaking schedule (picked as on the page), the recurring mistakes, a
-  topic or role card, and the subjects of earlier chats to leave alone.
-- `record_turn {said, correction?, mistakes?, used_words?, peeked_words?}` saves a corrected
-  message to the mistake log and moves today's words along the speaking schedule, the same
-  records the page syncs, so both stay one history.
+  with today's words from the speaking schedule (picked as on the page), the recurring mistakes, a
+  topic or role card, and the subjects of earlier chats to leave alone; `use_vocab: false` leaves
+  the words out, like unticking *Weave my vocab*.
+- `talkloop_turn {screen_id, said, correction?, mistakes?, tip?, used_words?, reply, reply_translation?, suggestions?, next_word?, task?}`
+  is ChatGPT's whole turn: shown on the screen, the correction saved to the mistake log and today's
+  words moved along the speaking schedule, the same records the page syncs.
+- `talkloop_peek {screen_id, key}` (called by the screen only) shows a word's German.
 
-Not carried over: Talkloop's own call screen and voice (ChatGPT's own voice mode is the
-alternative), LanguageTool, and saving the chat to Talkloop's chat history. The address holds
-the 180-day Talkloop link, so it works like a password for the learnt words and these logs.
+A practice is kept in memory (`TalkloopScreenRepository`, 6 h idle limit) under a random id; the
+screen reads it from `GET /talkloop-screen/{id}` (open to any origin, as ChatGPT's sandbox has none)
+while it waits for ChatGPT's turn. Every tool answer carries the screen's state, tied to the one
+screen by `openai/widgetSessionId`. The address holds the 180-day Talkloop link, so it works like a
+password for the learnt words and these logs. Not carried over: Piper's voice, LanguageTool and
+saving the chat to Talkloop's chat history.
 
 ## Users
 

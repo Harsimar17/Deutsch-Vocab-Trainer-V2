@@ -401,10 +401,14 @@ class EndToEndTest {
         return answer;
     }
 
-    private String mcpTool(String link, String name, Map<String, Object> args) throws Exception {
+    private Map<String, Object> mcpCall(String link, String name, Map<String, Object> args) throws Exception {
         Map<String, Object> result = (Map<String, Object>) mcp(link, "tools/call", Map.of("name", name, "arguments", args)).get("result");
         assertNull(result.get("isError"), String.valueOf(result));
-        return (String) ((List<Map<String, Object>>) result.get("content")).get(0).get("text");
+        return result;
+    }
+
+    private String mcpTool(String link, String name, Map<String, Object> args) throws Exception {
+        return (String) ((List<Map<String, Object>>) mcpCall(link, name, args).get("content")).get(0).get("text");
     }
 
     @Test
@@ -418,24 +422,45 @@ class EndToEndTest {
         assertEquals("2025-06-18", init.get("protocolVersion"));
         assertEquals(202, status(post("/mcp/" + link), null, Map.of("jsonrpc", "2.0", "method", "notifications/initialized")));
         List<Map<String, Object>> tools = (List<Map<String, Object>>) ((Map<String, Object>) mcp(link, "tools/list", Map.of()).get("result")).get("tools");
-        assertEquals(List.of("start_talkloop", "record_turn"), tools.stream().map(x -> x.get("name")).toList());
+        assertEquals(List.of("start_talkloop", "talkloop_turn", "talkloop_peek"), tools.stream().map(x -> x.get("name")).toList());
         assertEquals(-32601, ((Number) ((Map<String, Object>) mcp(link, "nope", Map.of()).get("error")).get("code")).intValue());
 
-        // a learnt word comes up as one of today's words, in English only for the learner
+        // the Talkloop screen: an MCP App resource, told where to ask for its state
+        Map<String, Object> resource = ((List<Map<String, Object>>) ((Map<String, Object>) mcp(link, "resources/read",
+                Map.of("uri", "ui://talkloop/screen.html")).get("result")).get("contents")).get(0);
+        assertEquals("text/html;profile=mcp-app", resource.get("mimeType"));
+        assertTrue(((String) resource.get("text")).contains("const ORIGIN = \"http://localhost"));
+        assertEquals(Map.of("microphone", Map.of()), ((Map<String, Object>) ((Map<String, Object>) resource.get("_meta")).get("ui")).get("permissions"));
+
+        // a learnt word comes up as one of today's words, in English only on the screen
         Round study = start(t, "study", Map.of());
         Map<String, Object> card = (Map<String, Object>) study.view().get("card");
         String de = (String) card.get("de");
         act(t, study, "grade", Map.of("grade", "again"));
-        String instructions = mcpTool(link, "start_talkloop", Map.of("mode", "topic", "level", "B1"));
+        Map<String, Object> started = mcpCall(link, "start_talkloop", Map.of("mode", "topic", "level", "B1"));
+        String instructions = (String) ((List<Map<String, Object>>) started.get("content")).get(0).get("text");
         assertTrue(instructions.contains("Today's words") && instructions.contains(de), instructions);
         assertTrue(instructions.contains("Today's topic"));
+        Map<String, Object> screen = (Map<String, Object>) started.get("structuredContent");
+        String screenId = (String) screen.get("id");
+        assertEquals(screenId, ((Map<String, Object>) started.get("_meta")).get("openai/widgetSessionId"));
+        Map<String, Object> chip = ((List<Map<String, Object>>) screen.get("words")).stream()
+                .filter(w -> card.get("en").equals(w.get("en"))).findFirst().orElseThrow();
+        assertNull(chip.get("de"), "the German stays hidden until it is said");
         String noVocab = mcpTool(link, "start_talkloop", Map.of("mode", "interview", "level", "B1", "use_vocab", false));
         assertFalse(noVocab.contains("Today's words") || noVocab.contains(de), noVocab);
 
-        // a turn moves the word along the speaking schedule and saves the mistake where Talkloop's page reads it
-        String saved = mcpTool(link, "record_turn", Map.of("said", "Ich habe gegeht", "correction", "Ich bin gegangen.",
-                "mistakes", List.of("perfekt_auxiliary", "participle"), "used_words", List.of(Map.of("word", de, "correct", true))));
-        assertTrue(saved.contains("mistake saved") && saved.contains("stage 1"), saved);
+        // ChatGPT's opening line, then a turn: shown on the screen, the word moves along the
+        // speaking schedule and the mistake is saved where Talkloop's page reads it
+        mcpCall(link, "talkloop_turn", Map.of("screen_id", screenId, "said", "", "reply", "Hallo! Was meinst du?"));
+        Map<String, Object> turn = (Map<String, Object>) mcpCall(link, "talkloop_turn", Map.of("screen_id", screenId,
+                "said", "Ich habe gegeht", "correction", "Ich bin gegangen.", "mistakes", List.of("perfekt_auxiliary", "participle"),
+                "used_words", List.of(Map.of("word", de, "correct", true)), "reply", "Super!", "suggestions", List.of("Ja.", "Nein."))).get("structuredContent");
+        List<Map<String, Object>> messages = (List<Map<String, Object>>) turn.get("messages");
+        assertEquals(List.of("partner", "learner", "partner"), messages.stream().map(m -> m.get("who")).toList());
+        assertEquals("Ich bin gegangen.", messages.get(1).get("correction"));
+        assertEquals(de, ((List<Map<String, Object>>) turn.get("words")).stream()
+                .filter(w -> card.get("en").equals(w.get("en"))).findFirst().orElseThrow().get("de"));
         Map<String, Object> spoken = (Map<String, Object>) ((Map<String, Object>) ok(post("/api/talkloop/spoken"), link,
                 Map.of("words", Map.of())).get("words")).get(de);
         assertEquals(1, ((Number) spoken.get("stage")).intValue());
@@ -443,6 +468,13 @@ class EndToEndTest {
                 Map.of("languages", Map.of())).get("languages")).get("German")).get("entries");
         assertEquals(2, mistakes.size());
         assertEquals("Ich bin gegangen.", mistakes.get(0).get("fix"));
+
+        // the screen reads the same state with nothing but its id, from any origin
+        MvcResult state = mvc.perform(get("/talkloop-screen/" + screenId).header("Origin", "null")).andReturn();
+        assertEquals(200, state.getResponse().getStatus());
+        assertEquals("*", state.getResponse().getHeader("Access-Control-Allow-Origin"));
+        assertEquals(turn.get("version"), json.readValue(state.getResponse().getContentAsString(), Map.class).get("version"));
+        assertEquals(410, mvc.perform(get("/talkloop-screen/nope")).andReturn().getResponse().getStatus());
 
         // a bad call is a tool error ChatGPT can read; without a valid link there is no connection
         Map<String, Object> bad = (Map<String, Object>) mcp(link, "tools/call", Map.of("name", "start_talkloop", "arguments", Map.of("mode", "x", "level", "B1"))).get("result");

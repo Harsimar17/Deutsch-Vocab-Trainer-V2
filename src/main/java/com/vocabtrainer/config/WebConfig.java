@@ -39,6 +39,8 @@ public class WebConfig implements WebMvcConfigurer {
                 .allowedHeaders("Authorization", "Content-Type", "X-GitHub-Token", "X-Gemini-Key", "X-Time-Zone")
                 .exposedHeaders(SessionInterceptor.RENEWED_TOKEN_HEADER)
                 .maxAge(3600);
+        // The Talkloop screen in ChatGPT runs in a sandbox with no origin of its own.
+        registry.addMapping("/talkloop-screen/**").allowedOrigins("*").allowedMethods("GET");
     }
 
     /** Talkloop, the speaking practice, lives in static/talkloop: serve its page at /talkloop/. */
