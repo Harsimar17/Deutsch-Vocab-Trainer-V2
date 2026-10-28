@@ -394,6 +394,134 @@ class EndToEndTest {
         assertEquals(401, status(get("/api/talkloop/words"), null, null));
     }
 
+    private Map<String, Object> mcp(String link, String method, Map<String, Object> params) throws Exception {
+        Map<String, Object> answer = ok(post("/mcp/" + link + "?tz=Asia/Kolkata"), null,
+                Map.of("jsonrpc", "2.0", "id", 7, "method", method, "params", params));
+        assertEquals(7, ((Number) answer.get("id")).intValue());
+        return answer;
+    }
+
+    private Map<String, Object> mcpCall(String link, String name, Map<String, Object> args) throws Exception {
+        Map<String, Object> result = (Map<String, Object>) mcp(link, "tools/call", Map.of("name", name, "arguments", args)).get("result");
+        assertNull(result.get("isError"), String.valueOf(result));
+        return result;
+    }
+
+    private String mcpTool(String link, String name, Map<String, Object> args) throws Exception {
+        return (String) ((List<Map<String, Object>>) mcpCall(link, name, args).get("content")).get(0).get("text");
+    }
+
+    @Test
+    void chatGptRunsTalkloopOverMcp() throws Exception {
+        firebase.addUser("gpt@test.local", "gpt-test-pw"); // a learner of its own: this writes to the mistake log and schedule
+        String t = login("gpt@test.local", "gpt-test-pw");
+        String link = (String) ok(post("/api/talkloop/link"), t, null).get("token");
+
+        Map<String, Object> init = (Map<String, Object>) mcp(link, "initialize",
+                Map.of("protocolVersion", "2025-06-18", "capabilities", Map.of(), "clientInfo", Map.of("name", "test", "version", "1"))).get("result");
+        assertEquals("2025-06-18", init.get("protocolVersion"));
+        assertEquals(202, status(post("/mcp/" + link), null, Map.of("jsonrpc", "2.0", "method", "notifications/initialized")));
+        List<Map<String, Object>> tools = (List<Map<String, Object>>) ((Map<String, Object>) mcp(link, "tools/list", Map.of()).get("result")).get("tools");
+        assertEquals(List.of("start_talkloop", "talkloop_turn", "talkloop_peek", "talkloop_check", "talkloop_lookup"), tools.stream().map(x -> x.get("name")).toList());
+        assertEquals(-32601, ((Number) ((Map<String, Object>) mcp(link, "nope", Map.of()).get("error")).get("code")).intValue());
+
+        // the Talkloop screen: an MCP App resource, told where to ask for its state
+        Map<String, Object> resource = ((List<Map<String, Object>>) ((Map<String, Object>) mcp(link, "resources/read",
+                Map.of("uri", "ui://talkloop/screen.html")).get("result")).get("contents")).get(0);
+        assertEquals("text/html;profile=mcp-app", resource.get("mimeType"));
+        assertTrue(((String) resource.get("text")).contains("const ORIGIN = \"http://localhost"));
+        assertEquals(Map.of("microphone", Map.of()), ((Map<String, Object>) ((Map<String, Object>) resource.get("_meta")).get("ui")).get("permissions"));
+
+        // a learnt word comes up as one of today's words, in English only on the screen
+        Round study = start(t, "study", Map.of());
+        Map<String, Object> card = (Map<String, Object>) study.view().get("card");
+        String de = (String) card.get("de");
+        act(t, study, "grade", Map.of("grade", "again"));
+        Map<String, Object> started = mcpCall(link, "start_talkloop", Map.of("mode", "topic", "level", "B1"));
+        String instructions = (String) ((List<Map<String, Object>>) started.get("content")).get(0).get("text");
+        assertTrue(instructions.contains("Today's words") && instructions.contains(de), instructions);
+        assertTrue(instructions.contains("Today's topic"));
+        Map<String, Object> screen = (Map<String, Object>) started.get("structuredContent");
+        String screenId = (String) screen.get("id");
+        assertEquals(screenId, ((Map<String, Object>) started.get("_meta")).get("openai/widgetSessionId"));
+        Map<String, Object> chip = ((List<Map<String, Object>>) screen.get("words")).stream()
+                .filter(w -> card.get("en").equals(w.get("en"))).findFirst().orElseThrow();
+        assertNull(chip.get("de"), "the German stays hidden until it is said");
+        String noVocab = mcpTool(link, "start_talkloop", Map.of("mode", "interview", "level", "B1", "use_vocab", false));
+        assertFalse(noVocab.contains("Today's words") || noVocab.contains(de), noVocab);
+
+        // ChatGPT's opening line, then a turn: shown on the screen, the word moves along the
+        // speaking schedule and the mistake is saved where Talkloop's page reads it
+        mcpCall(link, "talkloop_turn", Map.of("screen_id", screenId, "said", "", "reply", "Hallo! Was meinst du?"));
+        Map<String, Object> turn = (Map<String, Object>) mcpCall(link, "talkloop_turn", Map.of("screen_id", screenId,
+                "said", "Ich habe gegeht", "correction", "Ich bin gegangen.", "mistakes", List.of("perfekt_auxiliary", "participle"),
+                "used_words", List.of(Map.of("word", de, "correct", true)), "reply", "Super!", "suggestions", List.of("Ja.", "Nein."))).get("structuredContent");
+        List<Map<String, Object>> messages = (List<Map<String, Object>>) turn.get("messages");
+        assertEquals(List.of("partner", "learner", "partner"), messages.stream().map(m -> m.get("who")).toList());
+        assertEquals("Ich bin gegangen.", messages.get(1).get("correction"));
+        assertEquals(de, ((List<Map<String, Object>>) turn.get("words")).stream()
+                .filter(w -> card.get("en").equals(w.get("en"))).findFirst().orElseThrow().get("de"));
+        Map<String, Object> spoken = (Map<String, Object>) ((Map<String, Object>) ok(post("/api/talkloop/spoken"), link,
+                Map.of("words", Map.of())).get("words")).get(de);
+        assertEquals(1, ((Number) spoken.get("stage")).intValue());
+        List<Map<String, Object>> mistakes = (List<Map<String, Object>>) ((Map<String, Object>) ((Map<String, Object>) ok(post("/api/talkloop/mistakes"), link,
+                Map.of("languages", Map.of())).get("languages")).get("German")).get("entries");
+        assertEquals(2, mistakes.size());
+        assertEquals("Ich bin gegangen.", mistakes.get(0).get("fix"));
+
+        // LanguageTool's correction of an uncorrected message becomes the correction, and is logged
+        Map<String, Object> checked = (Map<String, Object>) mcpCall(link, "talkloop_turn", Map.of("screen_id", screenId,
+                "said", "Ich gehe morgen in die Kino", "reply", "Schön!")).get("structuredContent");
+        checked = (Map<String, Object>) mcpCall(link, "talkloop_check", Map.of("screen_id", screenId, "said", "Ich gehe morgen in die Kino",
+                "correction", "Ich gehe morgen ins Kino", "mistakes", List.of("case_article"), "tip", "Grammar check: ins")).get("structuredContent");
+        List<Map<String, Object>> after = (List<Map<String, Object>>) checked.get("messages");
+        assertEquals("Ich gehe morgen ins Kino", after.get(after.size() - 2).get("correction"));
+        assertEquals(3, ((List<?>) ((Map<String, Object>) ((Map<String, Object>) ok(post("/api/talkloop/mistakes"), link,
+                Map.of("languages", Map.of())).get("languages")).get("German")).get("entries")).size());
+
+        // a tapped word's meaning comes from the vocabulary
+        String tapped = de.replaceFirst("^(der|die|das) ", "").split(" ")[0]; // one word of a reply, as tapped
+        Map<String, Object> gloss = (Map<String, Object>) mcpCall(link, "talkloop_lookup", Map.of("word", tapped)).get("structuredContent");
+        assertEquals(true, gloss.get("found"), String.valueOf(gloss));
+
+        // the screen reads the same state with nothing but its id, from any origin
+        MvcResult state = mvc.perform(get("/talkloop-screen/" + screenId).header("Origin", "null")).andReturn();
+        assertEquals(200, state.getResponse().getStatus());
+        assertEquals("*", state.getResponse().getHeader("Access-Control-Allow-Origin"));
+        assertEquals(checked.get("version"), json.readValue(state.getResponse().getContentAsString(), Map.class).get("version"));
+        assertEquals(410, mvc.perform(get("/talkloop-screen/nope")).andReturn().getResponse().getStatus());
+
+        // Mein Leben starts from themes; a subject talked about is left alone by later chats, here and on Talkloop's page
+        Map<String, Object> life = mcpCall(link, "start_talkloop", Map.of("mode", "life", "level", "A2"));
+        assertTrue(((String) ((List<Map<String, Object>>) life.get("content")).get(0).get("text")).contains("Set subject to exactly the theme's name"));
+        String lifeId = (String) ((Map<String, Object>) life.get("structuredContent")).get("id");
+        mcpCall(link, "talkloop_turn", Map.of("screen_id", lifeId, "said", "", "reply", "Hallo! Erzähl mal von deiner Heimatstadt.", "subject", "your hometown"));
+        assertTrue(((List<?>) ok(get("/api/talkloop/chats"), link, null).get("subjects")).contains("your hometown"));
+
+        // Dolmetscher: the sentence to say is shown; a wrong try goes into the deck Talkloop's page uses
+        String interpId = (String) ((Map<String, Object>) mcpCall(link, "start_talkloop", Map.of("mode", "interpret", "level", "A2"))
+                .get("structuredContent")).get("id");
+        Map<String, Object> first = (Map<String, Object>) mcpCall(link, "talkloop_turn", Map.of("screen_id", interpId, "said", "",
+                "reply", "Los geht's!", "task", "I am tired.")).get("structuredContent");
+        assertEquals("I am tired.", ((List<Map<String, Object>>) first.get("messages")).get(0).get("task"));
+        Map<String, Object> second = mcpCall(link, "talkloop_turn", Map.of("screen_id", interpId, "said", "Ich habe müde",
+                "correction", "Ich bin müde.", "reply", "Fast!", "task", "The bus is late."));
+        assertTrue(((String) ((List<Map<String, Object>>) second.get("content")).get(0).get("text")).contains("The bus is late."));
+        Map<String, Object> deck = (Map<String, Object>) ok(post("/api/talkloop/sentences"), link, Map.of("sentences", Map.of())).get("sentences");
+        Map<String, Object> tired = (Map<String, Object>) deck.get("i am tired");
+        assertEquals("Ich bin müde.", tired.get("de"));
+        assertEquals(0, ((Number) tired.get("stage")).intValue());
+
+        // Talkloop's Piper voice code can be loaded by the screen
+        assertEquals("*", mvc.perform(get("/talkloop/piper.js").header("Origin", "null")).andReturn().getResponse().getHeader("Access-Control-Allow-Origin"));
+
+        // a bad call is a tool error ChatGPT can read; without a valid link there is no connection
+        Map<String, Object> bad = (Map<String, Object>) mcp(link, "tools/call", Map.of("name", "start_talkloop", "arguments", Map.of("mode", "x", "level", "B1"))).get("result");
+        assertEquals(true, bad.get("isError"));
+        assertEquals(401, status(post("/mcp/not-a-link"), null, Map.of("jsonrpc", "2.0", "id", 1, "method", "ping")));
+        assertEquals(401, status(post("/mcp/" + t), null, Map.of("jsonrpc", "2.0", "id", 1, "method", "ping")));
+    }
+
     @Test
     void talkloopSyncsItsMistakeLogAcrossDevices() throws Exception {
         String t = login(BEN, "ben-test-pw");

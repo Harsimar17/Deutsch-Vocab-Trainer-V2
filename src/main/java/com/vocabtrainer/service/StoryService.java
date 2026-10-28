@@ -289,6 +289,11 @@ public class StoryService {
     /** "Schlaf ist wichtig": a capitalised first word followed by one of these is the subject noun, not a verb. */
     private static final Set<String> NOUN_SUBJECT_VERBS = Set.of("ist", "sind", "war", "waren", "wird", "hat", "macht", "kann", "muss");
 
+    /** A German word's meaning from the vocabulary and the stories' glossaries, as the reader finds it, or null. */
+    public Gloss lookupWord(String word) {
+        return new WordLookup(List.of(model().globalDict())).lookup(word);
+    }
+
     /**
      * The B1 verbs used in a phase's stories — target words and plain text
      * alike, as the reader recognises them — in dictionary form, de-duplicated,

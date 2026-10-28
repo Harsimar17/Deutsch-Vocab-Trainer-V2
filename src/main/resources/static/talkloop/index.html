@@ -8,7 +8,7 @@
     <link rel="apple-touch-icon" href="favicon.svg" />
     <meta name="theme-color" content="#e62429" />
     <!-- ?v= makes phones fetch the new file after a change instead of a cached copy: bump it with each change. -->
-    <link rel="stylesheet" href="styles.css?v=23" />
+    <link rel="stylesheet" href="styles.css?v=24" />
   </head>
   <body>
     <header class="topbar">
@@ -274,6 +274,25 @@
       <div id="explorer-body"></div>
     </aside>
 
+    <!-- ChatGPT as the partner, on the learner's own ChatGPT plan (the trainer's /mcp/{link}).
+         Its own card, as the setup card stays hidden until an AI key is saved. -->
+    <section id="chatgpt" class="card chatgpt" hidden>
+      <details class="chats">
+        <summary>Use Talkloop in ChatGPT</summary>
+        <p class="muted">ChatGPT can be your partner instead, with no API key: Talkloop's screen opens inside ChatGPT, with your words to say today, corrections and the microphone, and your mistakes and words are saved here.</p>
+        <ol class="muted">
+          <li>In ChatGPT on a computer: Settings → <strong>Plugins</strong> (or Apps) → <strong>Add</strong> → <strong>Add custom MCP server</strong>. If you don't see Add, turn on <strong>Developer mode</strong> under Advanced settings first.</li>
+          <li>Name it Talkloop, paste the address below, Authentication <strong>None</strong>, and save.</li>
+          <li>In a new chat, turn Talkloop on and write e.g. <em>Talkloop: interview me, A2</em>. Tap 🎙️ on the Talkloop screen and speak.</li>
+        </ol>
+        <div class="vocab-url-row">
+          <input id="chatgpt-url" type="text" readonly />
+          <button type="button" id="chatgpt-copy">Copy</button>
+        </div>
+        <p class="muted">This address works like your login for Talkloop for 180 days: don't share it.</p>
+      </details>
+    </section>
+
     <section class="card">
       <div class="card-head">
         <h2>Your arch-nemeses 🦹 <span class="muted">(recurring mistakes)</span></h2>
@@ -288,6 +307,6 @@
       <ul id="bookmarks" class="bookmarks"></ul>
     </section>
 
-    <script src="app.js?v=62" type="module"></script> <!-- bump with app.js changes, like styles.css above -->
+    <script src="app.js?v=63" type="module"></script> <!-- bump with app.js changes, like styles.css above -->
   </body>
 </html>

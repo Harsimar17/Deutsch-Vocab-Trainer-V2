@@ -281,24 +281,36 @@ public class TalkloopService {
             throw new ResponseStatusException(HttpStatus.PAYLOAD_TOO_LARGE, "chat too long to keep");
         }
         boolean topicChat = !(body.get("mode") instanceof String mode) || mode.equals("topic");
-        List<String> sentSubjects = new ArrayList<>();
-        for (Object o : body.get("subjects") instanceof List<?> l ? l : List.of()) {
-            if (o instanceof String subject && !subject.isBlank() && sentSubjects.size() < MAX_SUBJECTS_PER_CHAT) {
-                String clean = subject.strip().toLowerCase();
-                sentSubjects.add(clean.length() > MAX_SUBJECT ? clean.substring(0, MAX_SUBJECT) : clean);
-            }
-        }
         synchronized (syncLocks[Math.floorMod(ctx.uid().hashCode(), syncLocks.length)]) {
             Map<String, Object> chat = new LinkedHashMap<>();
             chat.put("topic", topic);
             chat.put("at", at.longValue());
             chat.put("data", data);
             repo.saveTalkloopChat(ctx, id, chat);
+            noteTopics(ctx, topicChat ? topic : null, body.get("subjects") instanceof List<?> l ? l : List.of());
+        }
+        return Map.of("ok", true);
+    }
+
+    /**
+     * Adds a topic discussed (or null) and the subjects talked about (short phrases, in the
+     * order talked about) to what later chats leave alone: a chat on Talkloop's page or in
+     * ChatGPT. Costs no write when nothing is new.
+     */
+    public void noteTopics(Ctx ctx, String topic, List<?> sent) {
+        List<String> sentSubjects = new ArrayList<>();
+        for (Object o : sent) {
+            if (o instanceof String subject && !subject.isBlank() && sentSubjects.size() < MAX_SUBJECTS_PER_CHAT) {
+                String clean = subject.strip().toLowerCase();
+                sentSubjects.add(clean.length() > MAX_SUBJECT ? clean.substring(0, MAX_SUBJECT) : clean);
+            }
+        }
+        synchronized (syncLocks[Math.floorMod(ctx.uid().hashCode(), syncLocks.length)]) {
             Map<String, Object> stored = repo.findTalkloopTopics(ctx);
             List<Object> topics = new ArrayList<>(stored != null && stored.get("topics") instanceof List<?> l ? l : List.of());
             List<Object> subjects = new ArrayList<>(stored != null && stored.get("subjects") instanceof List<?> l ? l : List.of());
             boolean changed = false; // a chat that goes on with nothing new costs no extra write
-            if (topicChat && !topics.contains(topic)) {
+            if (topic != null && !topic.isBlank() && topic.length() <= MAX_TOPIC && !topics.contains(topic)) {
                 topics.add(0, topic);
                 changed = true;
             }
@@ -317,7 +329,6 @@ public class TalkloopService {
                         "subjects", subjects.subList(0, Math.min(MAX_SUBJECTS, subjects.size()))));
             }
         }
-        return Map.of("ok", true);
     }
 
     public void deleteChat(Ctx ctx, String id) {

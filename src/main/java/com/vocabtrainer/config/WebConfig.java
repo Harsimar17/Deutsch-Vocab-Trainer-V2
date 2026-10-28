@@ -39,6 +39,10 @@ public class WebConfig implements WebMvcConfigurer {
                 .allowedHeaders("Authorization", "Content-Type", "X-GitHub-Token", "X-Gemini-Key", "X-Time-Zone")
                 .exposedHeaders(SessionInterceptor.RENEWED_TOKEN_HEADER)
                 .maxAge(3600);
+        // The Talkloop screen in ChatGPT runs in a sandbox with no origin of its own.
+        registry.addMapping("/talkloop-screen/**").allowedOrigins("*").allowedMethods("GET");
+        // …and loads Talkloop's Piper voice code from here, which a cross-origin module import needs CORS for.
+        registry.addMapping("/talkloop/piper.js").allowedOrigins("*").allowedMethods("GET");
     }
 
     /** Talkloop, the speaking practice, lives in static/talkloop: serve its page at /talkloop/. */
@@ -57,7 +61,8 @@ public class WebConfig implements WebMvcConfigurer {
     public void addInterceptors(InterceptorRegistry registry) {
         // Public: the vocabulary (same data as the repo), logging in, and creating
         // users (guarded by the admin key instead). Talkloop's calls (learnt words,
-        // mistake log, topic chats, sentence deck) need a Talkloop link instead. Everything else needs a session.
+        // mistake log, topic chats, sentence deck) and ChatGPT's connection to Talkloop
+        // (/mcp/{link}) need a Talkloop link instead. Everything else needs a session.
         registry.addInterceptor(sessionInterceptor)
                 .addPathPatterns("/api/**")
                 .excludePathPatterns("/api/vocab", "/api/auth/login", "/api/users", "/api/talkloop/words",
@@ -65,6 +70,6 @@ public class WebConfig implements WebMvcConfigurer {
                         "/api/talkloop/chats", "/api/talkloop/chats/*");
         registry.addInterceptor(talkloopLinkInterceptor)
                 .addPathPatterns("/api/talkloop/words", "/api/talkloop/mistakes", "/api/talkloop/spoken", "/api/talkloop/sentences",
-                        "/api/talkloop/cloudflare", "/api/talkloop/chats", "/api/talkloop/chats/*");
+                        "/api/talkloop/cloudflare", "/api/talkloop/chats", "/api/talkloop/chats/*", "/mcp/*");
     }
 }
