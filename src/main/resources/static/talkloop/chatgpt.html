@@ -152,7 +152,10 @@
       <button id="mic" class="mic" type="button" aria-pressed="false" title="Speak" aria-label="Speak">🎙️</button>
     </form>
     <div class="switches">
-      <label><input id="autosend" type="checkbox" checked /> Send after a pause</label>
+      <label><input id="autosend" type="checkbox" checked /> Send after a pause of
+        <select id="pausems" aria-label="Pause before sending" style="width:auto;padding:0 4px;border-width:2px">
+          <option value="1500">1.5 s</option><option value="3000" selected>3 s</option><option value="5000">5 s</option><option value="8000">8 s</option>
+        </select></label>
       <label><input id="handsfree" type="checkbox" checked /> Listen again after each reply</label>
       <label><input id="speakreplies" type="checkbox" checked /> Read replies aloud</label>
       <label><input id="piper" type="checkbox" /> Thorsten's voice (downloads 60 MB)</label>
@@ -216,7 +219,6 @@
 <script>
 (() => {
   const ORIGIN = "__TALKLOOP_ORIGIN__";
-  const SILENCE_MS = 1500; // as on Talkloop's page: a pause this long ends the turn
   const LOCALE = "de-DE";
   const $ = (id) => document.getElementById(id);
 
@@ -229,6 +231,8 @@
     $(id).checked = store.get(id, $(id).checked);
     $(id).addEventListener("change", () => store.set(id, $(id).checked));
   }
+  $("pausems").value = store.get("pausems", $("pausems").value);
+  $("pausems").addEventListener("change", () => store.set("pausems", $("pausems").value));
 
   // ---------- the MCP Apps bridge (JSON-RPC with ChatGPT through postMessage) ----------
   let nextId = 1;
@@ -467,7 +471,7 @@
       const tools = el("div", "tools");
       const again = el("button", "", "🎙️ Say it again");
       again.type = "button";
-      again.addEventListener("click", () => { sayAgain = m.correction; listen(); });
+      again.addEventListener("click", () => { sayAgain = m.correction; listen(true); });
       const hear = el("button", "", "🔊 Hear it");
       hear.type = "button";
       hear.addEventListener("click", () => speak(m.correction));
@@ -631,22 +635,37 @@
   });
 
   // ---------- listening: the browser's speech recognition ----------
+  // The mic stays on until the learner has said something and then paused (see "Pause before
+  // sending"), or taps it off. Browsers end recognition on their own (after a few seconds of
+  // silence, or after a sentence inside ChatGPT): then it starts again, keeping what was heard.
   const Recognition = window.SpeechRecognition ?? window.webkitSpeechRecognition;
-  let rec = null, silence = null, heard = "";
-  function listen() {
+  let rec = null, silence = null, heard = "", carried = "", wanted = false, quickEnds = 0;
+  const pauseMs = () => Number($("pausems").value) || 3000;
+  let byTap = false; // whether listening was started by a tap on the screen (or by itself, hands-free)
+  function listen(tapped = false) {
     if (!Recognition) return note("This browser can't listen here: type, or use ChatGPT's own microphone.");
+    byTap = tapped;
     stopSpeaking();
     stopListening();
     unlockAudio();
     heard = "";
+    carried = "";
+    quickEnds = 0;
+    wanted = true;
+    $("mic").setAttribute("aria-pressed", "true");
+    setState(sayAgain ? "sayagain" : "listening");
+    startRecognizer();
+  }
+  function startRecognizer() {
     // A stopped recognizer still reports its last words: only the current one counts, or the
     // learner's answer was sent twice (and ChatGPT answered it twice).
     const me = new Recognition();
+    const started = Date.now();
     rec = me;
-    rec.lang = LOCALE;
-    rec.continuous = true;
-    rec.interimResults = true;
-    rec.onresult = (event) => {
+    me.lang = LOCALE;
+    me.continuous = true;
+    me.interimResults = true;
+    me.onresult = (event) => {
       if (rec !== me) return;
       let finalText = "", interim = "";
       for (let i = 0; i < event.results.length; i++) {
@@ -654,33 +673,51 @@
         if (r.isFinal) finalText += r[0].transcript + " ";
         else interim += r[0].transcript;
       }
-      heard = (finalText + interim).trim();
+      heard = `${carried} ${finalText}${interim}`.replace(/\s+/g, " ").trim();
       $("input").value = heard;
       clearTimeout(silence);
       // The turn ends this long after the last words heard, final or not.
-      silence = setTimeout(() => endTurn(), SILENCE_MS);
+      silence = setTimeout(() => endTurn(), pauseMs());
     };
-    rec.onerror = (event) => {
+    me.onerror = (event) => {
       if (rec !== me) return;
       if (event.error === "not-allowed" || event.error === "service-not-allowed") {
-        $("handsfree").checked = false;
-        note("ChatGPT didn't allow the microphone here. Type, or use ChatGPT's own microphone in the message box.");
+        wanted = false;
+        // Refused when it started by itself: a tap usually works (and hands-free stays on for later).
+        note(byTap ? "ChatGPT didn't allow the microphone here. Type, or use ChatGPT's own microphone in the message box."
+          : "Tap 🎙️ to answer: the microphone needs a tap here.");
       } else if (event.error !== "no-speech" && event.error !== "aborted") {
         note(`Listening stopped: ${event.error}`);
       }
     };
-    rec.onend = () => {
-      if (rec === me) { rec = null; $("mic").setAttribute("aria-pressed", "false"); if ($("call").dataset.state === "listening") setState("idle"); }
+    me.onend = () => {
+      if (rec !== me) return;
+      rec = null;
+      // Ended by the browser, not by the learner: listen on, keeping what was heard so far.
+      // (One that keeps ending at once would loop for ever: after a few, give up.)
+      quickEnds = Date.now() - started < 1000 ? quickEnds + 1 : 0;
+      if (wanted && quickEnds < 5) {
+        carried = heard;
+        setTimeout(() => { if (wanted && !rec) startRecognizer(); }, 150);
+        return;
+      }
+      wanted = false;
+      $("mic").setAttribute("aria-pressed", "false");
+      if (["listening", "sayagain"].includes($("call").dataset.state)) setState("idle");
+      if (quickEnds >= 5) note("The microphone keeps stopping here: tap 🎙️ to try again, or type.");
     };
     try {
-      rec.start();
-      $("mic").setAttribute("aria-pressed", "true");
-      setState(sayAgain ? "sayagain" : "listening");
+      me.start();
     } catch (e) {
-      note(`Can't listen: ${e.message}`);
+      rec = null;
+      wanted = false;
+      $("mic").setAttribute("aria-pressed", "false");
+      if (["listening", "sayagain"].includes($("call").dataset.state)) setState("idle");
+      note(byTap ? `Can't listen: ${e.message}` : "Tap 🎙️ to answer.");
     }
   }
   function stopListening() {
+    wanted = false;
     clearTimeout(silence);
     if (rec) { const r = rec; rec = null; try { r.stop(); } catch { /* already stopped */ } }
     $("mic").setAttribute("aria-pressed", "false");
@@ -688,6 +725,7 @@
   function endTurn() {
     const text = heard;
     heard = "";
+    carried = "";
     stopListening();
     if (!text) return setState("idle");
     if ($("autosend").checked || paused) send(text);
@@ -696,7 +734,7 @@
   function maybeListen() {
     if ($("handsfree").checked && Recognition && $("call").dataset.state !== "thinking" && $("recap").hidden && $("settings").hidden) listen();
   }
-  $("mic").addEventListener("click", () => (rec ? endTurn() : listen()));
+  $("mic").addEventListener("click", () => (wanted ? endTurn() : listen(true)));
 
   // ---------- the voice: Thorsten's (Piper, on this device) or the browser's own ----------
   let piper = null, piperFailed = false, audioCtx = null, source = null;
@@ -726,12 +764,16 @@
     return voices.find((v) => /natural|neural|google|premium|enhanced/i.test(v.name)) ?? voices[0] ?? null;
   }
   let speakToken = 0;
+  let utterance = null;
   async function speak(text, onDone) {
     if (!$("speakreplies").checked) return onDone?.();
     stopSpeaking();
     const token = ++speakToken;
     let done = false;
-    const finish = () => { if (done || token !== speakToken) return; done = true; if ($("call").dataset.state === "speaking") setState("idle"); onDone?.(); };
+    const finish = () => { if (done || token !== speakToken) return; done = true; clearTimeout(watchdog); if ($("call").dataset.state === "speaking") setState("idle"); onDone?.(); };
+    // The mic comes back when the reply has been spoken, but the end of speech isn't always
+    // reported (a voice that is blocked, or Chrome losing an utterance): so not later than this.
+    const watchdog = setTimeout(finish, 3000 + text.length * 90);
     setState("speaking");
     const mod = $("piper").checked && piper ? await Promise.race([piper, new Promise((r) => setTimeout(() => r(null), 100))]) : null;
     if (token !== speakToken) return;
@@ -747,6 +789,7 @@
         source.buffer = buffer;
         source.connect(audioCtx.destination);
         source.onended = finish;
+        if (audioCtx.state !== "running") throw new Error("audio not allowed yet"); // would never end: the browser's voice instead
         source.start();
         return;
       } catch (e) {
@@ -754,7 +797,8 @@
       }
     }
     if (!("speechSynthesis" in window)) return finish();
-    const u = new SpeechSynthesisUtterance(text);
+    // Kept until it has been spoken: Chrome drops the end event of an utterance it has cleaned up.
+    const u = utterance = new SpeechSynthesisUtterance(text);
     u.lang = LOCALE;
     u.rate = 0.95;
     const v = germanVoice();

@@ -310,8 +310,10 @@ the call header, today's words as chips in the learner's language (tap one for i
 counts as a miss), the conversation with translations and replay, any word of a reply tapped for its
 meaning (from the vocabulary, as the story reader finds it), the correction with *Say it again* (a
 repeat is checked on the screen) and *Hear it*, suggestions, the Dolmetscher's sentence to say, umlaut
-keys (and `"a`, Alt+A), and a microphone: the browser's speech recognition, the turn ending 1.5 s after
-the last words heard. Replies are read aloud by Thorsten's Piper voice where ChatGPT lets it load
+keys (and `"a`, Alt+A), and a microphone: the browser's speech recognition, which stays on until the
+learner has spoken and then paused (*Pause before sending*: 1.5, 3, 5 or 8 s, 3 by default) or taps it
+off; when the browser stops recognition on its own (after silence, or after a sentence), it starts again
+and keeps what was heard. Replies are read aloud by Thorsten's Piper voice where ChatGPT lets it load
 (`talkloop/piper.js`, 60 MB, on by default except on phones), else the browser's German voice.
 *Double-check my grammar with LanguageTool* works as on the page: when ChatGPT gave no correction but
 LanguageTool finds a mistake, that becomes the correction (and goes to the mistake log). "zwei Minuten"
