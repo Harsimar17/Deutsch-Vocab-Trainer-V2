@@ -303,7 +303,7 @@ the learner's own ChatGPT plan with no API key. The trainer is an MCP server at
 under **Use Talkloop in ChatGPT**, with the steps: in ChatGPT, Settings → Apps → Advanced
 settings → Developer mode, then **Create app** with that address and no authentication.
 
-- `start_talkloop {mode, level, native_language?, scenario?, tense?}` gives ChatGPT the
+- `start_talkloop {mode, level, native_language?, scenario?, tense?, use_vocab?}` gives ChatGPT the
   partner's instructions for the whole chat, as Talkloop's page builds them for its AIs
   (`TalkloopChatGptService`, ported from `turnSystemPrompt` in `talkloop/app.js`: change both),
   written for a plain chat: correction ✏️, reply, translation, suggestions 💬. With them come

@@ -145,7 +145,9 @@ public class TalkloopChatGptService {
                 "native_language", Map.of("type", "string", "description", "The language the learner speaks, for translations and tips. Default English."),
                 "scenario", Map.of("type", "string", "enum", List.copyOf(SCENES.keySet()), "description", "Only for mode scene; a random one if left out."),
                 "tense", Map.of("type", "string", "enum", Stream.concat(Stream.of("any"), TENSES.keySet().stream()).toList(),
-                        "description", "A tense to practise, or any (the default).")),
+                        "description", "A tense to practise, or any (the default)."),
+                "use_vocab", Map.of("type", "boolean",
+                        "description", "Practise the learner's learnt words (today's words). Default true; false when they ask for a chat without their vocab.")),
                 List.of("mode", "level")));
         start.put("annotations", Map.of("readOnlyHint", true, "openWorldHint", false));
 
@@ -242,7 +244,9 @@ public class TalkloopChatGptService {
             }
         }
 
-        List<Map<String, Object>> words = todayWords(ctx, level, mode.equals("sentences"));
+        // Like unticking "Weave my vocab into the conversation" on Talkloop's page.
+        boolean useVocab = !Boolean.FALSE.equals(args.get("use_vocab"));
+        List<Map<String, Object>> words = useVocab ? todayWords(ctx, level, mode.equals("sentences")) : List.of();
         List<Map<String, Object>> active = words.subList(0, Math.min(TODAY_WORDS, words.size()));
         List<Map<String, Object>> waiting = words.subList(active.size(), Math.min(active.size() + WAITING_WORDS, words.size()));
         if (!active.isEmpty()) {
@@ -254,7 +258,8 @@ public class TalkloopChatGptService {
                     + "If they ask for the German of one, tell them, report it as peeked_words, and don't report it as correct later in this chat. "
                     + "Once a word was said, bring it back later in another form (tense, person).");
         } else if (mode.equals("sentences")) {
-            lines.add("The learner has no learnt words yet: choose everyday words at " + level + " yourself, one per step, giving only their meaning in " + nativeLanguage + ".");
+            lines.add((useVocab ? "The learner has no learnt words yet" : "The learner chose not to practise their own words")
+                    + ": choose everyday words at " + level + " yourself, one per step, giving only their meaning in " + nativeLanguage + ".");
         }
 
         List<String> weak = recurringMistakes(ctx);

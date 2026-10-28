@@ -429,6 +429,8 @@ class EndToEndTest {
         String instructions = mcpTool(link, "start_talkloop", Map.of("mode", "topic", "level", "B1"));
         assertTrue(instructions.contains("Today's words") && instructions.contains(de), instructions);
         assertTrue(instructions.contains("Today's topic"));
+        String noVocab = mcpTool(link, "start_talkloop", Map.of("mode", "interview", "level", "B1", "use_vocab", false));
+        assertFalse(noVocab.contains("Today's words") || noVocab.contains(de), noVocab);
 
         // a turn moves the word along the speaking schedule and saves the mistake where Talkloop's page reads it
         String saved = mcpTool(link, "record_turn", Map.of("said", "Ich habe gegeht", "correction", "Ich bin gegangen.",
