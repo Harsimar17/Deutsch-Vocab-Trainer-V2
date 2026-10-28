@@ -18,7 +18,7 @@ import org.springframework.web.server.ResponseStatusException;
  * Lets controllers take a {@link Ctx}: the logged-in user (checked by
  * {@link SessionInterceptor}), a Firebase ID token to act as them in Firestore,
  * and their time zone from X-Time-Zone (an IANA name like "Asia/Kolkata"; UTC
- * if missing or unknown).
+ * if missing or unknown), or from ?tz= where no header can be set (ChatGPT's connection).
  */
 public class CtxArgumentResolver implements HandlerMethodArgumentResolver {
 
@@ -43,7 +43,7 @@ public class CtxArgumentResolver implements HandlerMethodArgumentResolver {
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "not logged in");
         }
         String idToken = idTokens.idToken(session.uid(), session.firebaseRefreshToken());
-        return new Ctx(session.uid(), idToken, zone(request.getHeader(TIME_ZONE_HEADER)));
+        return new Ctx(session.uid(), idToken, zone(request.getHeader(TIME_ZONE_HEADER) != null ? request.getHeader(TIME_ZONE_HEADER) : request.getParameter("tz")));
     }
 
     static ZoneId zone(String header) {

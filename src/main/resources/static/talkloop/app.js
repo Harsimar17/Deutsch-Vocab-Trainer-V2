@@ -3492,6 +3492,15 @@ async function loadVocabUrl(url, { silent } = {}) {
 }
 
 $("load-url").addEventListener("click", () => loadVocabUrl($("vocab-url").value.trim()));
+$("chatgpt-copy").addEventListener("click", async () => {
+  const input = $("chatgpt-url");
+  try {
+    await navigator.clipboard.writeText(input.value);
+    $("chatgpt-copy").textContent = "Copied ✓";
+  } catch {
+    input.select(); // clipboard blocked: selected, to copy by hand
+  }
+});
 
 // Fetch the learnt words now and keep them, so they are ready when a conversation starts.
 async function refreshLearntWords() {
@@ -3514,12 +3523,22 @@ function higherCount(words) {
 // count: learnt B1 words ready (null when not linked).
 function renderTrainerLink(count, problem = "") {
   const linked = Boolean(trainerLink());
+  renderChatGptLink();
   // The free server sleeps when unused and can take a minute to wake up.
   const text = !linked
     ? "Connecting to your Vocab Trainer… (it can take up to a minute to wake up)"
     : `🔗 Linked to your Vocab Trainer · your partner uses all A1 and A2 words plus ${
         count ? `the ${count} B1 words you have learnt there` : "your learnt B1 words (none yet)"}.`;
   $("trainer-status").textContent = problem ? `${problem} ${linked ? text : ""}`.trim() : text;
+}
+
+// ChatGPT's connection to Talkloop: the trainer's /mcp/ with this link, and the time zone for "today".
+function renderChatGptLink() {
+  const link = trainerLink();
+  $("chatgpt").hidden = !link;
+  if (!link) return;
+  const zone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  $("chatgpt-url").value = `${link.api}/mcp/${link.token}${zone ? `?tz=${encodeURIComponent(zone)}` : ""}`;
 }
 
 function refreshVocabUI(count) {

@@ -394,6 +394,61 @@ class EndToEndTest {
         assertEquals(401, status(get("/api/talkloop/words"), null, null));
     }
 
+    private Map<String, Object> mcp(String link, String method, Map<String, Object> params) throws Exception {
+        Map<String, Object> answer = ok(post("/mcp/" + link + "?tz=Asia/Kolkata"), null,
+                Map.of("jsonrpc", "2.0", "id", 7, "method", method, "params", params));
+        assertEquals(7, ((Number) answer.get("id")).intValue());
+        return answer;
+    }
+
+    private String mcpTool(String link, String name, Map<String, Object> args) throws Exception {
+        Map<String, Object> result = (Map<String, Object>) mcp(link, "tools/call", Map.of("name", name, "arguments", args)).get("result");
+        assertNull(result.get("isError"), String.valueOf(result));
+        return (String) ((List<Map<String, Object>>) result.get("content")).get(0).get("text");
+    }
+
+    @Test
+    void chatGptRunsTalkloopOverMcp() throws Exception {
+        firebase.addUser("gpt@test.local", "gpt-test-pw"); // a learner of its own: this writes to the mistake log and schedule
+        String t = login("gpt@test.local", "gpt-test-pw");
+        String link = (String) ok(post("/api/talkloop/link"), t, null).get("token");
+
+        Map<String, Object> init = (Map<String, Object>) mcp(link, "initialize",
+                Map.of("protocolVersion", "2025-06-18", "capabilities", Map.of(), "clientInfo", Map.of("name", "test", "version", "1"))).get("result");
+        assertEquals("2025-06-18", init.get("protocolVersion"));
+        assertEquals(202, status(post("/mcp/" + link), null, Map.of("jsonrpc", "2.0", "method", "notifications/initialized")));
+        List<Map<String, Object>> tools = (List<Map<String, Object>>) ((Map<String, Object>) mcp(link, "tools/list", Map.of()).get("result")).get("tools");
+        assertEquals(List.of("start_talkloop", "record_turn"), tools.stream().map(x -> x.get("name")).toList());
+        assertEquals(-32601, ((Number) ((Map<String, Object>) mcp(link, "nope", Map.of()).get("error")).get("code")).intValue());
+
+        // a learnt word comes up as one of today's words, in English only for the learner
+        Round study = start(t, "study", Map.of());
+        Map<String, Object> card = (Map<String, Object>) study.view().get("card");
+        String de = (String) card.get("de");
+        act(t, study, "grade", Map.of("grade", "again"));
+        String instructions = mcpTool(link, "start_talkloop", Map.of("mode", "topic", "level", "B1"));
+        assertTrue(instructions.contains("Today's words") && instructions.contains(de), instructions);
+        assertTrue(instructions.contains("Today's topic"));
+
+        // a turn moves the word along the speaking schedule and saves the mistake where Talkloop's page reads it
+        String saved = mcpTool(link, "record_turn", Map.of("said", "Ich habe gegeht", "correction", "Ich bin gegangen.",
+                "mistakes", List.of("perfekt_auxiliary", "participle"), "used_words", List.of(Map.of("word", de, "correct", true))));
+        assertTrue(saved.contains("mistake saved") && saved.contains("stage 1"), saved);
+        Map<String, Object> spoken = (Map<String, Object>) ((Map<String, Object>) ok(post("/api/talkloop/spoken"), link,
+                Map.of("words", Map.of())).get("words")).get(de);
+        assertEquals(1, ((Number) spoken.get("stage")).intValue());
+        List<Map<String, Object>> mistakes = (List<Map<String, Object>>) ((Map<String, Object>) ((Map<String, Object>) ok(post("/api/talkloop/mistakes"), link,
+                Map.of("languages", Map.of())).get("languages")).get("German")).get("entries");
+        assertEquals(2, mistakes.size());
+        assertEquals("Ich bin gegangen.", mistakes.get(0).get("fix"));
+
+        // a bad call is a tool error ChatGPT can read; without a valid link there is no connection
+        Map<String, Object> bad = (Map<String, Object>) mcp(link, "tools/call", Map.of("name", "start_talkloop", "arguments", Map.of("mode", "x", "level", "B1"))).get("result");
+        assertEquals(true, bad.get("isError"));
+        assertEquals(401, status(post("/mcp/not-a-link"), null, Map.of("jsonrpc", "2.0", "id", 1, "method", "ping")));
+        assertEquals(401, status(post("/mcp/" + t), null, Map.of("jsonrpc", "2.0", "id", 1, "method", "ping")));
+    }
+
     @Test
     void talkloopSyncsItsMistakeLogAcrossDevices() throws Exception {
         String t = login(BEN, "ben-test-pw");

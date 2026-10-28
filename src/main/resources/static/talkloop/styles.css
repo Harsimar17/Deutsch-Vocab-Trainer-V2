@@ -297,6 +297,7 @@ button.focus-word { border: 1px solid transparent; color: inherit; font: inherit
 /* Saved "Discuss a topic" chats, under the Start button. */
 .chats { margin-top: 16px; }
 .chats summary { cursor: pointer; font-weight: 600; }
+.chatgpt .chats { margin-top: 0; }
 .chat-list { list-style: none; margin: 8px 0 0; padding: 0; }
 .chat-item { display: flex; gap: 8px; margin-bottom: 6px; }
 .chat-open { flex: 1; min-width: 0; text-align: left; font-size: 0.9rem; overflow-wrap: anywhere; }
