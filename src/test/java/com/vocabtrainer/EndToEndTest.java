@@ -423,6 +423,9 @@ class EndToEndTest {
         assertEquals(202, status(post("/mcp/" + link), null, Map.of("jsonrpc", "2.0", "method", "notifications/initialized")));
         List<Map<String, Object>> tools = (List<Map<String, Object>>) ((Map<String, Object>) mcp(link, "tools/list", Map.of()).get("result")).get("tools");
         assertEquals(List.of("start_talkloop", "talkloop_turn", "talkloop_peek", "talkloop_check", "talkloop_lookup"), tools.stream().map(x -> x.get("name")).toList());
+        // only the start shows the screen: a reply updates it instead of showing another one
+        assertEquals("ui://talkloop/screen.html", ((Map<String, Object>) ((Map<String, Object>) tools.get(0).get("_meta")).get("ui")).get("resourceUri"));
+        assertNull(tools.get(1).get("_meta"));
         assertEquals(-32601, ((Number) ((Map<String, Object>) mcp(link, "nope", Map.of()).get("error")).get("code")).intValue());
 
         // the Talkloop screen: an MCP App resource, told where to ask for its state

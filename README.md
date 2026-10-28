@@ -340,10 +340,11 @@ ChatGPT's own chat list, not in the page's *Chat history*.
   `talkloop_lookup {word}` are called by the screen only: a word's German, LanguageTool's correction,
   a tapped word's meaning.
 
-A practice is kept in memory (`TalkloopScreenRepository`, 6 h idle limit) under a random id; the
-screen reads it from `GET /talkloop-screen/{id}` (open to any origin, as ChatGPT's sandbox has none)
-while it waits for ChatGPT's turn. Every tool answer carries the screen's state, tied to the one
-screen by `openai/widgetSessionId`. The address holds the 180-day Talkloop link, so it works like a
+A practice is kept in memory (`TalkloopScreenRepository`, 6 h idle limit) under a random id. Only
+`start_talkloop` shows the screen, which opens full screen; ChatGPT's turns don't show one of their
+own (one screen under every reply was too many) but update this one, which reads the practice from
+`GET /talkloop-screen/{id}` (open to any origin, as ChatGPT's sandbox has none): often while a reply
+is coming, now and then otherwise, so a message sent with ChatGPT's own microphone shows up too. The address holds the 180-day Talkloop link, so it works like a
 password for the learnt words and these logs.
 
 ## Users

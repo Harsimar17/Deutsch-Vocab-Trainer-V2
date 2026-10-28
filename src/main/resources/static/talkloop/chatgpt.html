@@ -318,6 +318,11 @@
     if (screen && next.id === screen.id && next.version <= screen.version) return;
     const first = !screen;
     screen = next;
+    if (first) {
+      watch();
+      // A new practice opens full screen, so it stays in view while the chat goes on below it.
+      if (screen.messages.length === 0 && !$("call").classList.contains("full")) goFull(true);
+    }
     for (const w of screen.words) seenWords.set(w.key, w);
     const last = screen.messages[screen.messages.length - 1];
     const sent = pending;
@@ -334,19 +339,24 @@
     }
   }
 
-  // While ChatGPT writes its turn, ask the server too, in case the tool result doesn't reach this screen.
-  function waitForTurn() {
-    clearInterval(poll);
-    const since = screen?.version ?? 0;
-    const started = Date.now();
-    poll = setInterval(async () => {
-      if (!screen || screen.version > since || Date.now() - started > 120000) return clearInterval(poll);
+  // ChatGPT's turns reach this screen from the server: only start_talkloop shows a screen (one per
+  // reply was too many), and a turn may also follow a message sent with ChatGPT's own microphone.
+  // Asked often while a reply is coming, now and then otherwise, until the practice has ended.
+  let watching = false;
+  function watch() {
+    if (watching || !screen) return;
+    watching = true;
+    const tick = async () => {
       try {
         const res = await fetch(`${ORIGIN}/talkloop-screen/${encodeURIComponent(screen.id)}`);
+        if (res.status === 410) { watching = false; return note("This practice has ended: start a new one with ⚙️."); }
         if (res.ok) update(await res.json());
-      } catch { /* the tool result may still come */ }
-    }, 1500);
+      } catch { /* offline for a moment: ask again */ }
+      setTimeout(tick, pending || $("call").dataset.state === "thinking" || screen.messages.length === 0 ? 1200 : 4000);
+    };
+    tick();
   }
+  const waitForTurn = () => watch();
 
   function setState(state) {
     if (paused && state !== "paused" && state !== "listening") state = "paused";
@@ -814,15 +824,15 @@
   $("sub").addEventListener("click", () => $("sub").classList.toggle("open"));
 
   // ---------- full screen ----------
-  $("full").addEventListener("click", async () => {
-    const full = $("call").classList.contains("full");
+  async function goFull(full) {
     try {
-      const r = await request("ui/request-display-mode", { mode: full ? "inline" : "fullscreen" });
+      const r = await request("ui/request-display-mode", { mode: full ? "fullscreen" : "inline" });
       $("call").classList.toggle("full", r?.mode === "fullscreen");
     } catch {
-      openai()?.requestDisplayMode?.({ mode: full ? "inline" : "fullscreen" });
+      openai()?.requestDisplayMode?.({ mode: full ? "fullscreen" : "inline" });
     }
-  });
+  }
+  $("full").addEventListener("click", () => goFull(!$("call").classList.contains("full")));
 
   connect();
 })();
