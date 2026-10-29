@@ -152,7 +152,9 @@ public class TalkloopChatGptService {
         MODES.put("connectors", new Mode("Konnektoren — join two sentences",
                 "This is a connector drill. Each turn, put one task into task, written exactly as: Verbinde mit „<connector>“: <sentence one> + <sentence two>. Two short everyday German sentences at the learner's level that make sense joined with that connector, a new situation each time (work, home, friends, travel, shopping, plans, health), also after a wrong try. "
                         + "When they answer, judge whether they joined the two sentences into one correct sentence with that connector: the connector used, the verb in the right place in each half, nothing changed in meaning; either order of the halves is right where the connector allows it. "
-                        + "A wrong or missing connector or word order gets a correction with the right joined sentence (verb position goes in mistakes as verb_position). React in one very short German line (praise, or the rule in a few words), never write the joined sentence of the new task, and leave out the answer suggestions.\n"
+                        + "A wrong or missing connector or word order gets a correction with the right joined sentence (verb position goes in mistakes as verb_position). React in one very short German line (praise, or the rule in a few words), never write the joined sentence of the new task, and leave out the answer suggestions. "
+                        + "Every turn gives a new task, without exception: the drill goes on, task after task, until the learner says they want to stop; never ask whether they want to go on, never sum up or say goodbye, "
+                        + "and when every connector has had a task, start again from the first with new sentences.\n"
                         + "Start with one short line saying the learner will join two sentences with a connector, and the first task in task."));
         MODES.put("rolecard", new Mode("Rollenkarte — play a character",
                 "The learner plays the character on their role card (below). Greet them warmly and ask their name, then interview them about the card: one question at a time about one detail, in a natural order, react briefly, and ask small follow-ups; they may invent extra details that fit the card. If an answer contradicts the card, point it out kindly."));
@@ -466,6 +468,9 @@ public class TalkloopChatGptService {
         if (reply.isBlank()) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "reply: your German reply");
         }
+        if (screen.joiner() && text(args, "task", "").isBlank()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "task: the next two sentences to join (Verbinde mit „…“: … + …); every turn gives one, until the learner stops");
+        }
         String said = clip(text(args, "said", ""));
         String correction = clip(text(args, "correction", ""));
         long now = System.currentTimeMillis();
@@ -523,6 +528,7 @@ public class TalkloopChatGptService {
 
         List<String> notYet = screen.notYetSaid();
         return new ToolResult("Shown on the Talkloop screen. Now write only your German reply."
+                + (screen.joiner() ? " Then wait for the learner's sentence: the drill goes on with a new task every turn until they stop." : "")
                 + (sayNext != null ? " The learner now has to say: \"" + sayNext + "\" (shown on the screen); judge their next message against it, and never say its German version." : "")
                 + (notYet.isEmpty() ? "" : " Today's words not said yet: " + String.join("; ", notYet) + "."), screen);
     }
