@@ -42,6 +42,7 @@ public final class TalkloopScreen {
     private final List<String> given = new ArrayList<>(); // Dolmetscher: the sentences given in this practice, as keys
     private final List<Retry> retries = new ArrayList<>();
     private String sayThis = "";
+    private String connector = ""; // Konnektoren: the one connector chosen, or empty for a mix
     private int sayTurn;
     private String id;
     private String nextWord = "";
@@ -145,6 +146,14 @@ public final class TalkloopScreen {
 
     boolean interpreter() {
         return modeKey.equals("interpret");
+    }
+
+    synchronized void connector(String connector) {
+        this.connector = connector;
+    }
+
+    synchronized String connector() {
+        return connector;
     }
 
     /** Konnektoren: the learner joins two given sentences, so answer suggestions would give it away. */

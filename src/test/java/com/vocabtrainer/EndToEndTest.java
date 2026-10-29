@@ -523,6 +523,10 @@ class EndToEndTest {
         Map<String, Object> joined = (Map<String, Object>) mcpCall(link, "talkloop_turn", Map.of("screen_id", weilId, "said", "",
                 "reply", "Los geht's!", "task", "Verbinde mit „weil“: Ich bleibe zu Hause. + Ich bin krank.", "suggestions", List.of("Ich bleibe zu Hause, weil ich krank bin."))).get("structuredContent");
         Map<String, Object> pair = ((List<Map<String, Object>>) joined.get("messages")).get(0);
+        assertTrue(weilText.contains("every task uses „weil“ and nothing else"), weilText);
+        String next = (String) ((List<Map<String, Object>>) mcpCall(link, "talkloop_turn", Map.of("screen_id", weilId, "said", "Ich bleibe zu Hause, weil ich krank bin.",
+                "reply", "Super!", "task", "Verbinde mit „weil“: Ich lerne Deutsch. + Ich wohne in Berlin.")).get("content")).get(0).get("text");
+        assertTrue(next.contains("every task with „weil“"), next); // each turn reminds ChatGPT to stay on it
         assertEquals("Verbinde mit „weil“: Ich bleibe zu Hause. + Ich bin krank.", pair.get("task"));
         assertEquals(List.of(), pair.get("suggestions"));
         Map<String, Object> noTask = (Map<String, Object>) mcp(link, "tools/call", Map.of("name", "talkloop_turn",

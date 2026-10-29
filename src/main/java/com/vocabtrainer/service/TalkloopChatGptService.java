@@ -153,8 +153,7 @@ public class TalkloopChatGptService {
                 "This is a connector drill. Each turn, put one task into task, written exactly as: Verbinde mit „<connector>“: <sentence one> + <sentence two>. Two short everyday German sentences at the learner's level that make sense joined with that connector, a new situation each time (work, home, friends, travel, shopping, plans, health), also after a wrong try. "
                         + "When they answer, judge whether they joined the two sentences into one correct sentence with that connector: the connector used, the verb in the right place in each half, nothing changed in meaning; either order of the halves is right where the connector allows it. "
                         + "A wrong or missing connector or word order gets a correction with the right joined sentence (verb position goes in mistakes as verb_position). React in one very short German line (praise, or the rule in a few words), never write the joined sentence of the new task, and leave out the answer suggestions. "
-                        + "Every turn gives a new task, without exception: the drill goes on, task after task, until the learner says they want to stop; never ask whether they want to go on, never sum up or say goodbye, "
-                        + "and when every connector has had a task, start again from the first with new sentences.\n"
+                        + "Every turn gives a new task, without exception: the drill goes on, task after task, until the learner says they want to stop; never ask whether they want to go on, never sum up or say goodbye.\n"
                         + "Start with one short line saying the learner will join two sentences with a connector, and the first task in task."));
         MODES.put("rolecard", new Mode("Rollenkarte — play a character",
                 "The learner plays the character on their role card (below). Greet them warmly and ask their name, then interview them about the card: one question at a time about one detail, in a natural order, react briefly, and ask small follow-ups; they may invent extra details that fit the card. If an answer contradicts the card, point it out kindly."));
@@ -368,6 +367,7 @@ public class TalkloopChatGptService {
             setting = scene.setting();
         }
         String subtitle = m.label();
+        String connector = ""; // Konnektoren: the one connector chosen, or empty for a mix
 
         List<String> lines = new ArrayList<>();
         lines.add("You are now the learner's Talkloop speaking partner. Keep to these rules for the rest of this conversation, until the learner says they want to stop.");
@@ -396,6 +396,7 @@ public class TalkloopChatGptService {
         if (mode.equals("connectors")) {
             String asked = text(args, "connector", "");
             Map<String, Object> one = connector(asked);
+            connector = one == null ? "" : String.valueOf(one.get("name"));
             if (one == null && !asked.isBlank()) {
                 throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "connector: one of " + connectors.stream().map(c -> String.valueOf(c.get("name"))).toList() + ", or leave it out for a mix");
             }
@@ -450,6 +451,7 @@ public class TalkloopChatGptService {
         }
 
         TalkloopScreen screen = new TalkloopScreen(ctx.uid(), character, mode, m.label(), level, subtitle, words(active), words(waiting));
+        screen.connector(connector);
         String id = screens.save(screen);
         screen.id(id);
         lines.add("The learner talks to you on the Talkloop screen shown in this chat: they speak or type there, and what they say arrives as their message. "
@@ -528,7 +530,8 @@ public class TalkloopChatGptService {
 
         List<String> notYet = screen.notYetSaid();
         return new ToolResult("Shown on the Talkloop screen. Now write only your German reply."
-                + (screen.joiner() ? " Then wait for the learner's sentence: the drill goes on with a new task every turn until they stop." : "")
+                + (screen.joiner() ? " Then wait for the learner's sentence: the drill goes on with a new task every turn until they stop"
+                        + (screen.connector().isEmpty() ? "." : ", every task with „" + screen.connector() + "“.") : "")
                 + (sayNext != null ? " The learner now has to say: \"" + sayNext + "\" (shown on the screen); judge their next message against it, and never say its German version." : "")
                 + (notYet.isEmpty() ? "" : " Today's words not said yet: " + String.join("; ", notYet) + "."), screen);
     }
@@ -569,10 +572,12 @@ public class TalkloopChatGptService {
 
     /** As connectorsLine in static/talkloop/app.js: one connector with its rule, or every one up to the level, by kind. */
     String connectorsLine(Map<String, Object> one, String level) {
+        String forever = " The drill goes on until the learner stops: ";
         if (one != null) {
             String example = one.get("examples") instanceof List<?> l && !l.isEmpty() && l.get(0) instanceof Map<?, ?> e
                     ? " Example: " + String.valueOf(e.get("de")).replaceAll("[\\[\\]]", "") : "";
-            return "Connector to practise in every task: „" + one.get("name") + "“ (" + one.get("en") + "). Rule: " + one.get("rule") + example;
+            return "Connector to practise in every task: „" + one.get("name") + "“ (" + one.get("en") + "). Rule: " + one.get("rule") + example
+                    + forever + "every task uses „" + one.get("name") + "“ and nothing else, with new sentences each time.";
         }
         List<String> levels = LEVELS.subList(0, LEVELS.indexOf(level) + 1);
         List<String> kinds = new ArrayList<>();
@@ -583,7 +588,8 @@ public class TalkloopChatGptService {
                 kinds.add(String.join(", ", names) + ": " + rule + ".");
             }
         });
-        return "Connectors to practise, a different one each task, going through all of them: " + String.join(" ", kinds);
+        return "Connectors to practise, a different one each task, going through all of them: " + String.join(" ", kinds)
+                + forever + "when every connector has had a task, start again from the first with new sentences.";
     }
 
     private void saveMistakes(Ctx ctx, String said, String correction, List<String> types, long now) {
