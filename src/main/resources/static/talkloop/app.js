@@ -1245,7 +1245,7 @@ function turnSystemPrompt({ language, nativeLanguage, level, scenario, mode, ten
   }
   if (m.joiner) {
     const judge = hints?.target ? ` Their task was: ${JSON.stringify(hints.target)}; coach judges whether their message joins those two sentences into one correct sentence with that connector: the connector used, the verb in the right place in each half, nothing changed in meaning. Either order of the halves is right where the connector allows it. A wrong or missing connector or word order gets a coach.correction with the right joined sentence (verb position goes in mistakes as verb_position).` : "";
-    lines.push(`${connectorsLine(hints?.pool ?? [])} situation: the next task, written exactly as: Verbinde mit „<connector>“: <sentence one> + <sentence two>. Two short everyday ${language} sentences at their level that make sense joined with it, a new situation each time (work, home, friends, travel, shopping, plans, health); also after a wrong try give a new one.${judge} reply: one short ${language} reaction to their try (praise, or the rule in a few words); never write the joined sentence of the new task.`);
+    lines.push(`${connectorsLine(hints?.pool ?? [])} situation: the next task, written exactly as: Verbinde mit „<connector>“: <sentence one> + <sentence two>. Two short everyday ${language} sentences at their level that make sense joined with it, a new situation each time (work, home, friends, travel, shopping, plans, health); also after a wrong try give a new one.${judge} reply: one short ${language} reaction to their try (praise, or the rule in a few words); never write the joined sentence of the new task. Every reply gives a new task, without exception: the drill goes on, task after task, until the learner ends the call; never ask whether they want to go on, never sum up or say goodbye. ${hints?.pool?.length === 1 ? `Every task uses „${hints.pool[0].name}“ and nothing else, with new sentences each time.` : "When every connector has had a task, start again from the first with new sentences."}`);
   }
   if (m.subjects && hints) {
     const quote = (list) => list.map((s) => JSON.stringify(s)).join(", ");
@@ -1588,6 +1588,16 @@ async function chatTurn(settings, history, message) {
     debugLog("answer had no reply: asking again");
     turn = normalizeTurn(await aiJson({ systemInstruction, schema: TURN_SCHEMA, contents, ...temperature }));
     if (!turn.reply) throw new Error("The AI's answer came back incomplete. Please send that again.");
+  }
+  // The connector drill runs until the learner ends it: an answer without the next pair is asked for once more.
+  if (mode.joiner && !turn.situation.trim()) {
+    debugLog("connector drill answer had no task: asking again");
+    const again = await aiJson({
+      systemInstruction: `${systemInstruction}\nYour last draft had no situation: every reply must give the next task there (Verbinde mit „…“: … + …).`,
+      schema: TURN_SCHEMA,
+      contents,
+    }).then(normalizeTurn).catch(() => null);
+    if (again?.reply && again.situation.trim()) turn = again;
   }
   debugLog(`whole answer after ${((performance.now() - startedAt) / 1000).toFixed(1)}s`);
   // A reply that says the word it asks for gives the answer away (a drill on Groq does this
