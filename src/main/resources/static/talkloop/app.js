@@ -3033,7 +3033,10 @@ if (window.visualViewport) {
 // sentence on the side (liveCoach, with the conversation AI and LanguageTool) and its
 // correction shows up under the call. It needs the Gemini key; Google's free tier covers it.
 const LIVE_URL = "wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent";
-const LIVE_MODEL_KEY = "live_model"; // { name, at }: the model found for this key, for a day
+const LIVE_MODEL_KEY = "live_model"; // { name, at, key }: the model found for this key, for a day
+const LIVE_PREFERRED = /gemini-3\.8[^/]*live/; // Gemini 3.8 Live, whenever the key has it
+// The key for live calls: the Gemini 3.8 Live key, else the ordinary Gemini key.
+const liveKey = () => getKey("geminiLive") || getKey("gemini");
 const LIVE_IN_RATE = 16000; // what the Live API wants from the mic: 16-bit PCM, mono
 const LIVE_CHUNK = 1600; // 100 ms of mic audio per message
 const LIVE_RECAP = 12; // lines of the call sent again when it reconnects
@@ -3045,19 +3048,21 @@ registerProcessor("live-tap", LiveTap);`;
 
 const liveVoiceOn = () => store.get("live_voice", false);
 
-// The Live model this key can use: the newest one that takes a live (bidi) session. Model
-// names change often, so they are looked up rather than written here.
+// The Live model this key can use: Gemini 3.8 Live if the key has it, else the newest one
+// that takes a live (bidi) session. Model names change often, so they are looked up rather
+// than written here.
 async function liveModel(key) {
   const saved = store.get(LIVE_MODEL_KEY, null);
-  if (saved?.name && Date.now() - saved.at < 86_400_000) return saved.name;
+  if (saved?.name && saved.key === key.slice(-6) && Date.now() - saved.at < 86_400_000) return saved.name;
   const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?pageSize=1000&key=${encodeURIComponent(key)}`);
-  if (!res.ok) throw new Error(`Gemini didn't list its models (${res.status}): check the Gemini key.`);
+  if (!res.ok) throw new Error(`Gemini didn't list its models (${res.status}): check the Gemini 3.8 Live key.`);
   const models = ((await res.json()).models ?? []).filter((m) => m.supportedGenerationMethods?.includes("bidiGenerateContent"));
   const version = (name) => Number(name.match(/gemini-(\d+(?:\.\d+)?)/)?.[1] ?? 0);
-  const rank = (name) => version(name) * 10 + (/native-audio|live/.test(name) ? 1 : 0);
+  const rank = (name) => (LIVE_PREFERRED.test(name) ? 1000 : 0) + version(name) * 10 + (/native-audio|live/.test(name) ? 1 : 0);
   const best = models.map((m) => m.name).sort((a, b) => rank(b) - rank(a))[0];
   if (!best) throw new Error("This Gemini key has no live voice model.");
-  store.set(LIVE_MODEL_KEY, { name: best, at: Date.now() });
+  if (!LIVE_PREFERRED.test(best)) debugLog(`no Gemini 3.8 Live for this key: using ${best}`);
+  store.set(LIVE_MODEL_KEY, { name: best, at: Date.now(), key: key.slice(-6) });
   return best;
 }
 
@@ -3277,9 +3282,9 @@ async function liveCoach(said, partner) {
 
 async function startLive() {
   if (live) return;
-  const key = getKey("gemini");
+  const key = liveKey();
   if (!key) {
-    setStatus("Live voice needs your Gemini API key: add it with “Change” on the start screen.");
+    setStatus("Gemini 3.8 Live needs its key: add it with “Change” on the start screen.");
     return;
   }
   // After a reconnect the partner gets the end of the call, so it carries on rather than starting over.
@@ -3772,7 +3777,7 @@ function renderBookmarks() {
 
 // ---------- wiring ----------
 
-const KEY_INPUTS = { openai: "openai-key", mistral: "mistral-key", groq: "groq-key", groq2: "groq2-key", groq3: "groq3-key", cfAccount: "cf-account", cfToken: "cf-token", gemini: "api-key", gemini2: "gemini2-key" };
+const KEY_INPUTS = { openai: "openai-key", mistral: "mistral-key", groq: "groq-key", groq2: "groq2-key", groq3: "groq3-key", cfAccount: "cf-account", cfToken: "cf-token", gemini: "api-key", gemini2: "gemini2-key", geminiLive: "gemini-live-key" };
 
 // Show only the key fields the chosen AI needs; saved keys show as a placeholder.
 function showKeyFields() {
@@ -3872,8 +3877,8 @@ $("start").addEventListener("click", async () => {
   } else {
     todayWords = null;
   }
-  if (liveVoiceOn() && !MODES[mode]?.drill && !getKey("gemini")) {
-    $("vocab-status").textContent = "Live voice needs your Gemini API key: tap “Change” at the top and add it, or untick Live voice.";
+  if (liveVoiceOn() && !MODES[mode]?.drill && !liveKey()) {
+    $("vocab-status").textContent = "Gemini 3.8 Live needs its key: tap “Change” at the top and add the Gemini 3.8 Live key, or untick Gemini 3.8 Live.";
     $("vocab-status").scrollIntoView({ block: "center", behavior: "smooth" });
     return;
   }
