@@ -532,6 +532,9 @@ class EndToEndTest {
         Map<String, Object> noTask = (Map<String, Object>) mcp(link, "tools/call", Map.of("name", "talkloop_turn",
                 "arguments", Map.of("screen_id", weilId, "said", "Ich bleibe zu Hause, weil ich krank bin.", "reply", "Super!"))).get("result");
         assertEquals(true, noTask.get("isError")); // the drill goes on: every turn gives the next pair
+        Map<String, Object> topicWord = (Map<String, Object>) mcp(link, "tools/call", Map.of("name", "talkloop_turn",
+                "arguments", Map.of("screen_id", weilId, "said", "Ich bleibe zu Hause, weil ich krank bin.", "reply", "Super!", "task", "travel"))).get("result");
+        assertEquals(true, topicWord.get("isError")); // a topic word is no task
         String mix = mcpTool(link, "start_talkloop", Map.of("mode", "connectors", "level", "A1"));
         assertTrue(mix.contains("„denn“") && !mix.contains("„weil“"), mix); // A1 only
         assertTrue(mcpTool(link, "start_talkloop", Map.of("mode", "connectors", "level", "B1", "connector", "um … zu")).contains("„um … zu“ (in order to). Rule:"));

@@ -10,6 +10,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.ThreadLocalRandom;
+import java.util.regex.Pattern;
 import java.util.stream.Stream;
 
 import com.vocabtrainer.model.Ctx;
@@ -150,7 +151,7 @@ public class TalkloopChatGptService {
                         + "The screen sometimes shows a sentence from the learner's deck instead of yours: each tool result names the sentence the learner now has to say. Never say the German version of it. When they answer, judge whether their German says that sentence correctly, meaning included (a wrong or missing part gets a correction with the right German sentence), and react in one very short German line. Keep your own replies very short, so they do the talking.\n"
                         + "Start with one short line saying you will give everyday sentences to say, and the first sentence in task."));
         MODES.put("connectors", new Mode("Konnektoren — join two sentences",
-                "This is a connector drill. Each turn, put one task into task, written exactly as: Verbinde mit „<connector>“: <sentence one> + <sentence two>. Two short everyday German sentences at the learner's level that make sense joined with that connector, a new situation each time (work, home, friends, travel, shopping, plans, health), also after a wrong try. "
+                "This is a connector drill. Each turn, put one task into task, written exactly as: Verbinde mit „<connector>“: <sentence one> + <sentence two>. task holds that whole task and nothing else, never a topic word. Two short everyday German sentences at the learner's level that make sense joined with that connector, about something new each time, also after a wrong try. "
                         + "When they answer, judge whether they joined the two sentences into one correct sentence with that connector: the connector used, the verb in the right place in each half, nothing changed in meaning; either order of the halves is right where the connector allows it. "
                         + "A wrong or missing connector or word order gets a correction with the right joined sentence (verb position goes in mistakes as verb_position). React in one very short German line (praise, or the rule in a few words), never write the joined sentence of the new task, and leave out the answer suggestions. "
                         + "Every turn gives a new task, without exception: the drill goes on, task after task, until the learner says they want to stop; never ask whether they want to go on, never sum up or say goodbye.\n"
@@ -215,6 +216,9 @@ public class TalkloopChatGptService {
         CONNECTOR_TYPES.put("zu", "zu + infinitive at the end, when both parts have the same subject: no subject and no conjugated verb in that part");
         CONNECTOR_TYPES.put("pair", "a two-part connector: check the word order in each half");
     }
+
+    // A connector task as the screen shows it: Verbinde mit „weil“: Ich bleibe zu Hause. + Ich bin krank.
+    static final Pattern CONNECTOR_TASK = Pattern.compile("(?i)verbinde mit\\b[^:]*:.+\\+.+");
 
     private final TalkloopService talkloop;
     private final TalkloopScreenRepository screens;
@@ -470,7 +474,7 @@ public class TalkloopChatGptService {
         if (reply.isBlank()) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "reply: your German reply");
         }
-        if (screen.joiner() && text(args, "task", "").isBlank()) {
+        if (screen.joiner() && !CONNECTOR_TASK.matcher(text(args, "task", "")).find()) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "task: the next two sentences to join (Verbinde mit „…“: … + …); every turn gives one, until the learner stops");
         }
         String said = clip(text(args, "said", ""));
