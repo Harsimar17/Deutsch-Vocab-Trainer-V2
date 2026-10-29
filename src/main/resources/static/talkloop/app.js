@@ -1140,9 +1140,22 @@ async function loadConnectors() {
 // mix every one up to the level (names only: their rules are the kinds in CONNECTOR_TYPES).
 function connectorPool(list, key, level) {
   const one = list.find((c) => c.key === key);
-  if (one) return [{ name: one.name, en: one.en, type: one.type, rule: one.rule, example: one.examples?.[0]?.de.replace(/[[\]]/g, "") ?? "" }];
+  const pairs = (c) => (c.exercises ?? []).map((e) => [e.a, e.b]); // the tab's own tasks, for when the AI gives none
+  if (one) return [{ name: one.name, en: one.en, type: one.type, rule: one.rule, example: one.examples?.[0]?.de.replace(/[[\]]/g, "") ?? "", pairs: pairs(one) }];
   const levels = ["A1", "A2", "B1"].slice(0, ["A1", "A2", "B1"].indexOf(level) + 1 || 3);
-  return list.filter((c) => levels.includes(c.level)).map((c) => ({ name: c.name, en: c.en, type: c.type }));
+  return list.filter((c) => levels.includes(c.level)).map((c) => ({ name: c.name, en: c.en, type: c.type, pairs: pairs(c) }));
+}
+
+// A connector task as the drill shows it: "Verbinde mit „weil“: Ich bleibe zu Hause. + Ich bin krank."
+const isConnectorTask = (text) => /verbinde mit\b[^:]*:.+\+.+/i.test(text);
+const connectorTaskIn = (text) => text.match(/verbinde mit\b[^:\n]*:[^\n]*\+[^\n]*/i)?.[0].trim() ?? "";
+
+// One of the Connectors tab's own tasks, not the one just given.
+function fallbackConnectorTask(pool, last = "") {
+  // A call started before the pairs were kept with it finds them in the loaded list.
+  const pairsOf = (c) => c.pairs ?? (connectorList?.find((x) => x.name === c.name)?.exercises ?? []).map((e) => [e.a, e.b]);
+  const tasks = pool.flatMap((c) => pairsOf(c).map(([a, b]) => `Verbinde mit „${c.name}“: ${a} + ${b}`)).filter((t) => t !== last);
+  return tasks.length ? tasks[Math.floor(Math.random() * tasks.length)] : "";
 }
 
 function connectorsLine(pool) {
@@ -1245,7 +1258,7 @@ function turnSystemPrompt({ language, nativeLanguage, level, scenario, mode, ten
   }
   if (m.joiner) {
     const judge = hints?.target ? ` Their task was: ${JSON.stringify(hints.target)}; coach judges whether their message joins those two sentences into one correct sentence with that connector: the connector used, the verb in the right place in each half, nothing changed in meaning. Either order of the halves is right where the connector allows it. A wrong or missing connector or word order gets a coach.correction with the right joined sentence (verb position goes in mistakes as verb_position).` : "";
-    lines.push(`${connectorsLine(hints?.pool ?? [])} situation: the next task, written exactly as: Verbinde mit „<connector>“: <sentence one> + <sentence two>. Two short everyday ${language} sentences at their level that make sense joined with it, a new situation each time (work, home, friends, travel, shopping, plans, health); also after a wrong try give a new one.${judge} reply: one short ${language} reaction to their try (praise, or the rule in a few words); never write the joined sentence of the new task. Every reply gives a new task, without exception: the drill goes on, task after task, until the learner ends the call; never ask whether they want to go on, never sum up or say goodbye. ${hints?.pool?.length === 1 ? `Every task uses „${hints.pool[0].name}“ and nothing else, with new sentences each time.` : "When every connector has had a task, start again from the first with new sentences."}`);
+    lines.push(`${connectorsLine(hints?.pool ?? [])} situation: the next task, written exactly as: Verbinde mit „<connector>“: <sentence one> + <sentence two>. situation holds that whole task and nothing else, never a topic word. Two short everyday ${language} sentences at their level that make sense joined with it, about something new each time; also after a wrong try give a new one.${judge} reply: one short ${language} reaction to their try (praise, or the rule in a few words); never write the joined sentence of the new task. Every reply gives a new task, without exception: the drill goes on, task after task, until the learner ends the call; never ask whether they want to go on, never sum up or say goodbye. ${hints?.pool?.length === 1 ? `Every task uses „${hints.pool[0].name}“ and nothing else, with new sentences each time.` : "When every connector has had a task, start again from the first with new sentences."}`);
   }
   if (m.subjects && hints) {
     const quote = (list) => list.map((s) => JSON.stringify(s)).join(", ");
@@ -1589,15 +1602,22 @@ async function chatTurn(settings, history, message) {
     turn = normalizeTurn(await aiJson({ systemInstruction, schema: TURN_SCHEMA, contents, ...temperature }));
     if (!turn.reply) throw new Error("The AI's answer came back incomplete. Please send that again.");
   }
-  // The connector drill runs until the learner ends it: an answer without the next pair is asked for once more.
-  if (mode.joiner && !turn.situation.trim()) {
-    debugLog("connector drill answer had no task: asking again");
-    const again = await aiJson({
-      systemInstruction: `${systemInstruction}\nYour last draft had no situation: every reply must give the next task there (Verbinde mit „…“: … + …).`,
-      schema: TURN_SCHEMA,
-      contents,
-    }).then(normalizeTurn).catch(() => null);
-    if (again?.reply && again.situation.trim()) turn = again;
+  // The connector drill runs until the learner ends it, so every turn must bring the next pair.
+  // Models put a topic word ("travel") in situation, or the task only in the reply: the task is
+  // taken from the reply then, asked for once more, and else one of the tab's own is given.
+  if (mode.joiner && !isConnectorTask(turn.situation)) {
+    let task = connectorTaskIn(turn.reply);
+    if (!task) {
+      debugLog(`connector drill answer had no task (situation ${JSON.stringify(turn.situation)}): asking again`);
+      const again = await aiJson({
+        systemInstruction: `${systemInstruction}\nYour last draft had no task in situation: every reply must put the next task there, written as Verbinde mit „…“: … + …`,
+        schema: TURN_SCHEMA,
+        contents,
+      }).then(normalizeTurn).catch(() => null);
+      if (again?.reply && isConnectorTask(again.situation)) turn = again;
+      task = isConnectorTask(turn.situation) ? turn.situation.trim() : fallbackConnectorTask(settings.connectors ?? [], settings.joinThis);
+    }
+    turn.situation = task;
   }
   debugLog(`whole answer after ${((performance.now() - startedAt) / 1000).toFixed(1)}s`);
   // A reply that says the word it asks for gives the answer away (a drill on Groq does this
