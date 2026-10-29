@@ -1515,7 +1515,7 @@ async function geminiJson({ systemInstruction, schema, contents, onPartial, temp
   if (!key) throw new Error("Add your Gemini API key to start.");
   const stream = typeof onPartial === "function";
   const method = stream ? "streamGenerateContent?alt=sse&" : "generateContent?";
-  const request = (model) =>
+  const request = (model, key = getKey("gemini")) =>
     fetch(`${API_BASE}/${model}:${method}key=${encodeURIComponent(key)}`, {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -1528,6 +1528,12 @@ async function geminiJson({ systemInstruction, schema, contents, onPartial, temp
   let res = await request(CONV_MODEL);
   // When one model is overloaded (503) or out of free quota (429), the other usually isn't.
   if (res.status === 503 || res.status === 429) res = await request(CONV_FALLBACK_MODEL);
+  // When the key is out of free quota on both, the backup Gemini key (another account's) takes over.
+  if (res.status === 429 && getKey("gemini2")) {
+    debugLog("Gemini key at its limit: using the backup key");
+    res = await request(CONV_MODEL, getKey("gemini2"));
+    if (res.status === 503 || res.status === 429) res = await request(CONV_FALLBACK_MODEL, getKey("gemini2"));
+  }
   if (!res.ok) throw await failure(res);
   const textOf = (data) => data.candidates?.[0]?.content?.parts?.map((p) => p.text ?? "").join("") ?? "";
   if (stream) {
@@ -1707,7 +1713,7 @@ function geminiTtsBlocked() {
 async function geminiTts(text) {
   const key = getKey();
   if (!key) return null;
-  const res = await fetch(`${API_BASE}/${TTS_MODEL}:generateContent?key=${encodeURIComponent(key)}`, {
+  const request = (key) => fetch(`${API_BASE}/${TTS_MODEL}:generateContent?key=${encodeURIComponent(key)}`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({
@@ -1718,6 +1724,9 @@ async function geminiTts(text) {
       },
     }),
   });
+  let res = await request(key);
+  // At the key's daily limit, the backup Gemini key speaks instead.
+  if (res.status === 429 && getKey("gemini2")) res = await request(getKey("gemini2"));
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {
     if (res.status === 429) blockGeminiTts(data.error?.message ?? "");
@@ -3763,7 +3772,7 @@ function renderBookmarks() {
 
 // ---------- wiring ----------
 
-const KEY_INPUTS = { openai: "openai-key", mistral: "mistral-key", groq: "groq-key", groq2: "groq2-key", groq3: "groq3-key", cfAccount: "cf-account", cfToken: "cf-token", gemini: "api-key" };
+const KEY_INPUTS = { openai: "openai-key", mistral: "mistral-key", groq: "groq-key", groq2: "groq2-key", groq3: "groq3-key", cfAccount: "cf-account", cfToken: "cf-token", gemini: "api-key", gemini2: "gemini2-key" };
 
 // Show only the key fields the chosen AI needs; saved keys show as a placeholder.
 function showKeyFields() {
@@ -3786,7 +3795,7 @@ $("grammar-check").checked = grammarCheckOn();
 $("grammar-check").addEventListener("change", () => store.set("grammar_check", $("grammar-check").checked));
 
 function keySummary() {
-  if (getProvider() === "gemini") return "✓ Using Google Gemini.";
+  if (getProvider() === "gemini") return getKey("gemini2") ? "✓ Using Google Gemini, with a second Gemini key as backup." : "✓ Using Google Gemini.";
   if (getProvider() === "openai") return `✓ Using OpenAI (${OPENAI.model})${getKey("groq") ? ", with Groq as backup" : ""}.`;
   if (getProvider() === "cloudflare") return getKey("groq") ? "✓ Using Cloudflare Workers AI, with Groq as backup." : "✓ Using Cloudflare Workers AI.";
   if (getProvider() === "groq") {
