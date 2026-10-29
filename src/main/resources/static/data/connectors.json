@@ -1,0 +1,548 @@
+[
+  {
+    "key": "und", "name": "und", "level": "A1", "en": "and", "type": "pos0",
+    "rule": "„und“ sits at position 0 — it just glues two sentences together. Both halves keep their normal order: verb in position 2.",
+    "examples": [
+      { "de": "Ich [koche] und mein Bruder [deckt] den Tisch.", "en": "I cook and my brother sets the table." },
+      { "de": "Wir [gehen] ins Kino und danach [essen] wir Pizza.", "en": "We go to the cinema and afterwards we eat pizza." }
+    ],
+    "exercises": [
+      { "a": "Ich trinke Kaffee.", "b": "Meine Frau trinkt Tee.", "en": "I drink coffee and my wife drinks tea.",
+        "answers": ["Ich trinke Kaffee und meine Frau trinkt Tee."] },
+      { "a": "Er wohnt in Berlin.", "b": "Er arbeitet in Potsdam.", "en": "He lives in Berlin and works in Potsdam.",
+        "answers": ["Er wohnt in Berlin und arbeitet in Potsdam.", "Er wohnt in Berlin und er arbeitet in Potsdam."] },
+      { "a": "Am Morgen lerne ich Deutsch.", "b": "Am Abend spiele ich Fußball.", "en": "In the morning I learn German and in the evening I play football.",
+        "answers": ["Am Morgen lerne ich Deutsch und am Abend spiele ich Fußball."] }
+    ]
+  },
+  {
+    "key": "aber", "name": "aber", "level": "A1", "en": "but", "type": "pos0",
+    "rule": "„aber“ is position 0: nothing changes in either half. Put a comma before it.",
+    "examples": [
+      { "de": "Das Hotel [ist] schön, aber es [ist] sehr teuer.", "en": "The hotel is nice, but it is very expensive." },
+      { "de": "Ich [möchte] kommen, aber ich [habe] keine Zeit.", "en": "I would like to come, but I have no time." }
+    ],
+    "exercises": [
+      { "a": "Die Wohnung ist klein.", "b": "Sie ist sehr gemütlich.", "en": "The flat is small, but it is very cosy.",
+        "answers": ["Die Wohnung ist klein, aber sie ist sehr gemütlich."] },
+      { "a": "Ich spreche Englisch.", "b": "Ich spreche kein Spanisch.", "en": "I speak English, but I don't speak Spanish.",
+        "answers": ["Ich spreche Englisch, aber ich spreche kein Spanisch.", "Ich spreche Englisch, aber kein Spanisch."] },
+      { "a": "Heute regnet es.", "b": "Morgen scheint die Sonne.", "en": "Today it's raining, but tomorrow the sun will shine.",
+        "answers": ["Heute regnet es, aber morgen scheint die Sonne."] }
+    ]
+  },
+  {
+    "key": "oder", "name": "oder", "level": "A1", "en": "or", "type": "pos0",
+    "rule": "„oder“ is position 0 — no change in word order. In questions both halves stay questions.",
+    "examples": [
+      { "de": "[Trinkst] du Tee oder [möchtest] du lieber Kaffee?", "en": "Are you drinking tea or would you rather have coffee?" },
+      { "de": "Wir [fahren] mit dem Bus oder wir [gehen] zu Fuß.", "en": "We take the bus or we walk." }
+    ],
+    "exercises": [
+      { "a": "Wir bleiben zu Hause.", "b": "Wir gehen ins Restaurant.", "en": "We stay at home or we go to the restaurant.",
+        "answers": ["Wir bleiben zu Hause oder wir gehen ins Restaurant.", "Wir bleiben zu Hause oder gehen ins Restaurant."] },
+      { "a": "Kommst du heute?", "b": "Kommst du morgen?", "en": "Are you coming today or tomorrow?",
+        "answers": ["Kommst du heute oder morgen?", "Kommst du heute oder kommst du morgen?"] },
+      { "a": "Du kannst mich anrufen.", "b": "Du kannst mir eine E-Mail schreiben.", "en": "You can call me or write me an email.",
+        "answers": ["Du kannst mich anrufen oder mir eine E-Mail schreiben.", "Du kannst mich anrufen oder du kannst mir eine E-Mail schreiben."] }
+    ]
+  },
+  {
+    "key": "denn", "name": "denn", "level": "A1", "en": "because (for)", "type": "pos0",
+    "rule": "„denn“ means „because“ but is position 0: the verb stays in position 2 — unlike „weil“. The „denn“ part always comes second.",
+    "examples": [
+      { "de": "Ich [bleibe] zu Hause, denn ich [bin] krank.", "en": "I'm staying at home, because I'm ill." },
+      { "de": "Sie [lernt] Deutsch, denn sie [will] in Wien studieren.", "en": "She is learning German, because she wants to study in Vienna." }
+    ],
+    "exercises": [
+      { "a": "Ich gehe früh schlafen.", "b": "Ich bin sehr müde.", "en": "I'm going to bed early, because I'm very tired.",
+        "answers": ["Ich gehe früh schlafen, denn ich bin sehr müde."] },
+      { "a": "Wir nehmen ein Taxi.", "b": "Der Bus kommt nicht.", "en": "We're taking a taxi, because the bus isn't coming.",
+        "answers": ["Wir nehmen ein Taxi, denn der Bus kommt nicht."] },
+      { "a": "Er ist glücklich.", "b": "Er hat eine neue Arbeit.", "en": "He is happy, because he has a new job.",
+        "answers": ["Er ist glücklich, denn er hat eine neue Arbeit."] }
+    ]
+  },
+  {
+    "key": "dann", "name": "dann", "level": "A1", "en": "then", "type": "pos1",
+    "rule": "„dann“ is an adverb: it takes position 1, so the verb comes right after it and the subject moves behind the verb.",
+    "examples": [
+      { "de": "Zuerst [frühstücke] ich, dann [gehe] ich zur Arbeit.", "en": "First I have breakfast, then I go to work." },
+      { "de": "Wir [kaufen] ein und dann [kochen] wir zusammen.", "en": "We go shopping and then we cook together." }
+    ],
+    "exercises": [
+      { "a": "Ich dusche.", "b": "Ich ziehe mich an.", "en": "I shower, then I get dressed.",
+        "answers": ["Ich dusche, dann ziehe ich mich an.", "Ich dusche und dann ziehe ich mich an."] },
+      { "a": "Sie macht die Hausaufgaben.", "b": "Sie sieht fern.", "en": "She does her homework, then she watches TV.",
+        "answers": ["Sie macht die Hausaufgaben, dann sieht sie fern.", "Sie macht die Hausaufgaben und dann sieht sie fern."] },
+      { "a": "Wir essen zu Mittag.", "b": "Wir machen einen Spaziergang.", "en": "We have lunch, then we go for a walk.",
+        "answers": ["Wir essen zu Mittag, dann machen wir einen Spaziergang.", "Wir essen zu Mittag und dann machen wir einen Spaziergang."] }
+    ]
+  },
+  {
+    "key": "weil", "name": "weil", "level": "A2", "en": "because", "type": "end",
+    "rule": "„weil“ starts a side sentence: the conjugated verb jumps to the very END. If the „weil“ part comes first, the main sentence starts with its verb (verb, verb).",
+    "examples": [
+      { "de": "Ich [bleibe] zu Hause, weil ich krank [bin].", "en": "I'm staying at home because I'm ill." },
+      { "de": "Weil es [regnet], [nehmen] wir den Bus.", "en": "Because it's raining, we're taking the bus." }
+    ],
+    "exercises": [
+      { "a": "Ich lerne Deutsch.", "b": "Ich möchte in Deutschland arbeiten.", "en": "I'm learning German because I want to work in Germany.",
+        "answers": ["Ich lerne Deutsch, weil ich in Deutschland arbeiten möchte.", "Weil ich in Deutschland arbeiten möchte, lerne ich Deutsch."] },
+      { "a": "Sie kommt zu spät.", "b": "Der Zug hat Verspätung.", "en": "She is late because the train is delayed.",
+        "answers": ["Sie kommt zu spät, weil der Zug Verspätung hat.", "Weil der Zug Verspätung hat, kommt sie zu spät."] },
+      { "a": "Wir gehen nicht schwimmen.", "b": "Das Wasser ist zu kalt.", "en": "We're not going swimming because the water is too cold.",
+        "answers": ["Wir gehen nicht schwimmen, weil das Wasser zu kalt ist.", "Weil das Wasser zu kalt ist, gehen wir nicht schwimmen."] }
+    ]
+  },
+  {
+    "key": "dass", "name": "dass", "level": "A2", "en": "that", "type": "end",
+    "rule": "„dass“ starts a side sentence: the conjugated verb goes to the END. Usually after verbs like denken, glauben, wissen, sagen, hoffen.",
+    "examples": [
+      { "de": "Ich [glaube], dass er morgen [kommt].", "en": "I think that he's coming tomorrow." },
+      { "de": "Sie [sagt], dass das Essen sehr gut [war].", "en": "She says that the food was very good." }
+    ],
+    "exercises": [
+      { "a": "Ich hoffe.", "b": "Du hast bald Zeit.", "en": "I hope that you'll have time soon.",
+        "answers": ["Ich hoffe, dass du bald Zeit hast."] },
+      { "a": "Er weiß.", "b": "Die Prüfung ist schwer.", "en": "He knows that the exam is difficult.",
+        "answers": ["Er weiß, dass die Prüfung schwer ist."] },
+      { "a": "Wir finden.", "b": "Berlin ist eine tolle Stadt.", "en": "We think that Berlin is a great city.",
+        "answers": ["Wir finden, dass Berlin eine tolle Stadt ist."] }
+    ]
+  },
+  {
+    "key": "wenn", "name": "wenn", "level": "A2", "en": "if / whenever", "type": "end",
+    "rule": "„wenn“ starts a side sentence: verb to the END. Used for conditions and for things that happen again and again (also in the past).",
+    "examples": [
+      { "de": "Wenn ich Zeit [habe], [besuche] ich dich.", "en": "If I have time, I'll visit you." },
+      { "de": "Ich [trinke] Tee, wenn ich müde [bin].", "en": "I drink tea whenever I'm tired." }
+    ],
+    "exercises": [
+      { "a": "Das Wetter ist schön.", "b": "Wir grillen im Garten.", "en": "If the weather is nice, we'll barbecue in the garden.",
+        "answers": ["Wenn das Wetter schön ist, grillen wir im Garten.", "Wir grillen im Garten, wenn das Wetter schön ist."] },
+      { "a": "Du hast Fragen.", "b": "Du kannst mich anrufen.", "en": "If you have questions, you can call me.",
+        "answers": ["Wenn du Fragen hast, kannst du mich anrufen.", "Du kannst mich anrufen, wenn du Fragen hast."] },
+      { "a": "Ich höre Musik.", "b": "Ich koche.", "en": "I listen to music whenever I cook.",
+        "answers": ["Ich höre Musik, wenn ich koche.", "Wenn ich koche, höre ich Musik."] }
+    ]
+  },
+  {
+    "key": "als", "name": "als", "level": "A2", "en": "when (once, in the past)", "type": "end",
+    "rule": "„als“ = „when“ for ONE moment or period in the past. Side sentence: verb to the END.",
+    "examples": [
+      { "de": "Als ich ein Kind [war], [wohnte] ich in Hamburg.", "en": "When I was a child, I lived in Hamburg." },
+      { "de": "Er [hat] mich angerufen, als ich im Kino [war].", "en": "He called me when I was at the cinema." }
+    ],
+    "exercises": [
+      { "a": "Ich war zwanzig.", "b": "Ich bin nach Deutschland gekommen.", "en": "When I was twenty, I came to Germany.",
+        "answers": ["Als ich zwanzig war, bin ich nach Deutschland gekommen.", "Ich bin nach Deutschland gekommen, als ich zwanzig war."] },
+      { "a": "Wir kamen nach Hause.", "b": "Es regnete stark.", "en": "When we came home, it was raining heavily.",
+        "answers": ["Als wir nach Hause kamen, regnete es stark.", "Es regnete stark, als wir nach Hause kamen."] },
+      { "a": "Sie hat die Nachricht gelesen.", "b": "Sie war sehr froh.", "en": "When she read the message, she was very happy.",
+        "answers": ["Als sie die Nachricht gelesen hat, war sie sehr froh.", "Sie war sehr froh, als sie die Nachricht gelesen hat."] }
+    ]
+  },
+  {
+    "key": "ob", "name": "ob", "level": "A2", "en": "whether / if", "type": "end",
+    "rule": "„ob“ turns a yes/no question into a side sentence: verb to the END. Often after „Ich weiß nicht…“ or „Kannst du mir sagen…“.",
+    "examples": [
+      { "de": "Ich [weiß] nicht, ob er heute [kommt].", "en": "I don't know whether he's coming today." },
+      { "de": "[Kannst] du mir sagen, ob der Laden noch offen [ist]?", "en": "Can you tell me whether the shop is still open?" }
+    ],
+    "exercises": [
+      { "a": "Ich frage mich.", "b": "Hat sie meine E-Mail gelesen?", "en": "I wonder whether she has read my email.",
+        "answers": ["Ich frage mich, ob sie meine E-Mail gelesen hat."] },
+      { "a": "Weißt du?", "b": "Fährt der Zug pünktlich ab?", "en": "Do you know whether the train leaves on time?",
+        "answers": ["Weißt du, ob der Zug pünktlich abfährt?"] },
+      { "a": "Er fragt.", "b": "Kann er morgen kommen?", "en": "He asks whether he can come tomorrow.",
+        "answers": ["Er fragt, ob er morgen kommen kann."] }
+    ]
+  },
+  {
+    "key": "sondern", "name": "sondern", "level": "A2", "en": "but rather", "type": "pos0",
+    "rule": "„sondern“ corrects a negative: „nicht / kein … sondern …“. Position 0, no change in word order; often the repeated words are left out.",
+    "examples": [
+      { "de": "Er [kommt] nicht aus Österreich, sondern aus der Schweiz.", "en": "He doesn't come from Austria but from Switzerland." },
+      { "de": "Ich [trinke] keinen Kaffee, sondern ich [trinke] Tee.", "en": "I don't drink coffee, I drink tea instead." }
+    ],
+    "exercises": [
+      { "a": "Wir fahren nicht mit dem Auto.", "b": "Wir fahren mit dem Zug.", "en": "We're not going by car but by train.",
+        "answers": ["Wir fahren nicht mit dem Auto, sondern mit dem Zug.", "Wir fahren nicht mit dem Auto, sondern wir fahren mit dem Zug."] },
+      { "a": "Das ist kein Hund.", "b": "Das ist eine Katze.", "en": "That's not a dog but a cat.",
+        "answers": ["Das ist kein Hund, sondern eine Katze.", "Das ist kein Hund, sondern das ist eine Katze."] },
+      { "a": "Sie arbeitet nicht am Montag.", "b": "Sie arbeitet am Dienstag.", "en": "She doesn't work on Monday but on Tuesday.",
+        "answers": ["Sie arbeitet nicht am Montag, sondern am Dienstag.", "Sie arbeitet nicht am Montag, sondern sie arbeitet am Dienstag."] }
+    ]
+  },
+  {
+    "key": "deshalb", "name": "deshalb", "level": "A2", "en": "that's why / therefore", "type": "pos1",
+    "rule": "„deshalb“ (also „deswegen“, „darum“) is an adverb: it takes position 1, the verb comes right after it, then the subject. It introduces the RESULT.",
+    "examples": [
+      { "de": "Ich [bin] krank, deshalb [bleibe] ich heute zu Hause.", "en": "I'm ill, that's why I'm staying at home today." },
+      { "de": "Der Bus [kam] nicht. Deshalb [sind] wir zu Fuß gegangen.", "en": "The bus didn't come. So we walked." }
+    ],
+    "exercises": [
+      { "a": "Es regnet.", "b": "Ich nehme einen Regenschirm mit.", "en": "It's raining, so I'm taking an umbrella.",
+        "answers": ["Es regnet, deshalb nehme ich einen Regenschirm mit.", "Es regnet, ich nehme deshalb einen Regenschirm mit."] },
+      { "a": "Sie hat viel gelernt.", "b": "Sie hat die Prüfung bestanden.", "en": "She studied a lot, that's why she passed the exam.",
+        "answers": ["Sie hat viel gelernt, deshalb hat sie die Prüfung bestanden.", "Sie hat viel gelernt, sie hat deshalb die Prüfung bestanden."] },
+      { "a": "Ich habe Hunger.", "b": "Ich mache mir ein Brot.", "en": "I'm hungry, so I'm making myself a sandwich.",
+        "answers": ["Ich habe Hunger, deshalb mache ich mir ein Brot.", "Ich habe Hunger, ich mache mir deshalb ein Brot."] }
+    ]
+  },
+  {
+    "key": "trotzdem", "name": "trotzdem", "level": "A2", "en": "nevertheless / anyway", "type": "pos1",
+    "rule": "„trotzdem“ is an adverb: position 1, then the verb, then the subject. It says: the second thing happens ANYWAY.",
+    "examples": [
+      { "de": "Es [ist] kalt, trotzdem [gehen] wir schwimmen.", "en": "It's cold, we're going swimming anyway." },
+      { "de": "Er [war] müde. Trotzdem [hat] er weitergearbeitet.", "en": "He was tired. Nevertheless he kept working." }
+    ],
+    "exercises": [
+      { "a": "Das Essen war teuer.", "b": "Es hat nicht gut geschmeckt.", "en": "The food was expensive, but it didn't taste good anyway.",
+        "answers": ["Das Essen war teuer, trotzdem hat es nicht gut geschmeckt.", "Das Essen war teuer, es hat trotzdem nicht gut geschmeckt."] },
+      { "a": "Ich habe wenig Zeit.", "b": "Ich helfe dir.", "en": "I have little time, I'll help you anyway.",
+        "answers": ["Ich habe wenig Zeit, trotzdem helfe ich dir.", "Ich habe wenig Zeit, ich helfe dir trotzdem."] },
+      { "a": "Sie ist krank.", "b": "Sie geht zur Arbeit.", "en": "She is ill, nevertheless she goes to work.",
+        "answers": ["Sie ist krank, trotzdem geht sie zur Arbeit.", "Sie ist krank, sie geht trotzdem zur Arbeit."] }
+    ]
+  },
+  {
+    "key": "umzu", "name": "um … zu", "level": "A2", "en": "in order to", "type": "zu",
+    "rule": "„um … zu“ + infinitive at the end, when BOTH parts have the same subject. No subject and no conjugated verb in the „um“ part.",
+    "examples": [
+      { "de": "Ich [lerne] Deutsch, um in Berlin zu [arbeiten].", "en": "I'm learning German in order to work in Berlin." },
+      { "de": "Sie [steht] früh auf, um Sport zu [machen].", "en": "She gets up early to do sport." }
+    ],
+    "exercises": [
+      { "a": "Er spart Geld.", "b": "Er will ein Auto kaufen.", "en": "He is saving money in order to buy a car.",
+        "answers": ["Er spart Geld, um ein Auto zu kaufen.", "Um ein Auto zu kaufen, spart er Geld."] },
+      { "a": "Wir fahren in die Stadt.", "b": "Wir wollen Freunde treffen.", "en": "We're going into town to meet friends.",
+        "answers": ["Wir fahren in die Stadt, um Freunde zu treffen.", "Um Freunde zu treffen, fahren wir in die Stadt."] },
+      { "a": "Ich gehe in den Supermarkt.", "b": "Ich will Milch kaufen.", "en": "I'm going to the supermarket to buy milk.",
+        "answers": ["Ich gehe in den Supermarkt, um Milch zu kaufen.", "Um Milch zu kaufen, gehe ich in den Supermarkt."] }
+    ]
+  },
+  {
+    "key": "obwohl", "name": "obwohl", "level": "B1", "en": "although", "type": "end",
+    "rule": "„obwohl“ starts a side sentence: the conjugated verb goes to the END. If the „obwohl“ part comes first, the main sentence starts with its verb (verb, verb).",
+    "examples": [
+      { "de": "Ich [gehe] spazieren, obwohl es [regnet].", "en": "I'm going for a walk although it's raining." },
+      { "de": "Obwohl er müde [war], [hat] er bis Mitternacht gearbeitet.", "en": "Although he was tired, he worked until midnight." }
+    ],
+    "exercises": [
+      { "a": "Sie geht zur Arbeit.", "b": "Sie ist krank.", "en": "She goes to work although she is ill.",
+        "answers": ["Sie geht zur Arbeit, obwohl sie krank ist.", "Obwohl sie krank ist, geht sie zur Arbeit."] },
+      { "a": "Wir sind ins Kino gegangen.", "b": "Wir hatten wenig Zeit.", "en": "We went to the cinema although we had little time.",
+        "answers": ["Wir sind ins Kino gegangen, obwohl wir wenig Zeit hatten.", "Obwohl wir wenig Zeit hatten, sind wir ins Kino gegangen."] },
+      { "a": "Er spricht gut Deutsch.", "b": "Er wohnt erst seit einem Jahr hier.", "en": "He speaks German well although he has only lived here for a year.",
+        "answers": ["Er spricht gut Deutsch, obwohl er erst seit einem Jahr hier wohnt.", "Obwohl er erst seit einem Jahr hier wohnt, spricht er gut Deutsch."] },
+      { "a": "Ich kaufe das Handy.", "b": "Es ist sehr teuer.", "en": "I'm buying the phone although it's very expensive.",
+        "answers": ["Ich kaufe das Handy, obwohl es sehr teuer ist.", "Obwohl es sehr teuer ist, kaufe ich das Handy."] }
+    ]
+  },
+  {
+    "key": "damit", "name": "damit", "level": "B1", "en": "so that", "type": "end",
+    "rule": "„damit“ gives a goal and starts a side sentence: verb to the END. Use it when the two parts have DIFFERENT subjects (same subject → „um … zu“ also works).",
+    "examples": [
+      { "de": "Ich [erkläre] es noch einmal, damit du es [verstehst].", "en": "I'll explain it again so that you understand it." },
+      { "de": "Sie [spricht] laut, damit alle sie [hören].", "en": "She speaks loudly so that everyone hears her." }
+    ],
+    "exercises": [
+      { "a": "Ich gebe dir meine Nummer.", "b": "Du kannst mich anrufen.", "en": "I'll give you my number so that you can call me.",
+        "answers": ["Ich gebe dir meine Nummer, damit du mich anrufen kannst.", "Damit du mich anrufen kannst, gebe ich dir meine Nummer."] },
+      { "a": "Die Eltern arbeiten viel.", "b": "Die Kinder können studieren.", "en": "The parents work a lot so that the children can study.",
+        "answers": ["Die Eltern arbeiten viel, damit die Kinder studieren können.", "Damit die Kinder studieren können, arbeiten die Eltern viel."] },
+      { "a": "Mach das Fenster zu.", "b": "Es wird nicht kalt.", "en": "Close the window so that it doesn't get cold.",
+        "answers": ["Mach das Fenster zu, damit es nicht kalt wird."] }
+    ]
+  },
+  {
+    "key": "nachdem", "name": "nachdem", "level": "B1", "en": "after", "type": "end",
+    "rule": "„nachdem“: verb to the END. The „nachdem“ part happened FIRST, so it's one tense further back: Perfekt → Plusquamperfekt, Präsens → Perfekt.",
+    "examples": [
+      { "de": "Nachdem ich gegessen [habe], [gehe] ich spazieren.", "en": "After I have eaten, I go for a walk." },
+      { "de": "Nachdem sie die Prüfung bestanden [hatte], [feierte] sie mit Freunden.", "en": "After she had passed the exam, she celebrated with friends." }
+    ],
+    "exercises": [
+      { "a": "Er hatte gefrühstückt.", "b": "Er fuhr zur Arbeit.", "en": "After he had eaten breakfast, he drove to work.",
+        "answers": ["Nachdem er gefrühstückt hatte, fuhr er zur Arbeit.", "Er fuhr zur Arbeit, nachdem er gefrühstückt hatte."] },
+      { "a": "Wir haben die Hausaufgaben gemacht.", "b": "Wir spielen Fußball.", "en": "After we have done our homework, we play football.",
+        "answers": ["Nachdem wir die Hausaufgaben gemacht haben, spielen wir Fußball.", "Wir spielen Fußball, nachdem wir die Hausaufgaben gemacht haben."] },
+      { "a": "Sie war nach Hause gekommen.", "b": "Sie rief ihre Mutter an.", "en": "After she had come home, she called her mother.",
+        "answers": ["Nachdem sie nach Hause gekommen war, rief sie ihre Mutter an.", "Sie rief ihre Mutter an, nachdem sie nach Hause gekommen war."] }
+    ]
+  },
+  {
+    "key": "bevor", "name": "bevor", "level": "B1", "en": "before", "type": "end",
+    "rule": "„bevor“ starts a side sentence: verb to the END. The „bevor“ part happens LATER than the main part.",
+    "examples": [
+      { "de": "Bevor ich ins Bett [gehe], [lese] ich ein bisschen.", "en": "Before I go to bed, I read a bit." },
+      { "de": "Wasch dir die Hände, bevor du [isst].", "en": "Wash your hands before you eat." }
+    ],
+    "exercises": [
+      { "a": "Ich trinke einen Kaffee.", "b": "Ich fange mit der Arbeit an.", "en": "I drink a coffee before I start work.",
+        "answers": ["Ich trinke einen Kaffee, bevor ich mit der Arbeit anfange.", "Bevor ich mit der Arbeit anfange, trinke ich einen Kaffee."] },
+      { "a": "Sie hat Deutsch gelernt.", "b": "Sie ist nach Deutschland gezogen.", "en": "She learned German before she moved to Germany.",
+        "answers": ["Sie hat Deutsch gelernt, bevor sie nach Deutschland gezogen ist.", "Bevor sie nach Deutschland gezogen ist, hat sie Deutsch gelernt."] },
+      { "a": "Ruf mich an.", "b": "Du fährst los.", "en": "Call me before you set off.",
+        "answers": ["Ruf mich an, bevor du losfährst."] }
+    ]
+  },
+  {
+    "key": "waehrend", "name": "während", "level": "B1", "en": "while", "type": "end",
+    "rule": "„während“ (as a conjunction) starts a side sentence: verb to the END. Two things happen at the SAME time — or a contrast („whereas“).",
+    "examples": [
+      { "de": "Während ich [koche], [hört] er Musik.", "en": "While I'm cooking, he listens to music." },
+      { "de": "Mein Bruder [mag] Sport, während ich lieber [lese].", "en": "My brother likes sport, whereas I prefer reading." }
+    ],
+    "exercises": [
+      { "a": "Die Kinder spielen im Garten.", "b": "Die Eltern trinken Kaffee.", "en": "The children play in the garden while the parents drink coffee.",
+        "answers": ["Die Kinder spielen im Garten, während die Eltern Kaffee trinken.", "Während die Eltern Kaffee trinken, spielen die Kinder im Garten."] },
+      { "a": "Ich höre Podcasts.", "b": "Ich fahre mit dem Zug.", "en": "I listen to podcasts while I take the train.",
+        "answers": ["Ich höre Podcasts, während ich mit dem Zug fahre.", "Während ich mit dem Zug fahre, höre ich Podcasts."] },
+      { "a": "Sie telefonierte.", "b": "Sie wartete auf den Bus.", "en": "She was on the phone while she was waiting for the bus.",
+        "answers": ["Sie telefonierte, während sie auf den Bus wartete.", "Während sie auf den Bus wartete, telefonierte sie."] }
+    ]
+  },
+  {
+    "key": "seitdem", "name": "seitdem", "level": "B1", "en": "since (then)", "type": "end",
+    "rule": "„seitdem“ / „seit“ as a conjunction: verb to the END. Something started then and is still true now (main part often in Präsens).",
+    "examples": [
+      { "de": "Seitdem ich in Berlin [wohne], [spreche] ich mehr Deutsch.", "en": "Since I've been living in Berlin, I speak more German." },
+      { "de": "Er [ist] viel fitter, seitdem er jeden Tag Rad [fährt].", "en": "He's much fitter since he's been cycling every day." }
+    ],
+    "exercises": [
+      { "a": "Sie hat einen Hund.", "b": "Sie geht jeden Tag spazieren.", "en": "Since she's had a dog, she goes for a walk every day.",
+        "answers": ["Seitdem sie einen Hund hat, geht sie jeden Tag spazieren.", "Sie geht jeden Tag spazieren, seitdem sie einen Hund hat.", "Seit sie einen Hund hat, geht sie jeden Tag spazieren.", "Sie geht jeden Tag spazieren, seit sie einen Hund hat."] },
+      { "a": "Ich arbeite von zu Hause.", "b": "Ich habe mehr Zeit für meine Familie.", "en": "Since I've been working from home, I have more time for my family.",
+        "answers": ["Seitdem ich von zu Hause arbeite, habe ich mehr Zeit für meine Familie.", "Ich habe mehr Zeit für meine Familie, seitdem ich von zu Hause arbeite.", "Seit ich von zu Hause arbeite, habe ich mehr Zeit für meine Familie.", "Ich habe mehr Zeit für meine Familie, seit ich von zu Hause arbeite."] },
+      { "a": "Er raucht nicht mehr.", "b": "Er fühlt sich besser.", "en": "Since he stopped smoking, he feels better.",
+        "answers": ["Seitdem er nicht mehr raucht, fühlt er sich besser.", "Er fühlt sich besser, seitdem er nicht mehr raucht.", "Seit er nicht mehr raucht, fühlt er sich besser.", "Er fühlt sich besser, seit er nicht mehr raucht."] }
+    ]
+  },
+  {
+    "key": "sobald", "name": "sobald", "level": "B1", "en": "as soon as", "type": "end",
+    "rule": "„sobald“ starts a side sentence: verb to the END. The main part happens right after the „sobald“ part.",
+    "examples": [
+      { "de": "Sobald ich zu Hause [bin], [rufe] ich dich an.", "en": "As soon as I'm home, I'll call you." },
+      { "de": "Wir [fangen] an, sobald alle da [sind].", "en": "We'll start as soon as everyone is here." }
+    ],
+    "exercises": [
+      { "a": "Ich habe die Ergebnisse.", "b": "Ich schicke sie dir.", "en": "As soon as I have the results, I'll send them to you.",
+        "answers": ["Sobald ich die Ergebnisse habe, schicke ich sie dir.", "Ich schicke sie dir, sobald ich die Ergebnisse habe."] },
+      { "a": "Der Regen hört auf.", "b": "Wir gehen raus.", "en": "As soon as the rain stops, we'll go out.",
+        "answers": ["Sobald der Regen aufhört, gehen wir raus.", "Wir gehen raus, sobald der Regen aufhört."] },
+      { "a": "Sie kam nach Hause.", "b": "Sie legte sich ins Bett.", "en": "As soon as she came home, she went to bed.",
+        "answers": ["Sobald sie nach Hause kam, legte sie sich ins Bett.", "Sie legte sich ins Bett, sobald sie nach Hause kam."] }
+    ]
+  },
+  {
+    "key": "bis", "name": "bis", "level": "B1", "en": "until", "type": "end",
+    "rule": "„bis“ as a conjunction starts a side sentence: verb to the END. The main part lasts up to the moment of the „bis“ part.",
+    "examples": [
+      { "de": "Ich [warte] hier, bis du [kommst].", "en": "I'll wait here until you come." },
+      { "de": "Er [hat] gelernt, bis er müde [war].", "en": "He studied until he was tired." }
+    ],
+    "exercises": [
+      { "a": "Wir bleiben hier.", "b": "Der Regen hört auf.", "en": "We'll stay here until the rain stops.",
+        "answers": ["Wir bleiben hier, bis der Regen aufhört.", "Bis der Regen aufhört, bleiben wir hier."] },
+      { "a": "Sie hat gewartet.", "b": "Der Arzt hatte Zeit.", "en": "She waited until the doctor had time.",
+        "answers": ["Sie hat gewartet, bis der Arzt Zeit hatte."] },
+      { "a": "Ich übe jeden Tag.", "b": "Ich kann das Lied spielen.", "en": "I practise every day until I can play the song.",
+        "answers": ["Ich übe jeden Tag, bis ich das Lied spielen kann."] }
+    ]
+  },
+  {
+    "key": "falls", "name": "falls", "level": "B1", "en": "in case / if", "type": "end",
+    "rule": "„falls“ is like „wenn“ but for a possibility that may NOT happen. Side sentence: verb to the END.",
+    "examples": [
+      { "de": "Falls es [regnet], [bleiben] wir zu Hause.", "en": "In case it rains, we'll stay at home." },
+      { "de": "Nimm eine Jacke mit, falls es kalt [wird].", "en": "Take a jacket in case it gets cold." }
+    ],
+    "exercises": [
+      { "a": "Du hast Probleme.", "b": "Du kannst mich anrufen.", "en": "If you have problems, you can call me.",
+        "answers": ["Falls du Probleme hast, kannst du mich anrufen.", "Du kannst mich anrufen, falls du Probleme hast."] },
+      { "a": "Der Zug hat Verspätung.", "b": "Wir nehmen ein Taxi.", "en": "In case the train is delayed, we'll take a taxi.",
+        "answers": ["Falls der Zug Verspätung hat, nehmen wir ein Taxi.", "Wir nehmen ein Taxi, falls der Zug Verspätung hat."] },
+      { "a": "Ich nehme Geld mit.", "b": "Wir wollen etwas essen.", "en": "I'll take money in case we want to eat something.",
+        "answers": ["Ich nehme Geld mit, falls wir etwas essen wollen.", "Falls wir etwas essen wollen, nehme ich Geld mit."] }
+    ]
+  },
+  {
+    "key": "indem", "name": "indem", "level": "B1", "en": "by (doing)", "type": "end",
+    "rule": "„indem“ says HOW you do something („by …ing“). Side sentence: verb to the END. Answers the question „Wie?“.",
+    "examples": [
+      { "de": "Man [lernt] eine Sprache, indem man viel [spricht].", "en": "You learn a language by speaking a lot." },
+      { "de": "Er [spart] Geld, indem er mit dem Fahrrad [fährt].", "en": "He saves money by cycling." }
+    ],
+    "exercises": [
+      { "a": "Ich verbessere mein Deutsch.", "b": "Ich lese jeden Tag Zeitung.", "en": "I improve my German by reading the newspaper every day.",
+        "answers": ["Ich verbessere mein Deutsch, indem ich jeden Tag Zeitung lese.", "Indem ich jeden Tag Zeitung lese, verbessere ich mein Deutsch."] },
+      { "a": "Sie hält sich fit.", "b": "Sie geht dreimal pro Woche joggen.", "en": "She keeps fit by going jogging three times a week.",
+        "answers": ["Sie hält sich fit, indem sie dreimal pro Woche joggen geht.", "Indem sie dreimal pro Woche joggen geht, hält sie sich fit."] },
+      { "a": "Man kann Energie sparen.", "b": "Man schaltet das Licht aus.", "en": "You can save energy by switching off the light.",
+        "answers": ["Man kann Energie sparen, indem man das Licht ausschaltet.", "Indem man das Licht ausschaltet, kann man Energie sparen."] }
+    ]
+  },
+  {
+    "key": "sodass", "name": "sodass", "level": "B1", "en": "so that (result)", "type": "end",
+    "rule": "„sodass“ (or „so dass“) gives a RESULT, not a goal. Side sentence: verb to the END. It always comes second.",
+    "examples": [
+      { "de": "Es [regnete] stark, sodass das Spiel ausfallen [musste].", "en": "It rained heavily, so the match had to be cancelled." },
+      { "de": "Er [hat] den Bus verpasst, sodass er zu spät [kam].", "en": "He missed the bus, so he was late." }
+    ],
+    "exercises": [
+      { "a": "Der Film war langweilig.", "b": "Ich bin eingeschlafen.", "en": "The film was boring, so I fell asleep.",
+        "answers": ["Der Film war langweilig, sodass ich eingeschlafen bin.", "Der Film war langweilig, so dass ich eingeschlafen bin."] },
+      { "a": "Sie hat viel geübt.", "b": "Sie spielt jetzt sehr gut.", "en": "She practised a lot, so she plays very well now.",
+        "answers": ["Sie hat viel geübt, sodass sie jetzt sehr gut spielt.", "Sie hat viel geübt, so dass sie jetzt sehr gut spielt."] },
+      { "a": "Es gab einen Stau.", "b": "Wir kamen zu spät zum Flughafen.", "en": "There was a traffic jam, so we got to the airport late.",
+        "answers": ["Es gab einen Stau, sodass wir zu spät zum Flughafen kamen.", "Es gab einen Stau, so dass wir zu spät zum Flughafen kamen."] }
+    ]
+  },
+  {
+    "key": "ausserdem", "name": "außerdem", "level": "B1", "en": "besides / also", "type": "pos1",
+    "rule": "„außerdem“ adds one more point. It's an adverb: position 1, then the verb, then the subject — or it stands after the verb.",
+    "examples": [
+      { "de": "Die Wohnung [ist] hell. Außerdem [hat] sie einen Balkon.", "en": "The flat is bright. Besides, it has a balcony." },
+      { "de": "Ich [habe] keine Zeit, außerdem [bin] ich müde.", "en": "I have no time, and besides, I'm tired." }
+    ],
+    "exercises": [
+      { "a": "Der Job ist interessant.", "b": "Er ist gut bezahlt.", "en": "The job is interesting. Besides, it's well paid.",
+        "answers": ["Der Job ist interessant, außerdem ist er gut bezahlt.", "Der Job ist interessant, er ist außerdem gut bezahlt."] },
+      { "a": "Ich spreche Englisch.", "b": "Ich lerne Deutsch.", "en": "I speak English. I'm also learning German.",
+        "answers": ["Ich spreche Englisch, außerdem lerne ich Deutsch.", "Ich spreche Englisch, ich lerne außerdem Deutsch."] },
+      { "a": "Das Hotel liegt zentral.", "b": "Das Frühstück ist sehr gut.", "en": "The hotel is central. Besides, the breakfast is very good.",
+        "answers": ["Das Hotel liegt zentral, außerdem ist das Frühstück sehr gut.", "Das Hotel liegt zentral, das Frühstück ist außerdem sehr gut."] }
+    ]
+  },
+  {
+    "key": "sonst", "name": "sonst", "level": "B1", "en": "otherwise / or else", "type": "pos1",
+    "rule": "„sonst“ says what happens if not. Adverb: position 1, then the verb, then the subject.",
+    "examples": [
+      { "de": "Beeil dich, sonst [verpassen] wir den Zug.", "en": "Hurry up, otherwise we'll miss the train." },
+      { "de": "Ich [muss] jetzt lernen, sonst [bestehe] ich die Prüfung nicht.", "en": "I have to study now, or else I won't pass the exam." }
+    ],
+    "exercises": [
+      { "a": "Zieh eine Jacke an.", "b": "Du erkältest dich.", "en": "Put on a jacket, otherwise you'll catch a cold.",
+        "answers": ["Zieh eine Jacke an, sonst erkältest du dich."] },
+      { "a": "Wir müssen jetzt gehen.", "b": "Wir kommen zu spät.", "en": "We have to go now, or else we'll be late.",
+        "answers": ["Wir müssen jetzt gehen, sonst kommen wir zu spät."] },
+      { "a": "Du musst das Formular unterschreiben.", "b": "Es ist nicht gültig.", "en": "You have to sign the form, otherwise it isn't valid.",
+        "answers": ["Du musst das Formular unterschreiben, sonst ist es nicht gültig."] }
+    ]
+  },
+  {
+    "key": "ohnezu", "name": "ohne … zu", "level": "B1", "en": "without (doing)", "type": "zu",
+    "rule": "„ohne … zu“ + infinitive at the end, when both parts have the SAME subject. Something you'd expect does NOT happen.",
+    "examples": [
+      { "de": "Er [ging] weg, ohne sich zu [verabschieden].", "en": "He left without saying goodbye." },
+      { "de": "Sie [hat] das Buch gekauft, ohne den Preis anzusehen.", "en": "She bought the book without looking at the price." }
+    ],
+    "exercises": [
+      { "a": "Er fährt los.", "b": "Er frühstückt nicht.", "en": "He sets off without having breakfast.",
+        "answers": ["Er fährt los, ohne zu frühstücken."] },
+      { "a": "Sie hat die Prüfung bestanden.", "b": "Sie hat nicht viel gelernt.", "en": "She passed the exam without studying much.",
+        "answers": ["Sie hat die Prüfung bestanden, ohne viel zu lernen.", "Sie hat die Prüfung bestanden, ohne viel gelernt zu haben."] },
+      { "a": "Ich habe den Vertrag unterschrieben.", "b": "Ich habe ihn nicht gelesen.", "en": "I signed the contract without reading it.",
+        "answers": ["Ich habe den Vertrag unterschrieben, ohne ihn zu lesen.", "Ich habe den Vertrag unterschrieben, ohne ihn gelesen zu haben."] }
+    ]
+  },
+  {
+    "key": "entwederoder", "name": "entweder … oder", "level": "B1", "en": "either … or", "type": "pair",
+    "rule": "Two parts: „entweder … oder …“. „entweder“ can stand in position 1 (then the verb follows) or after the verb; „oder“ is position 0.",
+    "examples": [
+      { "de": "Entweder [gehen] wir ins Kino oder wir [bleiben] zu Hause.", "en": "Either we go to the cinema or we stay at home." },
+      { "de": "Ich [trinke] entweder Tee oder Wasser.", "en": "I drink either tea or water." }
+    ],
+    "exercises": [
+      { "a": "Wir fahren mit dem Zug.", "b": "Wir fliegen.", "en": "Either we take the train or we fly.",
+        "answers": ["Entweder fahren wir mit dem Zug oder wir fliegen.", "Wir fahren entweder mit dem Zug oder wir fliegen."] },
+      { "a": "Du hilfst mir.", "b": "Du gehst.", "en": "Either you help me or you leave.",
+        "answers": ["Entweder hilfst du mir oder du gehst.", "Entweder du hilfst mir oder du gehst."] },
+      { "a": "Sie kommt am Montag.", "b": "Sie kommt am Dienstag.", "en": "She's coming either on Monday or on Tuesday.",
+        "answers": ["Sie kommt entweder am Montag oder am Dienstag.", "Entweder kommt sie am Montag oder am Dienstag.", "Entweder kommt sie am Montag oder sie kommt am Dienstag."] }
+    ]
+  },
+  {
+    "key": "sowohlalsauch", "name": "sowohl … als auch", "level": "B1", "en": "both … and", "type": "pair",
+    "rule": "„sowohl … als auch …“ links two things that are BOTH true. It usually joins words or phrases, not whole sentences — say the shared part only once.",
+    "examples": [
+      { "de": "Er [spricht] sowohl Deutsch als auch Französisch.", "en": "He speaks both German and French." },
+      { "de": "Das Restaurant [ist] sowohl günstig als auch gemütlich.", "en": "The restaurant is both cheap and cosy." }
+    ],
+    "exercises": [
+      { "a": "Sie spielt Klavier.", "b": "Sie spielt Gitarre.", "en": "She plays both piano and guitar.",
+        "answers": ["Sie spielt sowohl Klavier als auch Gitarre."] },
+      { "a": "Der Kurs ist für Anfänger.", "b": "Der Kurs ist für Fortgeschrittene.", "en": "The course is for both beginners and advanced learners.",
+        "answers": ["Der Kurs ist sowohl für Anfänger als auch für Fortgeschrittene."] },
+      { "a": "Wir waren in Wien.", "b": "Wir waren in Salzburg.", "en": "We were both in Vienna and in Salzburg.",
+        "answers": ["Wir waren sowohl in Wien als auch in Salzburg."] }
+    ]
+  },
+  {
+    "key": "wedernoch", "name": "weder … noch", "level": "B1", "en": "neither … nor", "type": "pair",
+    "rule": "„weder … noch …“ says NEITHER is true. It already is a negation — no extra „nicht“ or „kein“!",
+    "examples": [
+      { "de": "Ich [habe] weder Zeit noch Geld.", "en": "I have neither time nor money." },
+      { "de": "Er [trinkt] weder Kaffee noch Tee.", "en": "He drinks neither coffee nor tea." }
+    ],
+    "exercises": [
+      { "a": "Sie isst kein Fleisch.", "b": "Sie isst keinen Fisch.", "en": "She eats neither meat nor fish.",
+        "answers": ["Sie isst weder Fleisch noch Fisch."] },
+      { "a": "Das Hotel war nicht sauber.", "b": "Das Hotel war nicht ruhig.", "en": "The hotel was neither clean nor quiet.",
+        "answers": ["Das Hotel war weder sauber noch ruhig."] },
+      { "a": "Ich kenne seinen Namen nicht.", "b": "Ich kenne seine Adresse nicht.", "en": "I know neither his name nor his address.",
+        "answers": ["Ich kenne weder seinen Namen noch seine Adresse."] }
+    ]
+  },
+  {
+    "key": "nichtnursondernauch", "name": "nicht nur … sondern auch", "level": "B1", "en": "not only … but also", "type": "pair",
+    "rule": "„nicht nur … sondern auch …“ adds a second, often surprising point. „sondern“ is position 0, so word order doesn't change.",
+    "examples": [
+      { "de": "Sie [spricht] nicht nur Deutsch, sondern auch Japanisch.", "en": "She speaks not only German but also Japanese." },
+      { "de": "Der Film [war] nicht nur lustig, sondern auch spannend.", "en": "The film was not only funny but also exciting." }
+    ],
+    "exercises": [
+      { "a": "Er kocht gut.", "b": "Er backt gut.", "en": "He not only cooks well but also bakes well.",
+        "answers": ["Er kocht nicht nur gut, sondern backt auch gut.", "Er kocht nicht nur gut, sondern er backt auch gut."] },
+      { "a": "Die Stadt ist schön.", "b": "Die Stadt ist sehr sicher.", "en": "The city is not only beautiful but also very safe.",
+        "answers": ["Die Stadt ist nicht nur schön, sondern auch sehr sicher."] },
+      { "a": "Wir haben Berlin besucht.", "b": "Wir haben Dresden besucht.", "en": "We visited not only Berlin but also Dresden.",
+        "answers": ["Wir haben nicht nur Berlin, sondern auch Dresden besucht.", "Wir haben nicht nur Berlin besucht, sondern auch Dresden."] }
+    ]
+  },
+  {
+    "key": "zwaraber", "name": "zwar … aber", "level": "B1", "en": "admittedly … but", "type": "pair",
+    "rule": "„zwar … aber …“: the first part is true, BUT there's a catch. „zwar“ stands after the verb (or in position 1), „aber“ is position 0.",
+    "examples": [
+      { "de": "Die Wohnung [ist] zwar klein, aber sie [ist] günstig.", "en": "The flat is small, admittedly, but it's cheap." },
+      { "de": "Ich [habe] zwar wenig Zeit, aber ich [helfe] dir.", "en": "I don't have much time, it's true, but I'll help you." }
+    ],
+    "exercises": [
+      { "a": "Das Auto ist alt.", "b": "Es fährt noch gut.", "en": "The car is old, admittedly, but it still runs well.",
+        "answers": ["Das Auto ist zwar alt, aber es fährt noch gut.", "Zwar ist das Auto alt, aber es fährt noch gut."] },
+      { "a": "Der Job ist anstrengend.", "b": "Er macht mir Spaß.", "en": "The job is tiring, it's true, but I enjoy it.",
+        "answers": ["Der Job ist zwar anstrengend, aber er macht mir Spaß.", "Zwar ist der Job anstrengend, aber er macht mir Spaß."] },
+      { "a": "Sie spricht wenig.", "b": "Sie versteht alles.", "en": "She doesn't speak much, admittedly, but she understands everything.",
+        "answers": ["Sie spricht zwar wenig, aber sie versteht alles.", "Zwar spricht sie wenig, aber sie versteht alles."] }
+    ]
+  },
+  {
+    "key": "jedesto", "name": "je … desto", "level": "B1", "en": "the more … the more", "type": "pair",
+    "rule": "„je + comparative … (verb at the END), desto + comparative + verb + subject …“. The „je“ part is a side sentence; the „desto“ part starts with „desto“ + comparative, then the verb.",
+    "examples": [
+      { "de": "Je mehr ich [übe], desto besser [spreche] ich.", "en": "The more I practise, the better I speak." },
+      { "de": "Je später es [wird], desto müder [bin] ich.", "en": "The later it gets, the more tired I am." }
+    ],
+    "exercises": [
+      { "a": "Du liest viel.", "b": "Dein Wortschatz wird groß.", "en": "The more you read, the bigger your vocabulary gets.",
+        "answers": ["Je mehr du liest, desto größer wird dein Wortschatz."] },
+      { "a": "Das Wetter ist warm.", "b": "Die Leute sind glücklich.", "en": "The warmer the weather, the happier people are.",
+        "answers": ["Je wärmer das Wetter ist, desto glücklicher sind die Leute."] },
+      { "a": "Wir fahren früh los.", "b": "Wir kommen früh an.", "en": "The earlier we set off, the earlier we arrive.",
+        "answers": ["Je früher wir losfahren, desto früher kommen wir an."] }
+    ]
+  }
+]
