@@ -515,6 +515,23 @@ class EndToEndTest {
         assertEquals("Ich bin müde.", tired.get("de"));
         assertEquals(0, ((Number) tired.get("stage")).intValue());
 
+        // Konnektoren: one connector with its rule, or a mix up to the level; no words, no answer suggestions
+        Map<String, Object> weil = mcpCall(link, "start_talkloop", Map.of("mode", "connectors", "level", "A2", "connector", "weil"));
+        String weilText = (String) ((List<Map<String, Object>>) weil.get("content")).get(0).get("text");
+        assertTrue(weilText.contains("„weil“ (because). Rule:") && !weilText.contains("Today's words"), weilText);
+        String weilId = (String) ((Map<String, Object>) weil.get("structuredContent")).get("id");
+        Map<String, Object> joined = (Map<String, Object>) mcpCall(link, "talkloop_turn", Map.of("screen_id", weilId, "said", "",
+                "reply", "Los geht's!", "task", "Verbinde mit „weil“: Ich bleibe zu Hause. + Ich bin krank.", "suggestions", List.of("Ich bleibe zu Hause, weil ich krank bin."))).get("structuredContent");
+        Map<String, Object> pair = ((List<Map<String, Object>>) joined.get("messages")).get(0);
+        assertEquals("Verbinde mit „weil“: Ich bleibe zu Hause. + Ich bin krank.", pair.get("task"));
+        assertEquals(List.of(), pair.get("suggestions"));
+        String mix = mcpTool(link, "start_talkloop", Map.of("mode", "connectors", "level", "A1"));
+        assertTrue(mix.contains("„denn“") && !mix.contains("„weil“"), mix); // A1 only
+        assertTrue(mcpTool(link, "start_talkloop", Map.of("mode", "connectors", "level", "B1", "connector", "um … zu")).contains("„um … zu“ (in order to). Rule:"));
+        Map<String, Object> noSuch = (Map<String, Object>) mcp(link, "tools/call", Map.of("name", "start_talkloop",
+                "arguments", Map.of("mode", "connectors", "level", "B1", "connector", "xyz"))).get("result");
+        assertEquals(true, noSuch.get("isError"));
+
         // Talkloop's Piper voice code can be loaded by the screen
         assertEquals("*", mvc.perform(get("/talkloop/piper.js").header("Origin", "null")).andReturn().getResponse().getHeader("Access-Control-Allow-Origin"));
 

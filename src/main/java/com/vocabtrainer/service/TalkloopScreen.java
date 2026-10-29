@@ -147,6 +147,11 @@ public final class TalkloopScreen {
         return modeKey.equals("interpret");
     }
 
+    /** Konnektoren: the learner joins two given sentences, so answer suggestions would give it away. */
+    boolean joiner() {
+        return modeKey.equals("connectors");
+    }
+
     synchronized String sayThis() {
         return sayThis;
     }

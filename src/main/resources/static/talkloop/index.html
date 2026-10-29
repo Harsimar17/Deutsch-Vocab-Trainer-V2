@@ -118,6 +118,7 @@
             <option value="sentences">Sentence drill — my learnt words</option>
             <option value="scene">Scene role-play</option>
             <option value="interpret">Dolmetscher — say it in German</option>
+            <option value="connectors">Konnektoren — join two sentences</option>
             <option value="rolecard">Rollenkarte — play a character</option>
           </select>
         </label>
@@ -150,6 +151,11 @@
               <option value="office">Town hall — register your address</option>
               <option value="job">Job interview</option>
             </optgroup>
+          </select>
+        </label>
+        <label>Connector
+          <select id="connector" disabled>
+            <option value="mix">Mix — all up to my level</option>
           </select>
         </label>
       </div>
@@ -283,7 +289,7 @@
         <ol class="muted">
           <li>In ChatGPT on a computer: Settings → <strong>Plugins</strong> (or Apps) → <strong>Add</strong> → <strong>Add custom MCP server</strong>. If you don't see Add, turn on <strong>Developer mode</strong> under Advanced settings first.</li>
           <li>Name it Talkloop, paste the address below, Authentication <strong>None</strong>, and save.</li>
-          <li>In a new chat, turn Talkloop on and write e.g. <em>Talkloop: interview me, A2</em>. Tap 🎙️ on the Talkloop screen and speak.</li>
+          <li>In a new chat, turn Talkloop on and write e.g. <em>Talkloop: interview me, A2</em> or <em>Talkloop: Konnektoren mit weil, A2</em>. Tap 🎙️ on the Talkloop screen and speak.</li>
         </ol>
         <div class="vocab-url-row">
           <input id="chatgpt-url" type="text" readonly />
@@ -307,6 +313,6 @@
       <ul id="bookmarks" class="bookmarks"></ul>
     </section>
 
-    <script src="app.js?v=63" type="module"></script> <!-- bump with app.js changes, like styles.css above -->
+    <script src="app.js?v=64" type="module"></script> <!-- bump with app.js changes, like styles.css above -->
   </body>
 </html>
