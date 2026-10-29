@@ -402,6 +402,16 @@ const MODES = {
     opener: "(Start the interpreter drill: say in one short sentence that you will give the learner everyday sentences to say, then put the first one in situation.)",
     extra: "This is an interpreter drill: each turn you give one everyday sentence for the learner to say, and check their version. Keep your own reply very short, so they do the talking. Never end: always set conversation_finished to false.",
   },
+  // The trainer's Connectors tab, spoken: two short sentences to join with a connector
+  // (static/data/connectors.json), the word order checked each time.
+  connectors: {
+    label: "Konnektoren — join two sentences",
+    usesScene: false,
+    endable: false,
+    joiner: true, // the two sentences to join come in turn.situation and show above the chips
+    opener: "(Start the connector drill: say in one short sentence that the learner will join two sentences with a connector, then put the first pair in situation.)",
+    extra: "This is a connector drill: each turn you give two short sentences for the learner to join into one with a given connector, and check their sentence, above all its word order. Keep your own reply very short, so they do the talking. Never end: always set conversation_finished to false.",
+  },
   rolecard: {
     label: "Rollenkarte — play a character",
     usesScene: false,
@@ -1106,6 +1116,47 @@ const LEVEL_GUIDE = {
   C1: "Speak as to a near-native speaker: natural, idiomatic language with nuanced words, complex sentences and all tenses and moods. Discuss abstract topics in depth and ask the learner to justify, nuance or take a stance. Besides real mistakes, also correct phrasing that is grammatical but unidiomatic.",
 };
 
+// ---------- connectors (the trainer's static/data/connectors.json) ----------
+// What each kind of connector does to the word order, as the trainer's Connectors tab says it.
+const CONNECTOR_TYPES = {
+  pos0: "position 0: both halves keep their normal order, verb second",
+  pos1: "an adverb in position 1: the verb comes right after it, then the subject",
+  end: "starts a side sentence: its conjugated verb goes to the end; if that part comes first, the main sentence starts with its verb",
+  zu: "zu + infinitive at the end, when both parts have the same subject: no subject and no conjugated verb in that part",
+  pair: "a two-part connector: check the word order in each half",
+};
+let connectorList = null; // loaded once (see loadConnectors)
+
+async function loadConnectors() {
+  if (connectorList) return connectorList;
+  const api = store.get("trainer_api", TRAINER_API).replace(/\/+$/, "");
+  const res = await fetch(`${api}/data/connectors.json`);
+  if (!res.ok) throw new Error(`Couldn't load the connectors (${res.status}).`);
+  connectorList = await res.json();
+  return connectorList;
+}
+
+// The connectors a call practises, kept with the call: one chosen with its rule, or for a
+// mix every one up to the level (names only: their rules are the kinds in CONNECTOR_TYPES).
+function connectorPool(list, key, level) {
+  const one = list.find((c) => c.key === key);
+  if (one) return [{ name: one.name, en: one.en, type: one.type, rule: one.rule, example: one.examples?.[0]?.de.replace(/[[\]]/g, "") ?? "" }];
+  const levels = ["A1", "A2", "B1"].slice(0, ["A1", "A2", "B1"].indexOf(level) + 1 || 3);
+  return list.filter((c) => levels.includes(c.level)).map((c) => ({ name: c.name, en: c.en, type: c.type }));
+}
+
+function connectorsLine(pool) {
+  if (pool.length === 1) {
+    const c = pool[0];
+    return `Connector to practise in every task: „${c.name}“ (${c.en}). Rule: ${c.rule}${c.example ? ` Example: ${c.example}` : ""}`;
+  }
+  const kinds = Object.entries(CONNECTOR_TYPES).map(([type, rule]) => {
+    const names = pool.filter((c) => c.type === type).map((c) => `„${c.name}“ (${c.en})`);
+    return names.length ? `${names.join(", ")}: ${rule}.` : "";
+  }).filter(Boolean);
+  return `Connectors to practise, a different one each task, going through all of them: ${kinds.join(" ")}`;
+}
+
 function turnSystemPrompt({ language, nativeLanguage, level, scenario, mode, tense }, targetWords = [], learnt = false, learnerMessage = "", weakSpots = [], today = null, hints = null) {
   const m = MODES[mode] ?? MODES.scene;
   const persona = personaFor({ scenario, mode });
@@ -1191,6 +1242,10 @@ function turnSystemPrompt({ language, nativeLanguage, level, scenario, mode, ten
     const given = hints?.given?.length ? ` Already given, never again: ${hints.given.map((g) => JSON.stringify(g)).join(" ")}.` : "";
     const judge = hints?.target ? ` They were asked to say: ${JSON.stringify(hints.target)}; coach judges whether their message says that correctly in ${language}, meaning included.` : "";
     lines.push(`situation: the next sentence for the learner to say in ${language}, written in ${nativeLanguage}: short and everyday, at their level, a new situation or pattern each time (shopping, work, friends, travel, home, plans, problems). Always a new one, also after a wrong try: the app brings that sentence back itself later.${given}${judge} reply: one short ${language} reaction to their try; never say the ${language} version of the new sentence.`);
+  }
+  if (m.joiner) {
+    const judge = hints?.target ? ` Their task was: ${JSON.stringify(hints.target)}; coach judges whether their message joins those two sentences into one correct sentence with that connector: the connector used, the verb in the right place in each half, nothing changed in meaning. Either order of the halves is right where the connector allows it. A wrong or missing connector or word order gets a coach.correction with the right joined sentence (verb position goes in mistakes as verb_position).` : "";
+    lines.push(`${connectorsLine(hints?.pool ?? [])} situation: the next task, written exactly as: Verbinde mit „<connector>“: <sentence one> + <sentence two>. Two short everyday ${language} sentences at their level that make sense joined with it, a new situation each time (work, home, friends, travel, shopping, plans, health); also after a wrong try give a new one.${judge} reply: one short ${language} reaction to their try (praise, or the rule in a few words); never write the joined sentence of the new task.`);
   }
   if (m.subjects && hints) {
     const quote = (list) => list.map((s) => JSON.stringify(s)).join(", ");
@@ -1504,6 +1559,7 @@ async function chatTurn(settings, history, message) {
     : mode.subjects ? subjectHints(settings.subjects ?? [], mode.themes ? chatThemes(settings) : [])
     : mode.roleCard ? { card: settings.roleCard ?? "" }
     : mode.interpreter ? { target: settings.sayThis ?? "", given: sentencesGiven(settings) }
+    : mode.joiner ? { target: settings.joinThis ?? "", pool: settings.connectors ?? [] }
     : null;
   const systemInstruction = turnSystemPrompt(settings.request, targetWords, learnt, message.trim(), recurringMistakes(settings.request.language), today, hints);
   // A drill is short, plain and only needs the last few turns: less to read and write, so
@@ -1553,8 +1609,8 @@ async function chatTurn(settings, history, message) {
     debugLog(`answer after ${((performance.now() - startedAt) / 1000).toFixed(1)}s`);
   }
   turn.focusWords = targetWords;
-  // Suggested answers would give the drill's word, or the interpreter's sentence, away.
-  if (mode.drill || mode.interpreter) turn.suggestions = [];
+  // Suggested answers would give the drill's word, the interpreter's sentence or the joined one away.
+  if (mode.drill || mode.interpreter || mode.joiner) turn.suggestions = [];
   // In open modes the conversation never ends on its own.
   if (!mode.endable) turn.conversation_finished = false;
   return { turn, userText };
@@ -2875,8 +2931,11 @@ function enterCall() {
   // A role card is shown the same way, in full from the start (the learner needs all of it).
   const topic = state.settings.topic ?? "";
   const card = state.settings.roleCard ?? "";
-  $("call-topic").textContent = topic ? `Topic: ${topic}` : card ? `You are: ${card}` : "";
-  $("call-topic").hidden = !topic && !card;
+  // A connector drill on one connector shows it with its rule (one line on a phone; a tap shows all).
+  const one = mode.joiner && state.settings.connectors?.length === 1 ? state.settings.connectors[0] : null;
+  const connector = one ? `„${one.name}“ (${one.en}) — ${one.rule}` : "";
+  $("call-topic").textContent = topic ? `Topic: ${topic}` : card ? `You are: ${card}` : connector;
+  $("call-topic").hidden = !topic && !card && !connector;
   $("call-topic").classList.toggle("expanded", Boolean(card)); // on a phone it is one line; a tap shows all of it
   renderSayThis();
   lastVoiceNote = "";
@@ -2984,6 +3043,8 @@ async function sendTurn(message) {
       if (message && state.settings.sayThis) recordSentence(state.settings, message, turn.coach);
       nextSentence(state.settings, turn.situation);
     }
+    // The connector drill's next pair to join, kept with the call like the interpreter's sentence.
+    if (MODES[state.settings.request.mode]?.joiner && turn.situation.trim()) state.settings.joinThis = turn.situation.trim();
 
     state.rapport = Math.max(0, state.rapport + Math.max(-2, Math.min(2, turn.rapport_delta)));
     renderStats();
@@ -3025,13 +3086,15 @@ async function sendTurn(message) {
   }
 }
 
-// The interpreter drill's sentence to say, above the suggestions (hidden in other modes).
+// The interpreter drill's sentence to say, or the connector drill's pair to join, above the
+// suggestions (hidden in other modes).
 function renderSayThis() {
-  const text = MODES[state.settings?.request.mode]?.interpreter ? state.settings.sayThis ?? "" : "";
+  const mode = MODES[state.settings?.request.mode];
+  const text = mode?.interpreter ? state.settings.sayThis ?? "" : mode?.joiner ? state.settings.joinThis ?? "" : "";
   const label = document.createElement("span");
   label.className = "muted";
   const kind = { review: "Review · ", again: "Once more · " }[state.settings?.sayKind] ?? "";
-  label.textContent = `${kind}Say it in ${state.settings?.request.language ?? "German"}: `;
+  label.textContent = mode?.joiner ? "Say it as one sentence · " : `${kind}Say it in ${state.settings?.request.language ?? "German"}: `;
   const sentence = document.createElement("strong");
   sentence.textContent = text;
   $("say-this").replaceChildren(label, sentence);
@@ -3386,7 +3449,8 @@ $("start").addEventListener("click", async () => {
   const scenario = $("scenario").value;
   const mode = $("mode").value;
   const usesScene = (MODES[mode] ?? MODES.scene).usesScene;
-  const useVocab = $("use-vocab").checked && !$("use-vocab").disabled;
+  // The connector drill is about word order only: no words of the learner's to bring in.
+  const useVocab = $("use-vocab").checked && !$("use-vocab").disabled && !MODES[mode]?.joiner;
   // Vocab of the chosen level and the ones below it (the list only goes up to B1).
   const VOCAB_LEVELS = ["A1", "A2", "B1"];
   const upTo = VOCAB_LEVELS.indexOf($("level").value);
@@ -3406,6 +3470,17 @@ $("start").addEventListener("click", async () => {
     else if (drill) pickTodayWords(shuffled(((await idbGet("vocab_words").catch(() => null)) ?? []).filter((w) => levels.includes(w.level))), { evenIfNotDue: true });
   } else {
     todayWords = null;
+  }
+  // The connector drill needs the trainer's connectors (loaded with the page, so normally no wait).
+  let connectors = null;
+  if (MODES[mode]?.joiner) {
+    try {
+      connectors = connectorPool(await loadConnectors(), $("connector").value, $("level").value);
+    } catch (error) {
+      $("vocab-status").textContent = error.message;
+      $("vocab-status").scrollIntoView({ block: "center", behavior: "smooth" });
+      return;
+    }
   }
   if (MODES[mode]?.drill && !todayWords?.active.length) {
     $("vocab-status").textContent = useVocab
@@ -3439,6 +3514,7 @@ $("start").addEventListener("click", async () => {
     rememberTopic(state.settings.topic);
   }
   if (MODES[mode]?.roleCard) state.settings.roleCard = makeRoleCard();
+  if (connectors) state.settings.connectors = connectors;
   // Free chats and interviews are kept too, with the subjects they cover.
   if (MODES[mode]?.subjects) state.settings.subjects = [];
   // The chat opens on its first theme, which counts as its first subject.
@@ -3550,12 +3626,29 @@ function refreshVocabUI(count) {
   }
 }
 
-// The scene only matters in scene role-play; grey it out otherwise.
-$("mode").addEventListener("change", () => {
-  const usesScene = (MODES[$("mode").value] ?? MODES.scene).usesScene;
-  $("scenario").disabled = !usesScene;
-  $("scenario").closest("label").style.opacity = usesScene ? "1" : "0.5";
-});
+// The scene only matters in scene role-play, the connector in the connector drill; grey them out otherwise.
+function showModeChoices() {
+  const m = MODES[$("mode").value] ?? MODES.scene;
+  for (const [id, on] of [["scenario", m.usesScene], ["connector", Boolean(m.joiner)]]) {
+    $(id).disabled = !on;
+    $(id).closest("label").style.opacity = on ? "1" : "0.5";
+  }
+}
+$("mode").addEventListener("change", showModeChoices);
+showModeChoices();
+
+// The connector list, by level, as in the trainer's Connectors tab; the choice is remembered.
+loadConnectors().then((list) => {
+  for (const level of ["A1", "A2", "B1"]) {
+    const group = document.createElement("optgroup");
+    group.label = level;
+    for (const c of list.filter((x) => x.level === level)) group.append(new Option(`${c.name} — ${c.en}`, c.key));
+    $("connector").append(group);
+  }
+  $("connector").value = store.get("connector", "mix");
+  if (!$("connector").value) $("connector").value = "mix";
+}).catch(() => { /* tried again at Start, which says what went wrong */ });
+$("connector").addEventListener("change", () => store.set("connector", $("connector").value));
 
 $("language").addEventListener("change", preloadSelectedVoice);
 $("language").addEventListener("change", renderMistakes);

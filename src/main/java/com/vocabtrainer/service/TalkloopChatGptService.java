@@ -1,5 +1,7 @@
 package com.vocabtrainer.service;
 
+import java.io.IOException;
+import java.io.InputStream;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Comparator;
@@ -14,9 +16,11 @@ import com.vocabtrainer.model.Ctx;
 import com.vocabtrainer.model.Gloss;
 import com.vocabtrainer.repository.TalkloopScreenRepository;
 import com.vocabtrainer.util.Rand;
+import org.springframework.core.io.ClassPathResource;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
+import tools.jackson.databind.json.JsonMapper;
 
 /**
  * Talkloop inside ChatGPT (see {@link McpService}): ChatGPT itself is the conversation
@@ -145,6 +149,11 @@ public class TalkloopChatGptService {
                 "This is an interpreter drill. Each turn, put one short everyday sentence for the learner to say in German into task, written in their native language: at their level, a new situation or pattern each time (shopping, work, friends, travel, home, plans, problems), never one already given, also after a wrong try (the screen brings that one back itself later). "
                         + "The screen sometimes shows a sentence from the learner's deck instead of yours: each tool result names the sentence the learner now has to say. Never say the German version of it. When they answer, judge whether their German says that sentence correctly, meaning included (a wrong or missing part gets a correction with the right German sentence), and react in one very short German line. Keep your own replies very short, so they do the talking.\n"
                         + "Start with one short line saying you will give everyday sentences to say, and the first sentence in task."));
+        MODES.put("connectors", new Mode("Konnektoren — join two sentences",
+                "This is a connector drill. Each turn, put one task into task, written exactly as: Verbinde mit „<connector>“: <sentence one> + <sentence two>. Two short everyday German sentences at the learner's level that make sense joined with that connector, a new situation each time (work, home, friends, travel, shopping, plans, health), also after a wrong try. "
+                        + "When they answer, judge whether they joined the two sentences into one correct sentence with that connector: the connector used, the verb in the right place in each half, nothing changed in meaning; either order of the halves is right where the connector allows it. "
+                        + "A wrong or missing connector or word order gets a correction with the right joined sentence (verb position goes in mistakes as verb_position). React in one very short German line (praise, or the rule in a few words), never write the joined sentence of the new task, and leave out the answer suggestions.\n"
+                        + "Start with one short line saying the learner will join two sentences with a connector, and the first task in task."));
         MODES.put("rolecard", new Mode("Rollenkarte — play a character",
                 "The learner plays the character on their role card (below). Greet them warmly and ask their name, then interview them about the card: one question at a time about one detail, in a natural order, react briefly, and ask small follow-ups; they may invent extra details that fit the card. If an answer contradicts the card, point it out kindly."));
         MODES.put("sentences", new Mode("Sentence drill — my learnt words",
@@ -195,14 +204,30 @@ public class TalkloopChatGptService {
 
     static final String SCREEN_URI = "ui://talkloop/screen.html";
 
+    // What each kind of connector does to the word order, as connectorsLine in static/talkloop/app.js says it.
+    static final Map<String, String> CONNECTOR_TYPES = new LinkedHashMap<>();
+
+    static {
+        CONNECTOR_TYPES.put("pos0", "position 0: both halves keep their normal order, verb second");
+        CONNECTOR_TYPES.put("pos1", "an adverb in position 1: the verb comes right after it, then the subject");
+        CONNECTOR_TYPES.put("end", "starts a side sentence: its conjugated verb goes to the end; if that part comes first, the main sentence starts with its verb");
+        CONNECTOR_TYPES.put("zu", "zu + infinitive at the end, when both parts have the same subject: no subject and no conjugated verb in that part");
+        CONNECTOR_TYPES.put("pair", "a two-part connector: check the word order in each half");
+    }
+
     private final TalkloopService talkloop;
     private final TalkloopScreenRepository screens;
     private final StoryService stories;
+    private final List<Map<String, Object>> connectors; // the trainer's Connectors tab (static/data/connectors.json)
 
-    public TalkloopChatGptService(TalkloopService talkloop, TalkloopScreenRepository screens, StoryService stories) {
+    @SuppressWarnings("unchecked")
+    public TalkloopChatGptService(TalkloopService talkloop, TalkloopScreenRepository screens, StoryService stories, JsonMapper json) throws IOException {
         this.talkloop = talkloop;
         this.screens = screens;
         this.stories = stories;
+        try (InputStream in = new ClassPathResource("static/data/connectors.json").getInputStream()) {
+            this.connectors = List.copyOf(json.readValue(in, List.class));
+        }
     }
 
     /** The tools ChatGPT is offered, in MCP's tools/list shape. */
@@ -217,17 +242,19 @@ public class TalkloopChatGptService {
         start.put("name", "start_talkloop");
         start.put("title", "Start a Talkloop practice");
         start.put("description", "Use this when the user wants to practise speaking German with Talkloop (their German speaking partner), "
-                + "or asks for an interview, free chat, topic discussion, Dolmetscher, Rollenkarte, sentence drill or scene role-play in German. "
+                + "or asks for an interview, free chat, topic discussion, Dolmetscher, Rollenkarte, sentence drill, connector practice (Konnektoren) or scene role-play in German. "
                 + "Opens the Talkloop screen, where the learner speaks, and returns how to act as their partner for the whole conversation, "
                 + "the learner's words to practise today and their recurring mistakes. Call it once at the start of a practice, then follow what it returns.");
         start.put("inputSchema", schema(Map.of(
                 "mode", Map.of("type", "string", "enum", List.copyOf(MODES.keySet()),
                         "description", "interview = Interview me (easiest start); lead = free chat; topic = discuss a topic with opinions; "
-                                + "interpret = Dolmetscher, say given sentences in German; rolecard = play a character; "
+                                + "interpret = Dolmetscher, say given sentences in German; connectors = Konnektoren, join two sentences with a connector (weil, obwohl, deshalb …); rolecard = play a character; "
                                 + "sentences = sentence drill with the learnt words; scene = role-play in a real situation. Default interview."),
                 "level", Map.of("type", "string", "enum", LEVELS, "description", "The learner's CEFR level. Ask if unknown."),
                 "native_language", Map.of("type", "string", "description", "The language the learner speaks, for translations and tips. Default English."),
                 "scenario", Map.of("type", "string", "enum", List.copyOf(SCENES.keySet()), "description", "Only for mode scene; a random one if left out."),
+                "connector", Map.of("type", "string", "description", "Only for mode connectors: the one connector to practise, e.g. weil, obwohl, deshalb, um … zu; "
+                        + "leave out for a mix of all connectors up to the level."),
                 "tense", Map.of("type", "string", "enum", Stream.concat(Stream.of("any"), TENSES.keySet().stream()).toList(),
                         "description", "A tense to practise, or any (the default)."),
                 "use_vocab", Map.of("type", "boolean",
@@ -258,7 +285,8 @@ public class TalkloopChatGptService {
         turnProps.put("reply_translation", Map.of("type", "string", "description", "The reply in the learner's language."));
         turnProps.put("suggestions", Map.of("type", "array", "items", Map.of("type", "string"), "description", "2–3 short German answers the learner could give."));
         turnProps.put("next_word", Map.of("type", "string", "description", "The one of today's words your reply asks for, as written in the list, else empty."));
-        turnProps.put("task", Map.of("type", "string", "description", "Dolmetscher: the next sentence to say, in the learner's language. Sentence drill: the current situation's title. Else empty."));
+        turnProps.put("task", Map.of("type", "string", "description", "Dolmetscher: the next sentence to say, in the learner's language. Konnektoren: the next two sentences to join, as Verbinde mit „…“: … + …. "
+                + "Sentence drill: the current situation's title. Else empty."));
         turnProps.put("subject", Map.of("type", "string", "description", "Free chat, interview, Mein Leben, Erzähl mal: what your reply's question is about, in two to four English words. Else empty."));
         turn.put("inputSchema", schema(turnProps, List.of("screen_id", "said", "reply")));
         turn.put("annotations", annotations);
@@ -363,6 +391,15 @@ public class TalkloopChatGptService {
             subtitle = topic;
             talkloop.noteTopics(ctx, topic, List.of()); // a later chat, here or on Talkloop's page, picks another
         }
+        if (mode.equals("connectors")) {
+            String asked = text(args, "connector", "");
+            Map<String, Object> one = connector(asked);
+            if (one == null && !asked.isBlank()) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "connector: one of " + connectors.stream().map(c -> String.valueOf(c.get("name"))).toList() + ", or leave it out for a mix");
+            }
+            lines.add(connectorsLine(one, level));
+            subtitle = one == null ? "Mix of the connectors up to " + level : "„" + one.get("name") + "“ (" + one.get("en") + ") — " + one.get("rule");
+        }
         if (mode.equals("rolecard")) {
             String card = roleCard();
             lines.add("The learner's role card (they play this person; the screen shows it to them): " + card + ".");
@@ -387,7 +424,8 @@ public class TalkloopChatGptService {
         }
 
         // Like unticking "Weave my vocab into the conversation" on Talkloop's page.
-        boolean useVocab = !Boolean.FALSE.equals(args.get("use_vocab"));
+        // The connector drill is about word order only: no words of the learner's to bring in.
+        boolean useVocab = !Boolean.FALSE.equals(args.get("use_vocab")) && !mode.equals("connectors");
         List<Map<String, Object>> words = useVocab ? todayWords(ctx, level, mode.equals("sentences")) : List.of();
         List<Map<String, Object>> active = words.subList(0, Math.min(TODAY_WORDS, words.size()));
         List<Map<String, Object>> waiting = words.subList(active.size(), Math.min(active.size() + WAITING_WORDS, words.size()));
@@ -473,7 +511,7 @@ public class TalkloopChatGptService {
         partner.put("who", "partner");
         partner.put("text", reply);
         partner.put("translation", clip(text(args, "reply_translation", "")));
-        partner.put("suggestions", strings(args.get("suggestions")).stream().limit(3).map(TalkloopChatGptService::clip).toList());
+        partner.put("suggestions", screen.joiner() ? List.of() : strings(args.get("suggestions")).stream().limit(3).map(TalkloopChatGptService::clip).toList());
         String task = clip(text(args, "task", ""));
         String sayNext = screen.interpreter() ? nextSentence(ctx, screen, task) : null;
         partner.put("task", sayNext != null ? sayNext : task);
@@ -511,6 +549,35 @@ public class TalkloopChatGptService {
             data.putAll(g.view());
         }
         return new ToolResult(g == null ? "not found" : g.head() + ": " + g.en(), null, data);
+    }
+
+    /** The connector the learner asked for, by key or name ("um zu", "um … zu", "umzu"), or null for a mix. */
+    Map<String, Object> connector(String asked) {
+        String want = asked.toLowerCase(Locale.ROOT).replaceAll("[^a-zäöüß]", "");
+        if (want.isEmpty()) {
+            return null;
+        }
+        return connectors.stream().filter(c -> want.equals(c.get("key"))
+                || want.equals(String.valueOf(c.get("name")).toLowerCase(Locale.ROOT).replaceAll("[^a-zäöüß]", ""))).findFirst().orElse(null);
+    }
+
+    /** As connectorsLine in static/talkloop/app.js: one connector with its rule, or every one up to the level, by kind. */
+    String connectorsLine(Map<String, Object> one, String level) {
+        if (one != null) {
+            String example = one.get("examples") instanceof List<?> l && !l.isEmpty() && l.get(0) instanceof Map<?, ?> e
+                    ? " Example: " + String.valueOf(e.get("de")).replaceAll("[\\[\\]]", "") : "";
+            return "Connector to practise in every task: „" + one.get("name") + "“ (" + one.get("en") + "). Rule: " + one.get("rule") + example;
+        }
+        List<String> levels = LEVELS.subList(0, LEVELS.indexOf(level) + 1);
+        List<String> kinds = new ArrayList<>();
+        CONNECTOR_TYPES.forEach((type, rule) -> {
+            List<String> names = connectors.stream().filter(c -> type.equals(c.get("type")) && levels.contains(c.get("level")))
+                    .map(c -> "„" + c.get("name") + "“ (" + c.get("en") + ")").toList();
+            if (!names.isEmpty()) {
+                kinds.add(String.join(", ", names) + ": " + rule + ".");
+            }
+        });
+        return "Connectors to practise, a different one each task, going through all of them: " + String.join(" ", kinds);
     }
 
     private void saveMistakes(Ctx ctx, String said, String correction, List<String> types, long now) {
