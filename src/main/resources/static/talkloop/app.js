@@ -16,6 +16,9 @@ const state = {
   drill: null, // { target, said, turn } while the learner says a correction again before the reply
 };
 
+let live = null; // the running live call (see startLive): { ws, stream, tap, ready, muted, heard, reply, sources, … }
+let liveWorkletCtx = null; // the audio context the live call's mic worklet was added to
+
 const SILENCE_MS = 1500; // how long a pause ends your turn in hands-free mode
 
 // ---------- persistence (per-browser conveniences only) ----------
@@ -2559,7 +2562,9 @@ async function restoreCall() {
   const nav = performance.getEntriesByType?.("navigation")[0]?.type ?? "?";
   debugLog(`restoring the call (page ${nav}${document.wasDiscarded ? ", discarded" : ""})`);
   store.set("last_restore", { at: Date.now(), nav, discarded: Boolean(document.wasDiscarded) });
-  await resumeCall(snap, { note: "Your conversation is back after the page reloaded. Tap the mic or type to go on." });
+  await resumeCall(snap, { note: snap.settings.live
+    ? "Your live call is back after the page reloaded. Tap 🎤 to reconnect."
+    : "Your conversation is back after the page reloaded. Tap the mic or type to go on." });
 }
 
 async function openChat(id) {
@@ -2638,7 +2643,8 @@ function addCharacterMessage(turn, { silent = false } = {}) {
   onTap(translate, () => {
     translation.hidden = !translation.hidden;
   });
-  tools.append(replay, translate);
+  tools.append(replay);
+  if (turn.reply_translation) tools.append(translate);
 
   li.append(who, line, translation, tools);
   $("transcript").append(li);
@@ -2868,6 +2874,10 @@ function updateCallState() {
   let text = state.handsFree ? "Your turn — just talk" : "Your turn";
   if (state.finished) { key = "ended"; text = "Scene complete"; }
   else if (state.paused) { key = "paused"; text = wakeRecognizer ? "Paused — say “zurück”" : "Paused"; }
+  else if (live) {
+    key = !live.ready ? "thinking" : live.speaking ? "speaking" : live.muted ? "idle" : "listening";
+    text = !live.ready ? "Connecting…" : live.speaking ? "Speaking…" : live.muted ? "Muted" : "Live — just talk";
+  }
   else if (state.busy) { key = "thinking"; text = "Thinking…"; }
   else if (state.speaking) { key = "speaking"; text = "Speaking…"; }
   else if (recognizer) { key = "listening"; text = "Listening…"; }
@@ -2913,6 +2923,12 @@ let resumeHandsFree = false;
 let pausedByVoice = false;
 function setPaused(paused, { byVoice = false } = {}) {
   if (paused === state.paused) return;
+  // A live call stays connected while paused: the mic sends nothing and the voice stops.
+  if (live) {
+    live.muted = paused;
+    if (paused) liveStopVoice();
+    byVoice = false;
+  }
   if (paused) {
     resumeHandsFree = state.handsFree;
     pausedByVoice = byVoice && Boolean(Recognition);
@@ -2999,6 +3015,352 @@ if (window.visualViewport) {
   vv.addEventListener("resize", fit);
   vv.addEventListener("scroll", fit);
   fit();
+}
+
+// ---------- live voice (Gemini Live) ----------
+// With "Live voice" ticked, the call is a real one: Gemini hears the learner's voice and
+// answers in its own, over one WebSocket (the Live API), so a reply starts in about a second
+// and the learner can interrupt it. Nothing waits for a JSON turn: the coach checks each
+// sentence on the side (liveCoach, with the conversation AI and LanguageTool) and its
+// correction shows up under the call. It needs the Gemini key; Google's free tier covers it.
+const LIVE_URL = "wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent";
+const LIVE_MODEL_KEY = "live_model"; // { name, at }: the model found for this key, for a day
+const LIVE_IN_RATE = 16000; // what the Live API wants from the mic: 16-bit PCM, mono
+const LIVE_CHUNK = 1600; // 100 ms of mic audio per message
+const LIVE_RECAP = 12; // lines of the call sent again when it reconnects
+// Hands the mic's samples from the audio thread to the page.
+const LIVE_WORKLET = `class LiveTap extends AudioWorkletProcessor {
+  process(inputs) { const ch = inputs[0] && inputs[0][0]; if (ch) this.port.postMessage(ch.slice(0)); return true; }
+}
+registerProcessor("live-tap", LiveTap);`;
+
+const liveVoiceOn = () => store.get("live_voice", false);
+
+// The Live model this key can use: the newest one that takes a live (bidi) session. Model
+// names change often, so they are looked up rather than written here.
+async function liveModel(key) {
+  const saved = store.get(LIVE_MODEL_KEY, null);
+  if (saved?.name && Date.now() - saved.at < 86_400_000) return saved.name;
+  const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?pageSize=1000&key=${encodeURIComponent(key)}`);
+  if (!res.ok) throw new Error(`Gemini didn't list its models (${res.status}): check the Gemini key.`);
+  const models = ((await res.json()).models ?? []).filter((m) => m.supportedGenerationMethods?.includes("bidiGenerateContent"));
+  const version = (name) => Number(name.match(/gemini-(\d+(?:\.\d+)?)/)?.[1] ?? 0);
+  const rank = (name) => version(name) * 10 + (/native-audio|live/.test(name) ? 1 : 0);
+  const best = models.map((m) => m.name).sort((a, b) => rank(b) - rank(a))[0];
+  if (!best) throw new Error("This Gemini key has no live voice model.");
+  store.set(LIVE_MODEL_KEY, { name: best, at: Date.now() });
+  return best;
+}
+
+// The partner's instructions for a spoken call: as turnSystemPrompt, without its JSON fields.
+const LIVE_DRILLS = {
+  interpret: ({ language, nativeLanguage }) => ({
+    extra: `This is an interpreter drill. Each turn, say one short everyday sentence in ${nativeLanguage} for the learner to say in ${language}, a new situation each time. Check their version: if it is wrong, say the correct ${language} sentence once, then give the next one. Keep your own words very short, so they do the talking. Never stop giving sentences.`,
+    opener: "(Start the interpreter drill: say in one short sentence what you will do, then give the first sentence.)",
+  }),
+  connectors: ({ language }, settings) => ({
+    extra: `This is a connector drill. ${connectorsLine(settings.connectors ?? [])} Each turn, say the task aloud: "Verbinde mit" and the connector, then two short everyday ${language} sentences that make sense joined with it, something new each time. The learner says them as one sentence. Check the connector and the word order: if it is wrong, say the correct sentence and the rule in a few words; if it is right, praise it in two or three words. Then give the next task at once. Never stop giving tasks and never ask whether they want to go on.`,
+    opener: "(Start the connector drill: say in one short sentence what you will do, then give the first task.)",
+  }),
+};
+
+function liveSystemPrompt(settings, recap = []) {
+  const { language, nativeLanguage, level, scenario, mode, tense } = settings.request;
+  const m = MODES[mode] ?? MODES.scene;
+  const persona = personaFor({ scenario, mode });
+  const drill = LIVE_DRILLS[mode]?.(settings.request, settings);
+  const extra = drill?.extra ?? m.extra
+    .replace(/Never end: always set conversation_finished to false\./g, "Never end the conversation yourself.")
+    .replace(/Set conversation_finished to true only once/g, "Close the scene only once");
+  const lines = [
+    `You are ${persona.character}, ${persona.setting}. This is a live voice call: speak only ${language}, like a real person on the phone, in short natural sentences with small reactions (Mhm, Ach so!, Echt?), and let the learner do most of the talking.`,
+    `Learner: ${language} at CEFR ${level}, native ${nativeLanguage}. Speak at their level.${LEVEL_GUIDE[level] ? ` At ${level}: ${LEVEL_GUIDE[level]}` : ""}`,
+    extra,
+    ...(m.usesScene && persona.goal ? [`Scene goal: ${persona.goal}`] : []),
+    ...(settings.topic ? [`Today's topic: "${settings.topic}". Stay on it.`] : []),
+    ...(m.themes && settings.subjects?.length ? [`Start with ${themeByName(settings.subjects[0])?.ask ?? settings.subjects[0]}.`] : []),
+    ...(settings.roleCard ? [`The learner's role card (they play this person): ${settings.roleCard}.`] : []),
+    "The learner may pause to think: wait for them.",
+    // A drill says its corrections out loud; a conversation only recasts, like a native speaker would.
+    ...(drill ? [] : ["If they make a mistake, repeat the right form naturally in your answer, like a friendly native speaker would, without a grammar lesson: the app shows written corrections itself."]),
+  ];
+  const t = TENSES[tense];
+  if (t) lines.push(`Tense practice: ${t.form}. Use it yourself and ask things whose natural answer needs it (about ${t.ask}).`);
+  const weak = recurringMistakes(language);
+  if (weak.length) lines.push(`The learner's recurring mistakes: ${weak.map((w) => MISTAKE_TYPES[w.type]).join("; ")}. Now and then ask something whose natural answer needs one of these; never say you're testing.`);
+  if (recap.length) lines.push(`The call was cut off and has just reconnected. The end of it so far:\n${recap.join("\n")}\nCarry on from there in one short line, without greeting again.`);
+  return lines.join("\n");
+}
+
+function liveOpener(settings) {
+  const m = MODES[settings.request.mode] ?? MODES.scene;
+  const drill = LIVE_DRILLS[settings.request.mode]?.(settings.request, settings);
+  if (drill) return drill.opener;
+  if (m.topics) return m.opener(settings.topic ?? "");
+  if (m.themes) return m.opener(themeByName(chatThemes(settings)[0]));
+  return typeof m.opener === "string" ? m.opener : "(Greet the learner and start.)";
+}
+
+function liveSend(message) {
+  if (live?.ws?.readyState === WebSocket.OPEN) live.ws.send(JSON.stringify(message));
+}
+
+function bytesToBase64(bytes) {
+  let s = "";
+  for (let i = 0; i < bytes.length; i += 0x8000) s += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  return btoa(s);
+}
+
+// The mic's samples, at the audio context's rate, down to 16 kHz 16-bit PCM in 100 ms messages.
+function liveMicSamples(samples, rate) {
+  if (!live || live.muted || !live.ready) return;
+  const step = rate / LIVE_IN_RATE;
+  let pos = live.micPos;
+  for (; pos < samples.length; pos += step) {
+    const v = Math.max(-1, Math.min(1, samples[Math.floor(pos)]));
+    live.micBuf[live.micLen++] = v < 0 ? v * 0x8000 : v * 0x7fff;
+    if (live.micLen === LIVE_CHUNK) {
+      liveSend({ realtimeInput: { audio: { data: bytesToBase64(new Uint8Array(live.micBuf.buffer)), mimeType: `audio/pcm;rate=${LIVE_IN_RATE}` } } });
+      live.micLen = 0;
+    }
+  }
+  live.micPos = pos - samples.length; // where the next block's first sample falls
+}
+
+// Gemini's voice, played gap-free as its chunks arrive.
+function livePlay(b64, mimeType) {
+  const ctx = getAudioCtx();
+  const rate = Number(mimeType?.match(/rate=(\d+)/)?.[1] ?? 24000);
+  const pcm = new Int16Array(base64ToBytes(b64).buffer);
+  const buffer = ctx.createBuffer(1, pcm.length, rate);
+  const data = buffer.getChannelData(0);
+  for (let i = 0; i < pcm.length; i++) data[i] = pcm[i] / 0x8000;
+  const src = ctx.createBufferSource();
+  src.buffer = buffer;
+  src.connect(ctx.destination);
+  const at = Math.max(ctx.currentTime + 0.04, live.playHead);
+  src.start(at);
+  live.playHead = at + buffer.duration;
+  live.sources.add(src);
+  live.speaking = true;
+  updateCallState();
+  src.onended = () => {
+    live?.sources.delete(src);
+    if (live && !live.sources.size) { live.speaking = false; updateCallState(); }
+  };
+}
+
+function liveStopVoice() {
+  if (!live) return;
+  for (const src of live.sources) { try { src.stop(); } catch { /* already ended */ } }
+  live.sources.clear();
+  live.playHead = 0;
+  live.speaking = false;
+  updateCallState();
+}
+
+// What the learner said, as Gemini heard it: shown, saved and checked once their turn is over.
+function liveFlushLearner() {
+  const said = live?.heard.trim();
+  if (!said) return;
+  live.heard = "";
+  setStatus("");
+  addLearnerMessage(said);
+  state.history.push({ role: "user", content: said });
+  liveCoach(said, live.lastReply ?? "");
+}
+
+// The partner's words so far, in a bubble that grows while it speaks; saved once its turn is done.
+function liveShowReply() {
+  if (!live.replyLi) {
+    live.replyLi = document.createElement("li");
+    live.replyLi.className = "msg character";
+    const who = document.createElement("span");
+    who.className = "who";
+    who.textContent = state.settings.characterName;
+    live.replyLi.append(who, document.createElement("div"));
+    $("transcript").append(live.replyLi);
+  }
+  live.replyLi.lastChild.textContent = live.reply;
+  scrollCallToBottom();
+}
+
+function liveFlushReply() {
+  const reply = live?.reply.trim();
+  live?.replyLi?.remove();
+  if (!live) return;
+  live.replyLi = null;
+  live.reply = "";
+  if (!reply) return;
+  live.lastReply = reply;
+  addCharacterMessage({ reply, reply_translation: "", mood: "neutral" }, { silent: true });
+  state.history.push({ role: "assistant", content: reply });
+}
+
+function liveMessage(msg) {
+  if (msg.setupComplete) {
+    live.ready = true;
+    setStatus("");
+    updateCallState();
+    // The partner speaks first, as in every call.
+    const start = live.recap.length ? "(The call reconnected: carry on.)" : liveOpener(state.settings);
+    liveSend({ clientContent: { turns: [{ role: "user", parts: [{ text: start }] }], turnComplete: true } });
+    return;
+  }
+  if (msg.goAway) debugLog(`live call ends in ${msg.goAway.timeLeft ?? "?"}`);
+  const c = msg.serverContent;
+  if (!c) return;
+  if (c.inputTranscription?.text) {
+    live.heard += c.inputTranscription.text;
+    setStatus(`🎤 ${live.heard.trim()}`);
+  }
+  const parts = c.modelTurn?.parts ?? [];
+  if (c.outputTranscription?.text || parts.length) liveFlushLearner(); // the learner's turn is over
+  for (const p of parts) if (p.inlineData?.data) livePlay(p.inlineData.data, p.inlineData.mimeType);
+  if (c.outputTranscription?.text) {
+    live.reply += c.outputTranscription.text;
+    liveShowReply();
+  }
+  if (c.interrupted) liveStopVoice(); // the learner talked over it
+  if (c.turnComplete) {
+    liveFlushLearner();
+    liveFlushReply();
+  }
+}
+
+// The coach for a live call: the learner's sentence checked on the side, never holding up the call.
+const LIVE_COACH_SCHEMA = {
+  type: "OBJECT",
+  properties: {
+    correction: { type: "STRING" },
+    mistakes: { type: "ARRAY", items: { type: "STRING", enum: Object.keys(MISTAKE_TYPES) } },
+    tip: { type: "STRING" },
+  },
+  required: ["correction", "mistakes", "tip"],
+  propertyOrdering: ["correction", "mistakes", "tip"],
+};
+
+async function liveCoach(said, partner) {
+  const { language, nativeLanguage, level, tense, mode } = state.settings.request;
+  const t = TENSES[tense];
+  const task = MODES[mode]?.joiner ? " The learner was asked to join two sentences with a connector: a wrong connector or word order is a mistake (verb_position)." : "";
+  const check = grammarCheckOn() ? languageToolCheck(said, state.settings.locale) : null;
+  try {
+    const raw = await aiJson({
+      systemInstruction: `You check one spoken sentence of a ${language} learner (CEFR ${level}, native ${nativeLanguage}) from a phone call. It comes from speech recognition: ignore punctuation, capital letters and obvious transcription slips.${task} correction: only if it has a real grammar or word-choice mistake${t ? ` or isn't in ${t.short} where that was asked for` : ""}, the sentence rewritten correctly, keeping its meaning; else empty. mistakes: each kind it fixes (${PROMPT_MISTAKES}). tip: one short sentence in ${nativeLanguage} explaining the main fix, or praising something literally in the sentence, or empty.`,
+      schema: LIVE_COACH_SCHEMA,
+      contents: [{ role: "user", parts: [{ text: `The partner said: ${JSON.stringify(partner)}\nThe learner said: ${JSON.stringify(said)}` }] }],
+      temperature: 0.2,
+    });
+    const turn = { coach: { understood: true, correction: typeof raw?.correction === "string" ? raw.correction : "", mistakes: Array.isArray(raw?.mistakes) ? raw.mistakes : [], tip: typeof raw?.tip === "string" ? raw.tip : "" } };
+    await addGrammarCheck(turn, said, check);
+    if (!live) return; // the call ended meanwhile
+    renderCoach(turn.coach);
+    if (turn.coach.correction) {
+      const types = turn.coach.mistakes.filter((x) => MISTAKE_TYPES[x]);
+      recordMistakes(language, types.length ? [...new Set(types)] : ["other"], said, turn.coach.correction);
+      renderMistakes();
+    }
+  } catch (error) {
+    debugLog(`live coach: ${error.message}`);
+  }
+}
+
+async function startLive() {
+  if (live) return;
+  const key = getKey("gemini");
+  if (!key) {
+    setStatus("Live voice needs your Gemini API key: add it with “Change” on the start screen.");
+    return;
+  }
+  // After a reconnect the partner gets the end of the call, so it carries on rather than starting over.
+  const recap = callLog.slice(-LIVE_RECAP).map((e) => ("you" in e ? `Learner: ${e.you}` : `You: ${e.reply}`));
+  live = { ws: null, stream: null, tap: null, ready: false, muted: false, heard: "", reply: "", replyLi: null, lastReply: "", sources: new Set(), playHead: 0, speaking: false, recap, micBuf: new Int16Array(LIVE_CHUNK), micLen: 0, micPos: 0, ending: false };
+  setMic(true);
+  setStatus("Connecting the live call…");
+  try {
+    const model = await liveModel(key);
+    const ctx = getAudioCtx();
+    if (!ctx?.audioWorklet) throw new Error("this browser can't record for a live call");
+    await ctx.resume();
+    setAudioSession("play-and-record");
+    live.stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 1 } });
+    if (!live) { return; } // ended while the mic was asked for
+    if (liveWorkletCtx !== ctx) {
+      await ctx.audioWorklet.addModule(URL.createObjectURL(new Blob([LIVE_WORKLET], { type: "text/javascript" })));
+      liveWorkletCtx = ctx;
+    }
+    const source = ctx.createMediaStreamSource(live.stream);
+    live.tap = new AudioWorkletNode(ctx, "live-tap");
+    live.tap.port.onmessage = (e) => liveMicSamples(e.data, ctx.sampleRate);
+    source.connect(live.tap);
+    live.source = source;
+
+    const ws = new WebSocket(`${LIVE_URL}?key=${encodeURIComponent(key)}`);
+    live.ws = ws;
+    ws.onopen = () => liveSend({
+      setup: {
+        model,
+        generationConfig: { responseModalities: ["AUDIO"], speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: "Puck" } } } },
+        systemInstruction: { parts: [{ text: liveSystemPrompt(state.settings, recap) }] },
+        inputAudioTranscription: {},
+        outputAudioTranscription: {},
+      },
+    });
+    ws.onmessage = async (event) => {
+      if (!live || live.ws !== ws) return;
+      try {
+        liveMessage(JSON.parse(typeof event.data === "string" ? event.data : await event.data.text()));
+      } catch (error) {
+        debugLog(`live message: ${error.message}`);
+      }
+    };
+    ws.onclose = (event) => {
+      if (!live || live.ws !== ws || live.ending) return;
+      const before = !live.ready;
+      if (before) store.set(LIVE_MODEL_KEY, null); // look the model up again next time
+      stopLive();
+      debugLog(`live call closed: ${event.code} ${event.reason}`);
+      setStatus(`${before ? "The live call couldn't start" : "The live call stopped"}${event.reason ? ` (${event.reason})` : ""}. Tap 🎤 to ${before ? "try again" : "reconnect"}.`);
+    };
+  } catch (error) {
+    stopLive();
+    setStatus(`Live voice couldn't start: ${error.message}. Tap 🎤 to try again.`);
+  }
+}
+
+function stopLive() {
+  if (!live) return;
+  const l = live;
+  l.ending = true;
+  liveFlushLearner();
+  liveFlushReply();
+  liveStopVoice();
+  live = null;
+  try { l.ws?.close(); } catch { /* closed already */ }
+  try { l.source?.disconnect(); l.tap?.disconnect(); } catch { /* gone already */ }
+  for (const track of l.stream?.getTracks() ?? []) track.stop();
+  setMic(false);
+}
+
+// Mute and unmute the mic during a live call (the call itself stays up).
+function setLiveMuted(muted) {
+  if (!live) return;
+  live.muted = muted;
+  $("mic").setAttribute("aria-pressed", String(!muted));
+  $("mic").querySelector(".round-label").textContent = muted ? "Muted" : "Live";
+  setStatus(muted ? "Mic muted: tap 🎤 to talk again." : "");
+  updateCallState();
+}
+
+// Typed during a live call: sent as text, and checked like a spoken sentence.
+function liveSendText(text) {
+  liveFlushReply();
+  addLearnerMessage(text);
+  state.history.push({ role: "user", content: text });
+  liveStopVoice();
+  liveSend({ clientContent: { turns: [{ role: "user", parts: [{ text }] }], turnComplete: true } });
+  liveCoach(text, live.lastReply);
 }
 
 // ---------- conversation turns ----------
@@ -3501,6 +3863,11 @@ $("start").addEventListener("click", async () => {
   } else {
     todayWords = null;
   }
+  if (liveVoiceOn() && !MODES[mode]?.drill && !getKey("gemini")) {
+    $("vocab-status").textContent = "Live voice needs your Gemini API key: tap “Change” at the top and add it, or untick Live voice.";
+    $("vocab-status").scrollIntoView({ block: "center", behavior: "smooth" });
+    return;
+  }
   // The connector drill needs the trainer's connectors (loaded with the page, so normally no wait).
   let connectors = null;
   if (MODES[mode]?.joiner) {
@@ -3526,6 +3893,9 @@ $("start").addEventListener("click", async () => {
     characterName: usesScene ? (SCENARIOS[scenario] ?? SCENARIOS.cafe).character : PARTNER.character,
     vocab,
     sayAgain: $("say-again").checked,
+    // Gemini Live: a real-time voice call (see startLive). Not for the sentence drill, which
+    // needs the word chips and schedule of a normal call.
+    live: liveVoiceOn() && !MODES[mode]?.drill,
     request: {
       language: languageSelect.value,
       nativeLanguage: $("native").value,
@@ -3562,11 +3932,16 @@ $("start").addEventListener("click", async () => {
   $("auto-send").checked = true;
   callLog = [];
   enterCall();
-  // The on-device voice is the default: get it ready while the first reply loads.
-  if (hasPiperVoice(state.settings.locale)) {
+  // The on-device voice is the default: get it ready while the first reply loads (a live call has Gemini's own).
+  if (!state.settings.live && hasPiperVoice(state.settings.locale)) {
     preloadPiper(state.settings.locale).catch((error) => console.warn("Piper download failed:", error));
   }
-  sendTurn("");
+  if (state.settings.live) {
+    state.handsFree = false; // Gemini listens itself: the browser's speech recognition stays off
+    startLive();
+  } else {
+    sendTurn("");
+  }
 });
 
 // Import a vocab JSON file into the browser (IndexedDB).
@@ -3683,6 +4058,8 @@ $("connector").addEventListener("change", () => store.set("connector", $("connec
 $("language").addEventListener("change", preloadSelectedVoice);
 $("language").addEventListener("change", renderMistakes);
 $("say-again").checked = store.get("say_again", true);
+$("live-voice").checked = liveVoiceOn();
+$("live-voice").addEventListener("change", () => store.set("live_voice", $("live-voice").checked));
 $("say-again").addEventListener("change", () => store.set("say_again", $("say-again").checked));
 
 function submitComposer() {
@@ -3700,6 +4077,11 @@ function submitComposer() {
   }
   if (isPauseCommand(text)) {
     setPaused(true);
+    return;
+  }
+  if (state.settings?.live) {
+    if (live?.ready) liveSendText(text);
+    else { $("text").value = text; setStatus("The live call isn't connected: tap 🎤 first."); }
     return;
   }
   stopSpeaking();
@@ -3814,6 +4196,11 @@ $("auto-send").addEventListener("change", () => {
 });
 
 $("mic").addEventListener("click", () => {
+  if (state.settings?.live) {
+    if (!live) startLive(); // after a reload or a dropped connection
+    else setLiveMuted(!live.muted);
+    return;
+  }
   if (state.handsFree || $("mic").getAttribute("aria-pressed") === "true") {
     stopListening();
   } else {
@@ -3874,6 +4261,7 @@ onTap($("explorer-close"), () => {
 
 // Quit the current conversation and return to the start screen.
 $("end").addEventListener("click", () => {
+  stopLive();
   stopListening();
   stopSpeaking();
   state.history = [];
@@ -3913,7 +4301,7 @@ $("end").addEventListener("click", () => {
 if ("speechSynthesis" in window) speechSynthesis.onvoiceschanged = () => {};
 
 // With ?debug: which build this phone runs (a cached old one would explain old behaviour).
-debugLog(`Talkloop v62 · speech recognition ${Recognition ? "yes" : "no"}`);
+debugLog(`Talkloop v67 · speech recognition ${Recognition ? "yes" : "no"}`);
 if (!trainerSession()) goToLogin();
 refreshKeyGate();
 renderStats();
