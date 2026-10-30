@@ -3740,6 +3740,7 @@ function App() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [formulas, setFormulas] = useState(false); // the Formulas page is open
   const [talk, setTalk] = useState(false); // the Talkloop tab is open
+  const [talkReady, setTalkReady] = useState(false); // its page has finished loading in the frame
   const [version, setVersion] = useState(0); // bump → practice rounds restart
   // memory only, for this visit — never saved
   const [geminiKey, setGeminiKey] = useState("");
@@ -3767,7 +3768,7 @@ function App() {
     if (!user) {
       // someone else may log in next: drop everything of the last user
       STORY_PROGRESS.value = null; STORY_PROGRESS.stale = true; setNav(NAV_START); visited.current = {};
-      setSummary(null); setSaveError(null); setGeminiKey(""); setGhToken(""); setMode("study"); setSettingsOpen(false); setFormulas(false); setTalk(false);
+      setSummary(null); setSaveError(null); setGeminiKey(""); setGhToken(""); setMode("study"); setSettingsOpen(false); setFormulas(false); setTalk(false); setTalkReady(false);
       setStatus("login");
       return;
     }
@@ -3846,12 +3847,12 @@ function App() {
     <div style={{ minHeight: "100%", padding: "20px 20px 56px", fontFamily: "var(--font-serif)" }}>
       <div style={{ maxWidth: page === "talk" ? "900px" : page === "rules" ? "760px" : page === "stories" ? "620px" : "560px", margin: "0 auto", display: "flex", flexDirection: "column", gap: page === "practice" ? "18px" : "22px" }}>
         {topBar}
-        {visited.current.talk && (
-          <div style={show("talk")}>
-            <iframe src="/talkloop/" title="Talkloop" allow="microphone; autoplay; clipboard-write"
-              style={{ width: "100%", height: "calc(100dvh - 110px)", minHeight: "480px", border: "1px solid var(--line)", borderRadius: "14px", background: "var(--paper-raised)" }} />
-          </div>
-        )}
+        {/* Loaded in the background right after login, so the tab is ready when it is opened. */}
+        <div style={show("talk")}>
+          {!talkReady && <div style={{ ...counterStyle, fontSize: "13px", textAlign: "center", padding: "48px 0" }}>warming up Talkloop … 🗯</div>}
+          <iframe src="/talkloop/" title="Talkloop" allow="microphone; autoplay; clipboard-write" onLoad={() => setTalkReady(true)}
+            style={{ width: "100%", height: "calc(100dvh - 110px)", minHeight: "480px", border: "1px solid var(--line)", borderRadius: "14px", background: "var(--paper-raised)", display: talkReady ? "block" : "none" }} />
+        </div>
         {visited.current.rules && <div style={show("rules")}><div style={{ animation: "cardIn .35s ease both" }}><FormulasPage /></div></div>}
         {visited.current.stories && (
           <div style={show("stories")}>
