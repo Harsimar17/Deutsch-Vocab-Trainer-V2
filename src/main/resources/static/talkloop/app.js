@@ -3102,8 +3102,30 @@ function liveSystemPrompt(settings, recap = []) {
   if (t) lines.push(`Tense practice: ${t.form}. Use it yourself and ask things whose natural answer needs it (about ${t.ask}).`);
   const weak = recurringMistakes(language);
   if (weak.length) lines.push(`The learner's recurring mistakes: ${weak.map((w) => MISTAKE_TYPES[w.type]).join("; ")}. Now and then ask something whose natural answer needs one of these; never say you're testing.`);
+  lines.push(...liveVocabLines(settings, m));
   if (recap.length) lines.push(`The call was cut off and has just reconnected. The end of it so far:\n${recap.join("\n")}\nCarry on from there in one short line, without greeting again.`);
   return lines.join("\n");
+}
+
+// "Weave my vocab into the conversation" for a live call. The instructions are sent once,
+// when the call connects (a turn-based call gets a new list every turn), so the partner gets
+// a longer list to draw on; a reconnect brings the next words.
+const LIVE_VOCAB_WORDS = 20;
+
+function liveVocabLines(settings, m) {
+  if (!settings.vocab?.enabled || m.drill || m.joiner) return [];
+  const fmt = (w) => (w.en ? `${w.de} (${w.en})` : w.de);
+  const today = todayWords?.active ?? [];
+  const todaySet = new Set(today.map((w) => w.de));
+  const words = nextVocabBatch(LIVE_VOCAB_WORDS).filter((w) => !todaySet.has(w.de));
+  const lines = [];
+  if (words.length) {
+    lines.push(`${settings.vocab.learnt ? "Words the learner knows and should practise saying" : "Vocabulary being practised"}: ${words.map(fmt).join("; ")}. Conversation first: stay on topic and bring these in only where they fit naturally, a few at a time over the call; use them yourself and ask questions whose natural answer needs one. Never list or quiz them.`);
+  }
+  if (today.length) {
+    lines.push(`Today's words, which the learner must recall and say: ${today.map(fmt).join("; ")}. Over the call, get them to say each one, one at a time, with a question on the current topic whose natural answer needs it. Never say, translate or hint at one before they have said it.`);
+  }
+  return lines;
 }
 
 function liveOpener(settings) {
