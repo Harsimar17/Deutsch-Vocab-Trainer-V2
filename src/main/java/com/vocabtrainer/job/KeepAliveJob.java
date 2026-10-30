@@ -1,7 +1,12 @@
 package com.vocabtrainer.job;
 
 import java.net.http.HttpClient;
+import java.time.Clock;
 import java.time.Duration;
+import java.time.Instant;
+import java.time.LocalTime;
+import java.time.ZoneId;
+import java.time.ZonedDateTime;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -23,6 +28,11 @@ import org.springframework.web.client.RestClient;
  * app.keep-alive.url is given. Without a URL — e.g. running locally — the job
  * does nothing. It can only keep a running app awake: if the service was
  * already asleep, the first visitor still wakes it.
+ *
+ * Each run of the app stops pinging at the next app.keep-alive.sleep-at
+ * (04:30 India time by default), so Render puts it to sleep 15 minutes later.
+ * Whatever wakes it next (the morning shortcut, a visitor) starts a fresh run,
+ * which pings again until the following 04:30.
  */
 @Component
 public class KeepAliveJob {
@@ -31,26 +41,38 @@ public class KeepAliveJob {
 
     private final RestClient http;
     private final String healthUrl;
+    private final Clock clock;
+    private final Instant sleepAt;
+    private boolean asleep;
 
     @Autowired
-    public KeepAliveJob(@Value("${app.keep-alive.url:}") String baseUrl) {
-        this(defaultClient(), baseUrl);
+    public KeepAliveJob(@Value("${app.keep-alive.url:}") String baseUrl,
+            @Value("${app.keep-alive.sleep-at:04:30}") String sleepTime,
+            @Value("${app.keep-alive.zone:Asia/Kolkata}") String zone) {
+        this(defaultClient(), baseUrl, Clock.system(ZoneId.of(zone)), LocalTime.parse(sleepTime));
     }
 
-    KeepAliveJob(RestClient http, String baseUrl) {
+    KeepAliveJob(RestClient http, String baseUrl, Clock clock, LocalTime sleepTime) {
         this.http = http;
         this.healthUrl = StringUtils.hasText(baseUrl) ? baseUrl.replaceAll("/+$", "") + "/health" : null;
+        this.clock = clock;
+        this.sleepAt = nextOccurrence(ZonedDateTime.now(clock), sleepTime);
         if (healthUrl == null) {
             log.info("Keep-alive off (no app.keep-alive.url / RENDER_EXTERNAL_URL)");
         } else {
-            log.info("Keep-alive on: pinging {}", healthUrl);
+            log.info("Keep-alive on: pinging {} until {}", healthUrl, sleepAt.atZone(clock.getZone()));
         }
     }
 
     /** Every 10 minutes (configurable) — comfortably inside Render's 15-minute idle limit. */
     @Scheduled(initialDelayString = "${app.keep-alive.initial-delay:PT1M}", fixedDelayString = "${app.keep-alive.interval:PT10M}")
     public void ping() {
-        if (healthUrl == null) {
+        if (healthUrl == null || asleep) {
+            return;
+        }
+        if (!clock.instant().isBefore(sleepAt)) {
+            asleep = true;
+            log.info("Keep-alive stopped for the night: Render will put the app to sleep");
             return;
         }
         try {
@@ -64,6 +86,12 @@ public class KeepAliveJob {
 
     String healthUrl() {
         return healthUrl;
+    }
+
+    /** The first time-of-day {@code time} strictly after {@code now}: today's if still ahead, else tomorrow's. */
+    static Instant nextOccurrence(ZonedDateTime now, LocalTime time) {
+        ZonedDateTime today = now.with(time);
+        return (today.isAfter(now) ? today : today.plusDays(1)).toInstant();
     }
 
     private static RestClient defaultClient() {
