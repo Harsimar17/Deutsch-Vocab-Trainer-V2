@@ -3078,6 +3078,17 @@ const LIVE_DRILLS = {
   }),
 };
 
+// Gemini says what it understood, so the chat shows the learner's words as the model heard them.
+const LIVE_HEARD_TOOL = {
+  name: "learner_said",
+  description: "Report exactly what the learner just said out loud, as you understood it.",
+  parameters: {
+    type: "OBJECT",
+    properties: { text: { type: "STRING", description: "The learner's words exactly as you heard them, in the language they spoke, mistakes kept, not corrected or translated." } },
+    required: ["text"],
+  },
+};
+
 function liveSystemPrompt(settings, recap = []) {
   const { language, nativeLanguage, level, scenario, mode, tense } = settings.request;
   const m = MODES[mode] ?? MODES.scene;
@@ -3095,6 +3106,7 @@ function liveSystemPrompt(settings, recap = []) {
     ...(m.themes && settings.subjects?.length ? [`Start with ${themeByName(settings.subjects[0])?.ask ?? settings.subjects[0]}.`] : []),
     ...(settings.roleCard ? [`The learner's role card (they play this person): ${settings.roleCard}.`] : []),
     "The learner may pause to think: wait for them.",
+    "Each time the learner has spoken, first call learner_said with their exact words as you understood them (mistakes kept), then answer out loud. Never mention it.",
     // A drill says its corrections out loud; a conversation only recasts, like a native speaker would.
     ...(drill ? [] : ["If they make a mistake, repeat the right form naturally in your answer, like a friendly native speaker would, without a grammar lesson: the app shows written corrections itself."]),
   ];
@@ -3138,6 +3150,7 @@ function liveOpener(settings) {
 }
 
 function liveSend(message) {
+  if (live && message.clientContent) live.textTurn = true; // a typed or opening turn: nothing was spoken
   if (live?.ws?.readyState === WebSocket.OPEN) live.ws.send(JSON.stringify(message));
 }
 
@@ -3196,8 +3209,12 @@ function liveStopVoice() {
 }
 
 // What the learner said, as Gemini heard it: shown, saved and checked once their turn is over.
+// Gemini's own words for it (learner_said) win over the transcript, which comes from a separate
+// recognizer and can differ from what the model understood.
 function liveFlushLearner() {
-  const said = live?.heard.trim();
+  const said = (live?.understood || live?.heard || "").trim();
+  if (!live) return;
+  live.understood = "";
   if (!said) return;
   live.heard = "";
   setStatus("");
@@ -3244,6 +3261,15 @@ function liveMessage(msg) {
     return;
   }
   if (msg.goAway) debugLog(`live call ends in ${msg.goAway.timeLeft ?? "?"}`);
+  if (msg.toolCall) {
+    const calls = msg.toolCall.functionCalls ?? [];
+    for (const fc of calls) {
+      if (fc.name === LIVE_HEARD_TOOL.name && !live.textTurn && typeof fc.args?.text === "string") live.understood = fc.args.text;
+    }
+    liveFlushLearner(); // the learner's turn is over
+    liveSend({ toolResponse: { functionResponses: calls.map((fc) => ({ id: fc.id, name: fc.name, response: { result: "ok" } })) } });
+    return;
+  }
   const c = msg.serverContent;
   if (!c) return;
   if (c.inputTranscription?.text) {
@@ -3261,6 +3287,7 @@ function liveMessage(msg) {
   if (c.turnComplete) {
     liveFlushLearner();
     liveFlushReply();
+    live.textTurn = false;
   }
 }
 
@@ -3311,7 +3338,7 @@ async function startLive() {
   }
   // After a reconnect the partner gets the end of the call, so it carries on rather than starting over.
   const recap = callLog.slice(-LIVE_RECAP).map((e) => ("you" in e ? `Learner: ${e.you}` : `You: ${e.reply}`));
-  live = { ws: null, stream: null, tap: null, ready: false, muted: false, heard: "", reply: "", replyLi: null, lastReply: "", sources: new Set(), playHead: 0, speaking: false, recap, micBuf: new Int16Array(LIVE_CHUNK), micLen: 0, micPos: 0, ending: false };
+  live = { ws: null, stream: null, tap: null, ready: false, muted: false, heard: "", understood: "", textTurn: false, reply: "", replyLi: null, lastReply: "", sources: new Set(), playHead: 0, speaking: false, recap, micBuf: new Int16Array(LIVE_CHUNK), micLen: 0, micPos: 0, ending: false };
   setMic(true);
   setStatus("Connecting the live call…");
   try {
@@ -3339,6 +3366,7 @@ async function startLive() {
         model,
         generationConfig: { responseModalities: ["AUDIO"], speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: "Puck" } } } },
         systemInstruction: { parts: [{ text: liveSystemPrompt(state.settings, recap) }] },
+        tools: [{ functionDeclarations: [LIVE_HEARD_TOOL] }],
         inputAudioTranscription: {},
         outputAudioTranscription: {},
       },
