@@ -1173,6 +1173,9 @@ function connectorsLine(pool) {
   return `Connectors to practise, a different one each task, going through all of them: ${kinds.join(" ")}`;
 }
 
+// Free chat, interview, "Mein Leben" and "Erzähl mal": the learner's vocab never chooses the subject.
+const SUBJECTS_NOT_FROM_WORDS = "When a subject runs dry, choose the next one from the learner's own life and what they said, never to fit these words.";
+
 function turnSystemPrompt({ language, nativeLanguage, level, scenario, mode, tense }, targetWords = [], learnt = false, learnerMessage = "", weakSpots = [], today = null, hints = null) {
   const m = MODES[mode] ?? MODES.scene;
   const persona = personaFor({ scenario, mode });
@@ -1204,7 +1207,9 @@ function turnSystemPrompt({ language, nativeLanguage, level, scenario, mode, ten
   }
   // The conversation comes first: words are brought in only where they fit the topic, never
   // by jumping to a new one (that made replies hop from work to politics in one line).
-  const stayOnTopic = "Conversation first: follow on from what the learner said and stay on topic. Use a listed word only where it fits naturally; never change topic or ask something unrelated to bring one in (the list stays for the next turns). When a topic runs dry, bridge naturally to one where some fit.";
+  // In the chats about the learner's own life the words never pick the next subject either:
+  // a word list from one unit (society, media, technology) pulled every chat to that unit.
+  const stayOnTopic = `Conversation first: follow on from what the learner said and stay on topic. Use a listed word only where it fits naturally; never change topic or ask something unrelated to bring one in (the list stays for the next turns). ${m.subjects ? SUBJECTS_NOT_FROM_WORDS : "When a topic runs dry, bridge naturally to one where some fit."}`;
   if (targetWords.length && learnt) {
     const list = targetWords.map((w) => (w.en ? `${w.de} (${w.en})` : w.de)).join("; ");
     lines.push(`Words the learner knows and should practise saying: ${list}. ${stayOnTopic} You are not limited to them: where one fits, use it or ask a question whose natural answer needs it; never list or quiz them. If the learner's message contains one, praise it briefly in coach.tip, or fix a wrong meaning, article or form in coach.correction.`);
@@ -1241,7 +1246,7 @@ function turnSystemPrompt({ language, nativeLanguage, level, scenario, mode, ten
               // In a topic chat the topic is fixed: a word is asked for only where it is the
               // natural thing to say about it, otherwise the discussion just goes on.
               ? `Not said yet: ${askable.map((w) => w.de).join("; ")}. Only where one of these is the natural thing to say about the current topic, ask a question whose answer needs it, without naming it. If none fits at this point, ask for none and keep discussing the topic: never change the topic or bridge to another one to bring a word in, and don't force a word in. ${neverSay}`
-              : `Not said yet: ${askable.map((w) => w.de).join("; ")}. Get the learner to say them, one at a time, with a question on the current topic whose natural answer needs one (bridge naturally; never quiz or list). ${neverSay}`]
+              : `Not said yet: ${askable.map((w) => w.de).join("; ")}. Get the learner to say them, one at a time, with a question on the current topic whose natural answer needs one (${m.subjects ? `if none fits, ask for none: ${SUBJECTS_NOT_FROM_WORDS}` : "bridge naturally"}; never quiz or list). ${neverSay}`]
             : []),
           ...(waiting.length ? [`Asked about already without success, so leave these alone for now: ${waiting.map((w) => w.de).join("; ")}.`] : []),
           ...(said.length ? [`Already said: ${said.map((w) => w.de).join("; ")}. Bring each back later in another form.`] : []),
@@ -2625,8 +2630,21 @@ function renderChats() {
   }
 }
 
+// A reply's translation, for one that came without (a Gemini Live call speaks, it writes none).
+async function translateReply(text) {
+  const { language, nativeLanguage } = state.settings.request;
+  const raw = await aiJson({
+    systemInstruction: `You translate ${language} into ${nativeLanguage}, naturally and briefly.`,
+    schema: { type: "OBJECT", properties: { translation: { type: "STRING" } }, required: ["translation"] },
+    contents: [{ role: "user", parts: [{ text: `Translate into ${nativeLanguage}: ${JSON.stringify(text)}` }] }],
+    temperature: 0.2,
+  });
+  return typeof raw?.translation === "string" ? raw.translation : "";
+}
+
 function addCharacterMessage(turn, { silent = false } = {}) {
-  callLog.push({ reply: turn.reply, reply_translation: turn.reply_translation, mood: turn.mood });
+  const entry = { reply: turn.reply, reply_translation: turn.reply_translation, mood: turn.mood };
+  callLog.push(entry);
   saveCall();
   const li = document.createElement("li");
   li.className = "msg character";
@@ -2649,11 +2667,25 @@ function addCharacterMessage(turn, { silent = false } = {}) {
   onTap(replay, () => speak(turn.reply, spans, null, turn.mood));
   const translate = document.createElement("button");
   translate.textContent = "Translate";
-  onTap(translate, () => {
-    translation.hidden = !translation.hidden;
+  onTap(translate, async () => {
+    if (!translation.hidden || translation.textContent) {
+      translation.hidden = !translation.hidden;
+      return;
+    }
+    // Translated on the first tap, then kept with the call.
+    translate.disabled = true;
+    translate.textContent = "Translating…";
+    try {
+      translation.textContent = entry.reply_translation = await translateReply(turn.reply);
+      translation.hidden = !translation.textContent;
+      saveCall();
+    } catch (error) {
+      debugLog(`translate: ${error.message}`);
+    }
+    translate.disabled = false;
+    translate.textContent = "Translate";
   });
-  tools.append(replay);
-  if (turn.reply_translation) tools.append(translate);
+  tools.append(replay, translate);
 
   li.append(who, line, translation, tools);
   $("transcript").append(li);
@@ -3120,10 +3152,10 @@ function liveVocabLines(settings, m) {
   const words = nextVocabBatch(LIVE_VOCAB_WORDS).filter((w) => !todaySet.has(w.de));
   const lines = [];
   if (words.length) {
-    lines.push(`${settings.vocab.learnt ? "Words the learner knows and should practise saying" : "Vocabulary being practised"}: ${words.map(fmt).join("; ")}. Conversation first: stay on topic and bring these in only where they fit naturally, a few at a time over the call; use them yourself and ask questions whose natural answer needs one. Never list or quiz them.`);
+    lines.push(`${settings.vocab.learnt ? "Words the learner knows and should practise saying" : "Vocabulary being practised"}: ${words.map(fmt).join("; ")}. Conversation first: stay on topic and bring these in only where they fit naturally, a few at a time over the call${m.subjects ? `; never change the subject to bring one in. ${SUBJECTS_NOT_FROM_WORDS}` : ""}; use them yourself and ask questions whose natural answer needs one. Never list or quiz them.`);
   }
   if (today.length) {
-    lines.push(`Today's words, which the learner must recall and say: ${today.map(fmt).join("; ")}. Over the call, get them to say each one, one at a time, with a question on the current topic whose natural answer needs it. Never say, translate or hint at one before they have said it.`);
+    lines.push(`Today's words, which the learner must recall and say: ${today.map(fmt).join("; ")}. Over the call, get them to say each one, one at a time, with a question on the current topic whose natural answer needs it${m.subjects ? ", only where one fits it" : ""}. Never say, translate or hint at one before they have said it.`);
   }
   return lines;
 }
