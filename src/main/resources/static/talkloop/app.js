@@ -2600,6 +2600,7 @@ async function restoreCall() {
 async function openChat(id) {
   const chat = topicChats().find((c) => c.id === id);
   if (!chat) return;
+  clearLiveHandle(); // the saved handle is the last call's, not this chat's
   await resumeCall(chat, { note: "Chat reopened. Tap the mic or type to go on.", refreshWords: true });
 }
 
@@ -3004,6 +3005,8 @@ function setPaused(paused, { byVoice = false } = {}) {
     runCallTimer();
     setStatus("");
     state.handsFree = resumeHandsFree;
+    // The live call dropped while on hold: carry it on (Gemini still has it, with its handle).
+    if (state.settings?.live && !live && (!isOffice() || officeVisitAt)) startLive(); // the Büro between visits stays quiet
     const reply = pendingReply;
     pendingReply = null;
     // The browser allows one recognizer at a time: let the resume listener stop first.
@@ -3087,7 +3090,19 @@ const LIVE_PREFERRED = /gemini-3\.8[^/]*live/; // Gemini 3.8 Live, whenever the 
 const liveKey = () => getKey("geminiLive") || getKey("gemini");
 const LIVE_IN_RATE = 16000; // what the Live API wants from the mic: 16-bit PCM, mono
 const LIVE_CHUNK = 1600; // 100 ms of mic audio per message
-const LIVE_RECAP = 12; // lines of the call sent again when it reconnects
+const LIVE_RECAP = 30; // lines of the call sent again when it reconnects without a resumption handle
+// Gemini keeps a live call's conversation on its side and hands out a resumption handle for it.
+// A paused call's socket sits idle, and a phone in the background drops it: reconnecting with
+// the handle carries on the same conversation, with all it knows, instead of starting over from
+// a short recap. Google keeps a handle for about two hours; it is saved with the current call
+// only (a new call or a reopened chat clears it), so a reload can use it too.
+const LIVE_HANDLE_KEY = "live_handle"; // { handle, at }
+const LIVE_HANDLE_AGE = 2 * 60 * 60 * 1000;
+const liveHandle = () => {
+  const saved = store.get(LIVE_HANDLE_KEY, null);
+  return saved?.handle && Date.now() - saved.at < LIVE_HANDLE_AGE ? saved.handle : null;
+};
+const clearLiveHandle = () => store.set(LIVE_HANDLE_KEY, null);
 // Hands the mic's samples from the audio thread to the page.
 const LIVE_WORKLET = `class LiveTap extends AudioWorkletProcessor {
   process(inputs) { const ch = inputs[0] && inputs[0][0]; if (ch) this.port.postMessage(ch.slice(0)); return true; }
@@ -3337,12 +3352,20 @@ function liveMessage(msg) {
     live.ready = true;
     setStatus("");
     updateCallState();
-    // The partner speaks first, as in every call.
-    const start = live.recap.length ? "(The call reconnected: carry on.)" : liveOpener(state.settings);
+    // The partner speaks first, as in every call; resumed, it carries on where the call was.
+    const start = live.resumed
+      ? "(The call was on hold or the line dropped, and it is back now: carry on from where we were in one short line, without greeting again.)"
+      : live.recap.length ? "(The call reconnected: carry on.)" : liveOpener(state.settings);
     liveSend({ clientContent: { turns: [{ role: "user", parts: [{ text: start }] }], turnComplete: true } });
     return;
   }
-  if (msg.goAway) debugLog(`live call ends in ${msg.goAway.timeLeft ?? "?"}`);
+  const update = msg.sessionResumptionUpdate;
+  if (update?.resumable && update.newHandle) store.set(LIVE_HANDLE_KEY, { handle: update.newHandle, at: Date.now() });
+  if (msg.goAway) {
+    // Google is about to close this connection: it will reconnect on its own with the handle.
+    debugLog(`live call ends in ${msg.goAway.timeLeft ?? "?"}`);
+    live.goingAway = true;
+  }
   // The Büro colleague says goodbye and walks off.
   const leave = msg.toolCall?.functionCalls?.find((f) => f.name === "leave");
   if (leave) {
@@ -3414,21 +3437,27 @@ async function liveCoach(said, partner) {
   }
 }
 
+let liveRetries = 0; // reconnects in a row that didn't get the call going again
+let liveReconnectPending = false; // the call dropped while paused or in the background: reconnect on return
+
 async function startLive() {
   if (live) return;
+  liveReconnectPending = false;
   const key = liveKey();
   if (!key) {
     setStatus("Gemini 3.8 Live needs its key: add it with “Change” on the start screen.");
     return;
   }
-  // After a reconnect the partner gets the end of the call, so it carries on rather than starting over.
   const office = isOffice();
-  // In the Büro a reconnect only brings back this visit: the earlier ones are in its memory.
   if (office && !officeVisitAt) { officeVisit(); return; } // the 🎤 between visits calls someone over
-  const recap = callLog.slice(office ? state.settings.visitLogStart ?? 0 : 0).slice(-LIVE_RECAP).map((e) => ("you" in e ? `Learner: ${e.you}` : `You: ${e.reply}`));
-  live = { ws: null, stream: null, tap: null, ready: false, muted: false, heard: "", reply: "", replyLi: null, lastReply: "", sources: new Set(), playHead: 0, speaking: false, recap, micBuf: new Int16Array(LIVE_CHUNK), micLen: 0, micPos: 0, ending: false, floor: null, talking: false, quiet: 0, preroll: [], micSent: 0, micTotal: 0 };
+  // Gemini's own copy of the call, if it still has it; else the partner gets the end of the call,
+  // so it carries on rather than starting over. In the Büro both only ever hold this visit: the
+  // handle is cleared when a colleague comes over, and earlier visits are in its memory.
+  const handle = callLog.length ? liveHandle() : null;
+  const recap = handle ? [] : callLog.slice(office ? state.settings.visitLogStart ?? 0 : 0).slice(-LIVE_RECAP).map((e) => ("you" in e ? `Learner: ${e.you}` : `You: ${e.reply}`));
+  live = { ws: null, stream: null, tap: null, ready: false, muted: false, heard: "", reply: "", replyLi: null, lastReply: "", sources: new Set(), playHead: 0, speaking: false, recap, resumed: Boolean(handle), goingAway: false, micBuf: new Int16Array(LIVE_CHUNK), micLen: 0, micPos: 0, ending: false, floor: null, talking: false, quiet: 0, preroll: [], micSent: 0, micTotal: 0 };
   setMic(true);
-  setStatus("Connecting the live call…");
+  setStatus(handle ? "Reconnecting the live call…" : "Connecting the live call…");
   try {
     const model = await liveModel(key);
     const ctx = getAudioCtx();
@@ -3457,12 +3486,17 @@ async function startLive() {
         ...(office ? { tools: OFFICE_TOOLS } : {}),
         inputAudioTranscription: {},
         outputAudioTranscription: {},
+        // Handles to carry the call on after a dropped connection, and no 15-minute limit on a call.
+        sessionResumption: handle ? { handle } : {},
+        contextWindowCompression: { slidingWindow: {} },
       },
     });
     ws.onmessage = async (event) => {
       if (!live || live.ws !== ws) return;
       try {
-        liveMessage(JSON.parse(typeof event.data === "string" ? event.data : await event.data.text()));
+        const msg = JSON.parse(typeof event.data === "string" ? event.data : await event.data.text());
+        if (msg.setupComplete) liveRetries = 0;
+        liveMessage(msg);
       } catch (error) {
         debugLog(`live message: ${error.message}`);
       }
@@ -3470,9 +3504,31 @@ async function startLive() {
     ws.onclose = (event) => {
       if (!live || live.ws !== ws || live.ending) return;
       const before = !live.ready;
-      if (before) store.set(LIVE_MODEL_KEY, null); // look the model up again next time
+      const { resumed, goingAway } = live;
       stopLive();
-      debugLog(`live call closed: ${event.code} ${event.reason}`);
+      debugLog(`live call closed: ${event.code} ${event.reason}${resumed ? " (resumed)" : ""}`);
+      if (before && resumed) {
+        // Gemini no longer has this call: start again from the recap.
+        clearLiveHandle();
+        if (state.paused) liveReconnectPending = true;
+        else startLive();
+        return;
+      }
+      if (before) store.set(LIVE_MODEL_KEY, null); // look the model up again next time
+      // A call that was going: carry it on by itself (Google closes connections now and then,
+      // and an idle one on hold or in the background), unless that keeps failing. A Büro visit
+      // reconnects at once even in the background: the learner is working in another window.
+      if (!before && liveRetries < 3) {
+        liveRetries++;
+        if (state.paused || (document.visibilityState === "hidden" && !office)) {
+          liveReconnectPending = true;
+          if (state.paused) setStatus("Call paused. Tap Resume to carry on.");
+        } else {
+          if (!goingAway) setStatus("The live call dropped: reconnecting…");
+          startLive();
+        }
+        return;
+      }
       if (office) { officeAfterVisit(); if (!before) return; }
       setStatus(`${before ? "The live call couldn't start" : "The live call stopped"}${event.reason ? ` (${event.reason})` : ""}. Tap 🎤 to ${before ? "try again" : "reconnect"}.`);
     };
@@ -3667,6 +3723,7 @@ function officeVisit() {
   state.settings.colleague = colleague;
   state.settings.characterName = colleague.name;
   state.settings.visitLogStart = callLog.length;
+  clearLiveHandle(); // a new visit: Gemini's copy of the last one doesn't belong to it
   officeVisitAt = Date.now();
   officeLeaving = false;
   officeWrapSent = false;
@@ -3705,6 +3762,7 @@ function officeAfterVisit({ comeBack = false } = {}) {
   // Only once: a colleague sent away twice doesn't come back a third time.
   const back = comeBack && !state.settings.colleague?.returning;
   officeRemember();
+  clearLiveHandle();
   officeVisitAt = 0;
   officeLeaving = false;
   const divider = document.createElement("li");
@@ -4334,6 +4392,7 @@ $("start").addEventListener("click", async () => {
   state.autoSend = true; // each chat starts on auto-send; the toggle in the call changes it for that chat only
   $("auto-send").checked = true;
   callLog = [];
+  clearLiveHandle(); // a new call: Gemini's copy of the last one doesn't belong to it
   enterCall();
   // The on-device voice is the default: get it ready while the first reply loads (a live call has Gemini's own).
   if (!state.settings.live && hasPiperVoice(state.settings.locale)) {
@@ -4675,6 +4734,8 @@ onTap($("explorer-close"), () => {
 $("end").addEventListener("click", () => {
   officeStop();
   stopLive();
+  clearLiveHandle();
+  liveReconnectPending = false;
   stopListening();
   stopSpeaking();
   state.history = [];
@@ -4748,5 +4809,7 @@ document.addEventListener("visibilitychange", () => {
     syncSpoken({ keepalive: true });
     syncSentences({ keepalive: true });
     flushChatUploads({ keepalive: true });
+  } else if (liveReconnectPending && !state.paused && state.settings?.live && !live && !$("conversation").hidden) {
+    startLive(); // the live call dropped while the app was in the background
   }
 });
