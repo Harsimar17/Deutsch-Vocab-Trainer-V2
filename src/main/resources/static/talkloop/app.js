@@ -433,6 +433,16 @@ const MODES = {
     opener: "(Greet the learner in one short line, say which situation you are starting, and give its first step.)",
     extra: "This is a sentence drill played out as one realistic everyday situation, like a short story the learner lives through (for example: moving into a new flat, a day at work, planning a trip, a visit to the doctor). Choose a situation in which as many of today's words as possible would naturally come up, and tell the learner in one short line what it is. Then go through it step by step, in order: each turn, describe the next logical moment of the situation in one or two short, simple sentences and ask the learner what they do, say or think there, in one full sentence using the word that fits that moment (the app shows the learner its meaning). Every step must follow sensibly from the previous one and from what the learner said, so the whole drill reads like one coherent story where every sentence makes sense. When none of the remaining words fits the situation any more, start a new one and say so (Neue Situation: …); never force a word into a moment where a real person wouldn't use it. React to the learner's sentence in a few words, no small talk. Set situation to a short title (2–5 words, in the language being practised) of the current situation. Leave suggestions empty and keep reply_translation short. Never end: always set conversation_finished to false.",
   },
+  // Büro: the learner works; now and then a colleague drops by for a short real conversation
+  // (always a Gemini Live call, connected only for the visit: see officeVisit).
+  office: {
+    label: "Büro — colleagues drop by while I work",
+    usesScene: false,
+    endable: false,
+    office: true,
+    opener: "(Walk over to the learner's desk and start talking.)",
+    extra: "",
+  },
   scene: {
     label: "Scene role-play",
     usesScene: true,
@@ -2576,6 +2586,12 @@ async function restoreCall() {
   const nav = performance.getEntriesByType?.("navigation")[0]?.type ?? "?";
   debugLog(`restoring the call (page ${nav}${document.wasDiscarded ? ", discarded" : ""})`);
   store.set("last_restore", { at: Date.now(), nav, discarded: Boolean(document.wasDiscarded) });
+  if (MODES[snap.settings.request?.mode]?.office) { // the Büro carries on: the next colleague comes by later
+    await resumeCall(snap, { note: "" });
+    getAudioCtx()?.resume();
+    officeScheduleNext();
+    return;
+  }
   await resumeCall(snap, { note: snap.settings.live
     ? "Your live call is back after the page reloaded. Tap 🎤 to reconnect."
     : "Your conversation is back after the page reloaded. Tap the mic or type to go on." });
@@ -3162,6 +3178,7 @@ function liveVocabLines(settings, m) {
 
 function liveOpener(settings) {
   const m = MODES[settings.request.mode] ?? MODES.scene;
+  if (m.office) return "(You are now standing at the learner's desk. Get their attention and ask whether they have a moment, in one short line, and then wait for their answer.)";
   const drill = LIVE_DRILLS[settings.request.mode]?.(settings.request, settings);
   if (drill) return drill.opener;
   if (m.topics) return m.opener(settings.topic ?? "");
@@ -3181,6 +3198,10 @@ function bytesToBase64(bytes) {
 
 // The mic's samples, at the audio context's rate, down to 16 kHz 16-bit PCM in 100 ms messages.
 function liveMicSamples(samples, rate) {
+  if (live?.muted && live.talking) { // muted or paused mid-sentence: end the stream there
+    live.talking = false;
+    liveSend({ realtimeInput: { audioStreamEnd: true } });
+  }
   if (!live || live.muted || !live.ready) return;
   const step = rate / LIVE_IN_RATE;
   let pos = live.micPos;
@@ -3188,11 +3209,51 @@ function liveMicSamples(samples, rate) {
     const v = Math.max(-1, Math.min(1, samples[Math.floor(pos)]));
     live.micBuf[live.micLen++] = v < 0 ? v * 0x8000 : v * 0x7fff;
     if (live.micLen === LIVE_CHUNK) {
-      liveSend({ realtimeInput: { audio: { data: bytesToBase64(new Uint8Array(live.micBuf.buffer)), mimeType: `audio/pcm;rate=${LIVE_IN_RATE}` } } });
+      liveGate(new Int16Array(live.micBuf));
       live.micLen = 0;
     }
   }
   live.micPos = pos - samples.length; // where the next block's first sample falls
+}
+
+// Only speech goes to Gemini: the Live API bills every second of audio it is sent, silence
+// included, so while the learner says nothing (thinking, working, listening) nothing is sent.
+// A chunk counts as speech when it is clearly louder than the room's noise floor. The 300 ms
+// before it go too (so the first sound isn't cut off), and 1.2 s after it (so Gemini hears the
+// pause and answers); then audioStreamEnd tells Gemini the stream has stopped.
+const LIVE_PREROLL = 3; // chunks (100 ms each) sent from just before speech starts
+const LIVE_HANGOVER = 12; // chunks still sent after the last loud one
+const LIVE_MIN_LEVEL = 0.012; // RMS (0–1) below which nothing counts as speech, however quiet the room
+
+function liveGate(chunk) {
+  let sum = 0;
+  for (const v of chunk) sum += v * v;
+  const rms = Math.sqrt(sum / chunk.length) / 0x8000;
+  live.micTotal++;
+  // The noise floor follows quiet stretches quickly and loud ones only slowly.
+  live.floor = live.floor == null ? rms : rms < live.floor ? live.floor * 0.7 + rms * 0.3 : live.floor * 0.995 + rms * 0.005;
+  const send = (c) => {
+    liveSend({ realtimeInput: { audio: { data: bytesToBase64(new Uint8Array(c.buffer)), mimeType: `audio/pcm;rate=${LIVE_IN_RATE}` } } });
+    live.micSent++;
+  };
+  if (rms > Math.max(LIVE_MIN_LEVEL, live.floor * 3)) {
+    if (!live.talking) {
+      live.talking = true;
+      live.preroll.forEach(send);
+      live.preroll = [];
+    }
+    live.quiet = 0;
+    send(chunk);
+  } else if (live.talking) {
+    send(chunk);
+    if (++live.quiet >= LIVE_HANGOVER) {
+      live.talking = false;
+      liveSend({ realtimeInput: { audioStreamEnd: true } });
+    }
+  } else {
+    live.preroll.push(chunk);
+    if (live.preroll.length > LIVE_PREROLL) live.preroll.shift();
+  }
 }
 
 // Gemini's voice, played gap-free as its chunks arrive.
@@ -3236,6 +3297,12 @@ function liveFlushLearner() {
   addLearnerMessage(said);
   state.history.push({ role: "user", content: said });
   liveCoach(said, live.lastReply ?? "");
+// A note to Gemini from the app (not the learner): it cuts off what it was saying.
+function liveNote(text) {
+  liveFlushReply();
+  liveStopVoice();
+  liveSend({ clientContent: { turns: [{ role: "user", parts: [{ text: `(Coach, not the learner: ${text})` }] }], turnComplete: true } });
+}
 }
 
 // The partner's words so far, in a bubble that grows while it speaks; saved once its turn is done.
@@ -3276,8 +3343,20 @@ function liveMessage(msg) {
     return;
   }
   if (msg.goAway) debugLog(`live call ends in ${msg.goAway.timeLeft ?? "?"}`);
+  // The Büro colleague says goodbye and walks off.
+  const leave = msg.toolCall?.functionCalls?.find((f) => f.name === "leave");
+  if (leave) {
+    // Gemini often calls leave before it has said goodbye: the reply asks for the goodbye out
+    // loud, and the colleague walks off once that turn is over (or after 12 s at the latest).
+    liveSend({ toolResponse: { functionResponses: msg.toolCall.functionCalls.map((f) => ({ id: f.id, name: f.name, response: { result: "If you haven't said goodbye out loud yet, say it now in one short line (and, if you'll come back, when). If you already have, say nothing more." } })) } });
+    const comeBack = leave.args?.come_back_later === true;
+    live.leaveAfterTurn = { comeBack };
+    setTimeout(() => officeLeave({ comeBack }), 12_000);
+    return;
+  }
   const c = msg.serverContent;
   if (!c) return;
+  if (c.inputTranscription?.text || c.outputTranscription?.text || c.modelTurn) live.activeAt = Date.now();
   if (c.inputTranscription?.text) {
     live.heard += c.inputTranscription.text;
     setStatus(`🎤 ${live.heard.trim()}`);
@@ -3293,6 +3372,7 @@ function liveMessage(msg) {
   if (c.turnComplete) {
     liveFlushLearner();
     liveFlushReply();
+    if (live.leaveAfterTurn) officeLeave(live.leaveAfterTurn); // waits for the goodbye to finish playing
   }
 }
 
@@ -3342,8 +3422,11 @@ async function startLive() {
     return;
   }
   // After a reconnect the partner gets the end of the call, so it carries on rather than starting over.
-  const recap = callLog.slice(-LIVE_RECAP).map((e) => ("you" in e ? `Learner: ${e.you}` : `You: ${e.reply}`));
-  live = { ws: null, stream: null, tap: null, ready: false, muted: false, heard: "", reply: "", replyLi: null, lastReply: "", sources: new Set(), playHead: 0, speaking: false, recap, micBuf: new Int16Array(LIVE_CHUNK), micLen: 0, micPos: 0, ending: false };
+  const office = isOffice();
+  // In the Büro a reconnect only brings back this visit: the earlier ones are in its memory.
+  if (office && !officeVisitAt) { officeVisit(); return; } // the 🎤 between visits calls someone over
+  const recap = callLog.slice(office ? state.settings.visitLogStart ?? 0 : 0).slice(-LIVE_RECAP).map((e) => ("you" in e ? `Learner: ${e.you}` : `You: ${e.reply}`));
+  live = { ws: null, stream: null, tap: null, ready: false, muted: false, heard: "", reply: "", replyLi: null, lastReply: "", sources: new Set(), playHead: 0, speaking: false, recap, micBuf: new Int16Array(LIVE_CHUNK), micLen: 0, micPos: 0, ending: false, floor: null, talking: false, quiet: 0, preroll: [], micSent: 0, micTotal: 0 };
   setMic(true);
   setStatus("Connecting the live call…");
   try {
@@ -3369,8 +3452,9 @@ async function startLive() {
     ws.onopen = () => liveSend({
       setup: {
         model,
-        generationConfig: { responseModalities: ["AUDIO"], speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: "Puck" } } } },
-        systemInstruction: { parts: [{ text: liveSystemPrompt(state.settings, recap) }] },
+        generationConfig: { responseModalities: ["AUDIO"], speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: office ? state.settings.colleague?.voice ?? "Puck" : "Puck" } } } },
+        systemInstruction: { parts: [{ text: office ? officeSystemPrompt(state.settings, recap) : liveSystemPrompt(state.settings, recap) }] },
+        ...(office ? { tools: OFFICE_TOOLS } : {}),
         inputAudioTranscription: {},
         outputAudioTranscription: {},
       },
@@ -3389,10 +3473,12 @@ async function startLive() {
       if (before) store.set(LIVE_MODEL_KEY, null); // look the model up again next time
       stopLive();
       debugLog(`live call closed: ${event.code} ${event.reason}`);
+      if (office) { officeAfterVisit(); if (!before) return; }
       setStatus(`${before ? "The live call couldn't start" : "The live call stopped"}${event.reason ? ` (${event.reason})` : ""}. Tap 🎤 to ${before ? "try again" : "reconnect"}.`);
     };
   } catch (error) {
     stopLive();
+    if (office) officeAfterVisit();
     setStatus(`Live voice couldn't start: ${error.message}. Tap 🎤 to try again.`);
   }
 }
@@ -3401,6 +3487,7 @@ function stopLive() {
   if (!live) return;
   const l = live;
   l.ending = true;
+  if (l.micTotal) debugLog(`live call: sent ${(l.micSent / 10).toFixed(1)} s of ${(l.micTotal / 10).toFixed(1)} s of mic audio`);
   liveFlushLearner();
   liveFlushReply();
   liveStopVoice();
@@ -3430,6 +3517,253 @@ function liveSendText(text) {
   liveSend({ clientContent: { turns: [{ role: "user", parts: [{ text }] }], turnComplete: true } });
   liveCoach(text, live.lastReply);
 }
+
+// ---------- Büro: colleagues drop by while the learner works ----------
+// The learner leaves the tab open and works. At a random moment a colleague "walks over": a
+// chime, a desktop notification if the tab is hidden, and a Gemini Live call that is connected
+// only for that visit. When the colleague says goodbye (the leave function, or a long silence)
+// the call is closed again, so nothing is sent or billed between visits.
+// As in a real German office: most colleagues say du, the boss and the older colleague from
+// accounting say Sie, and the learner has to answer in the same form.
+const OFFICE_COLLEAGUES = [
+  { name: "Lena", voice: "Kore", address: "du", role: "Product Ownerin in deinem Team", style: "organised and direct, talks quickly, thinks in sprints, deadlines and Jira tickets" },
+  { name: "Jonas", voice: "Puck", role: "Backend-Entwickler in deinem Team", address: "du", style: "relaxed and dry, a bit ironic, grumbles about legacy code and the coffee machine" },
+  { name: "Frau Becker", voice: "Leda", role: "Teamleiterin (your boss)", address: "Sie", style: "polite, factual and firm; gets to the point at once; expects clear answers and dates" },
+  { name: "Murat", voice: "Orus", role: "Kollege vom IT-Support", address: "du", style: "helpful and chatty, Ruhrpott humour, always in a hurry to the next ticket" },
+  { name: "Sophie", voice: "Aoede", role: "Werkstudentin in deinem Team", address: "du", style: "friendly and curious, a bit unsure, asks many questions" },
+  { name: "Herr Krüger", voice: "Charon", role: "Kollege aus der Buchhaltung, kurz vor der Rente", address: "Sie", style: "formal, correct and a bit pedantic about rules, forms and deadlines, but kind" },
+];
+// Things that really bring a German colleague to your desk. Some fit only a time of day
+// (when: [from, to] in hours) and are skipped outside it.
+const OFFICE_REASONS = [
+  { why: "the team meeting (Jour fixe) this afternoon has to be moved and you need a new slot that works for them" },
+  { why: "you need a short Abstimmung: you are stuck on a ticket and want their opinion before the Daily tomorrow" },
+  { why: "it is lunchtime: you say \"Mahlzeit!\" and ask whether they are coming along to the Kantine, and what's on the menu today", when: [11.5, 13.5] },
+  { why: "someone is leaving the company / has a birthday and you are going round with the Umschlag (envelope) and a card for the farewell gift: ask whether they want to chip in and sign the card" },
+  { why: "the Kaffeekasse is empty / nobody has emptied the dishwasher in the Teeküche, and you remind them, half joking, half serious" },
+  { why: "you are doing the Urlaubsplanung for next year: you want to know when they plan to take holidays, and whether they take the Brückentag" },
+  { why: "the boss wants a status update by end of day: you ask how far they are with their task and whether the deadline holds" },
+  { why: "you will be off sick tomorrow / have a Arzttermin and ask them to take over a small task (Vertretung) for you" },
+  { why: "it's very stuffy in the office: you ask whether it's OK to open the window for a quick Stoßlüften, and complain about the heating / the air conditioning" },
+  { why: "you ask them to review your document / pull request / presentation today, because it has to go out tomorrow morning" },
+  { why: "you remind them about the mandatory Datenschutz-/Brandschutzschulung that has to be done this week, or the Zeiterfassung they haven't filled in" },
+  { why: "you are organising the Weihnachtsfeier / Sommerfest / team event and ask whether they come, and for ideas" },
+  { why: "you ask about their Homeoffice days next week, because you want to plan a meeting in the office" },
+  { why: "it is late afternoon: you are leaving, say \"Ich mach dann mal Feierabend\" and ask one last quick thing about tomorrow", when: [15.5, 20] },
+  { why: "it is Monday morning: you ask how their weekend was and tell briefly about yours", day: 1, when: [8, 12] },
+  { why: "it is Friday: you ask about their plans for the weekend before leaving", day: 5, when: [12, 20] },
+];
+const OFFICE_GAPS = { short: [4, 10], normal: [10, 25], long: [25, 50] }; // minutes between visits
+const OFFICE_MEMORY_KEY = "office_memory"; // [{ name, at, lines }]: earlier visits, so colleagues remember
+const OFFICE_SILENCE_MS = 20_000; // nobody talks this long: the colleague leaves
+const OFFICE_WRAP_MS = 5 * 60_000; // a visit this long: the colleague is told to wrap up
+const OFFICE_MAX_MS = 7 * 60_000; // and the call ends here regardless
+let officeTimer = null; // checks, every few seconds, whether it's time for a visit / the visit is over
+let officeNextAt = 0;
+let officeVisitAt = 0; // when the current visit started (0: nobody is here)
+let officeLeaving = false;
+let officeWrapSent = false;
+
+const isOffice = () => Boolean(MODES[state.settings?.request.mode]?.office);
+
+function officeScheduleNext({ soon = false, minutes: exact = 0 } = {}) {
+  const [lo, hi] = OFFICE_GAPS[state.settings?.officeGap] ?? OFFICE_GAPS.normal;
+  const minutes = exact || (soon ? 0.5 + Math.random() * 1.5 : lo + Math.random() * (hi - lo));
+  officeNextAt = Date.now() + minutes * 60_000;
+  debugLog(`office: next visit in ${minutes.toFixed(1)} min`);
+  if (!officeTimer) officeTimer = setInterval(officeTick, 3000);
+  officeShowWaiting();
+}
+
+function officeStop() {
+  clearInterval(officeTimer);
+  officeTimer = null;
+  officeNextAt = 0;
+  officeVisitAt = 0;
+  officeLeaving = false;
+}
+
+function officeShowWaiting() {
+  if (live || !isOffice()) return;
+  setStatus("Work as usual: a colleague will drop by at some point. Tap 🎤 to call someone over now.");
+  updateCallState();
+}
+
+function officeTick() {
+  if (!isOffice()) return officeStop();
+  if (state.paused) { if (!live) officeNextAt += 3000; return; } // the pause doesn't count
+  if (!live && !officeVisitAt) {
+    if (officeNextAt && Date.now() >= officeNextAt) officeVisit();
+    return;
+  }
+  if (!live?.ready || officeLeaving) return;
+  const now = Date.now();
+  const quiet = now - (live.activeAt ?? officeVisitAt);
+  if (now - officeVisitAt > OFFICE_MAX_MS || (quiet > OFFICE_SILENCE_MS && !live.speaking)) {
+    officeLeave();
+  } else if (!officeWrapSent && now - officeVisitAt > OFFICE_WRAP_MS && !live.speaking) {
+    officeWrapSent = true;
+    liveNote("You need to get back to your desk now: wrap up naturally in one or two lines, say goodbye and call leave.");
+  }
+}
+
+function officeMemory() {
+  return store.get(OFFICE_MEMORY_KEY, []);
+}
+
+// What was said in this visit, kept (verbatim, short) so the next visitor can refer to it.
+function officeRemember() {
+  const c = state.settings?.colleague;
+  if (!c) return;
+  const lines = callLog.slice(state.settings.visitLogStart ?? 0)
+    .map((e) => ("you" in e ? `Learner: ${e.you}` : `${c.name}: ${e.reply}`))
+    .map((l) => (l.length > 140 ? `${l.slice(0, 137)}…` : l))
+    .slice(-8);
+  if (!lines.length) return;
+  store.set(OFFICE_MEMORY_KEY, [...officeMemory(), { name: c.name, at: Date.now(), lines }].slice(-6));
+}
+
+function officePick() {
+  const memory = officeMemory();
+  const recentNames = memory.slice(-2).map((m) => m.name);
+  const recentReasons = store.get("office_recent_reasons", []);
+  const colleague = shuffled(OFFICE_COLLEAGUES.filter((c) => !recentNames.includes(c.name)))[0] ?? OFFICE_COLLEAGUES[0];
+  const now = new Date();
+  const hour = now.getHours() + now.getMinutes() / 60;
+  const fits = (r) => (!r.when || (hour >= r.when[0] && hour < r.when[1])) && (!r.day || r.day === now.getDay());
+  const timely = OFFICE_REASONS.filter((r) => (r.when || r.day) && fits(r) && !recentReasons.includes(r.why));
+  // A reason tied to this moment (lunch, Friday afternoon) wins half the time it fits.
+  const reason = (timely.length && Math.random() < 0.5 ? shuffled(timely)[0] : null)
+    ?? shuffled(OFFICE_REASONS.filter((r) => !r.when && !r.day && !recentReasons.includes(r.why)))[0] ?? OFFICE_REASONS[0];
+  store.set("office_recent_reasons", [...recentReasons, reason.why].slice(-8));
+  return { ...colleague, reason: reason.why };
+}
+
+// A soft two-note chime, like someone tapping on the desk, before the colleague speaks.
+function officeChime() {
+  const ctx = getAudioCtx();
+  if (!ctx) return;
+  ctx.resume?.();
+  [660, 880].forEach((f, i) => {
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.frequency.value = f;
+    const at = ctx.currentTime + i * 0.18;
+    gain.gain.setValueAtTime(0.0001, at);
+    gain.gain.exponentialRampToValueAtTime(0.25, at + 0.02);
+    gain.gain.exponentialRampToValueAtTime(0.0001, at + 0.5);
+    osc.connect(gain).connect(ctx.destination);
+    osc.start(at);
+    osc.stop(at + 0.55);
+  });
+}
+
+function officeVisit() {
+  if (live || officeVisitAt || !isOffice()) return;
+  // Told "jetzt gerade schlecht" last time: the same colleague comes back with the same matter.
+  const back = state.settings.officeReturn;
+  state.settings.officeReturn = null;
+  const colleague = back ? { ...back, returning: true } : officePick();
+  state.settings.colleague = colleague;
+  state.settings.characterName = colleague.name;
+  state.settings.visitLogStart = callLog.length;
+  officeVisitAt = Date.now();
+  officeLeaving = false;
+  officeWrapSent = false;
+  $("call-avatar").textContent = colleague.name.split(" ").at(-1).charAt(0);
+  $("call-name").textContent = colleague.name;
+  $("call-topic").textContent = colleague.role;
+  $("call-topic").hidden = false;
+  const divider = document.createElement("li");
+  divider.className = "msg divider muted";
+  divider.textContent = `— ${colleague.name} ${back ? "comes back" : "comes over"} (${new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}) —`;
+  $("transcript").append(divider);
+  scrollCallToBottom();
+  officeChime();
+  if (document.hidden && "Notification" in window && Notification.permission === "granted") {
+    try {
+      const n = new Notification(`${colleague.name} kommt ${back ? "nochmal " : ""}vorbei`, { body: colleague.address === "Sie" ? "Haben Sie kurz Zeit?" : "Hast du kurz Zeit?", tag: "talkloop-office" });
+      n.onclick = () => { window.focus(); n.close(); };
+    } catch { /* notifications unavailable */ }
+  }
+  startLive();
+}
+
+// The colleague goes back to their desk: let them finish their sentence, then hang up.
+async function officeLeave({ comeBack = false } = {}) {
+  if (officeLeaving || !officeVisitAt) return;
+  officeLeaving = true;
+  for (let i = 0; i < 40 && live?.speaking; i++) await sleep(250);
+  if (live) stopLive();
+  officeAfterVisit({ comeBack });
+}
+
+// After a visit (ended normally or cut off): remember it and wait for the next one.
+function officeAfterVisit({ comeBack = false } = {}) {
+  if (!officeVisitAt) return;
+  const name = state.settings?.colleague?.name ?? "Your colleague";
+  // Only once: a colleague sent away twice doesn't come back a third time.
+  const back = comeBack && !state.settings.colleague?.returning;
+  officeRemember();
+  officeVisitAt = 0;
+  officeLeaving = false;
+  const divider = document.createElement("li");
+  divider.className = "msg divider muted";
+  divider.textContent = `— ${name} goes back to their desk${back ? " (will come back later)" : ""} —`;
+  $("transcript").append(divider);
+  scrollCallToBottom();
+  $("call-name").textContent = "Büro";
+  $("call-avatar").textContent = "🏢";
+  $("call-topic").hidden = true;
+  if (!isOffice()) return;
+  if (back) {
+    const { returning, ...colleague } = state.settings.colleague;
+    state.settings.officeReturn = colleague;
+    officeScheduleNext({ minutes: 3 + Math.random() * 5 });
+  } else {
+    officeScheduleNext();
+  }
+}
+
+// The colleague's instructions for one visit.
+function officeSystemPrompt(settings, recap = []) {
+  const { language, nativeLanguage, level } = settings.request;
+  const c = settings.colleague ?? OFFICE_COLLEAGUES[0];
+  const when = new Date().toLocaleString("de-DE", { weekday: "long", hour: "2-digit", minute: "2-digit" });
+  const sie = c.address === "Sie";
+  const lines = [
+    `You are ${c.name}, ${c.role}, in an ordinary office in Germany. Personality: ${c.style}. The learner is your colleague. It is ${when}. They are at their desk, concentrating on their laptop, and you have just walked up to them.`,
+    `Why you came: ${c.reason}. Speak only ${language}: real spoken office German as you hear it in Germany, with its fillers and reactions (also, na ja, genau, ach so, echt?, alles klar, passt, Mhm, sag mal), short sentences, nothing like a textbook, a teacher or a phone call. Say "${sie ? "Sie" : "du"}" to the learner${sie ? "; if they say du to you, don't correct it, but stay with Sie yourself" : ""}. Greet the way people do at that time and place (Moin / Morgen, Mahlzeit around lunch, Hallo) and say goodbye the same way (bis später, bis gleich, schönen Feierabend, schönes Wochenende on a Friday).`,
+    `How it goes, like in a real German office: first you only get their attention and ask, briefly and directly, whether they have a moment (e.g. ${sie ? "\"Entschuldigung, haben Sie kurz fünf Minuten?\", \"Störe ich gerade?\"" : "\"Du, hast du kurz 'ne Minute?\", \"Störe ich gerade?\", \"Kurze Frage…\""}), and nothing else: then you wait for their answer. If they say yes, come straight to the point: Germans are direct and factual at work, with at most a line of small talk; then talk it through properly, ask for concrete things (a time, a yes or no, a date), and agree on what happens next ("Dann machen wir das so", "Schick mir das einfach per Mail", "Ich trag's in den Kalender ein"). If they say it's a bad moment or they're busy, accept it without fuss, say when you'll come back (e.g. "Kein Stress, ich komm in 'ner halben Stunde nochmal vorbei") and call leave with come_back_later true.`,
+    ...(c.returning ? [`You were already here a few minutes ago, but they had no time, and you said you'd come back. Now you are back: start with something like ${sie ? "\"So, passt es jetzt besser?\"" : "\"So, passt's jetzt?\""} and then the same matter. This time, if they are still busy, agree on another way (a mail, a slot in the calendar) and leave.`] : []),
+    `Learner: ${language} at CEFR ${level}, native ${nativeLanguage}. Speak at their level, but stay a real colleague, not a teacher.${LEVEL_GUIDE[level] ? ` At ${level}: ${LEVEL_GUIDE[level]}` : ""}`,
+    "Let the learner do a good share of the talking: ask them things, react to what they say, and invent realistic details about your work, the project and the office when needed. If you don't know something about the learner (their job, their project), ask or assume something plausible and stay consistent with it.",
+    "This is a short interruption, as in real life: two to four minutes. Once your matter is sorted, say a natural goodbye (e.g. \"Gut, dann lass ich dich mal weiterarbeiten!\") and then call leave. Never call leave before you have said goodbye.",
+    "The learner may pause to think: wait for them.",
+    "If they make a mistake, repeat the right form naturally in your answer, like a native colleague would, without a grammar lesson: the app shows written corrections itself.",
+    "A message in brackets starting \"(Coach, not the learner:\" comes from the learning app: do what it says, in your own voice and in character, and never mention a coach or an app.",
+  ];
+  const memory = officeMemory().slice(-4);
+  if (memory.length) {
+    lines.push(`Earlier conversations at the office today and on earlier days (refer back to them naturally when it fits, e.g. ask how something turned out; never repeat them):\n${memory.map((m) => `[${new Date(m.at).toLocaleString("de-DE", { weekday: "short", hour: "2-digit", minute: "2-digit" })}, with ${m.name}]\n${m.lines.join("\n")}`).join("\n")}`);
+  }
+  const weak = recurringMistakes(language);
+  if (weak.length) lines.push(`The learner's recurring mistakes: ${weak.map((w) => MISTAKE_TYPES[w.type]).join("; ")}. Now and then ask something whose natural answer needs one of these; never say you're testing.`);
+  lines.push(...liveVocabLines(settings, MODES.office));
+  if (recap.length) lines.push(`Your conversation was cut off and has just reconnected. The end of it so far:\n${recap.join("\n")}\nCarry on from there in one short line, without greeting again.`);
+  return lines.join("\n");
+}
+
+const OFFICE_TOOLS = [{
+  functionDeclarations: [{
+    name: "leave",
+    description: "Go back to your own desk. Call this right after you have said goodbye to the learner.",
+    parameters: {
+      type: "OBJECT",
+      properties: { come_back_later: { type: "BOOLEAN", description: "true if they had no time and you said you'd come back later" } },
+    },
+  }],
+}];
 
 // ---------- conversation turns ----------
 // ---------- second grammar check (LanguageTool) ----------
@@ -3931,8 +4265,8 @@ $("start").addEventListener("click", async () => {
   } else {
     todayWords = null;
   }
-  if (liveVoiceOn() && !MODES[mode]?.drill && !liveKey()) {
-    $("vocab-status").textContent = "Gemini 3.8 Live needs its key: tap “Change” at the top and add the Gemini 3.8 Live key, or untick Gemini 3.8 Live.";
+  if ((liveVoiceOn() || MODES[mode]?.office) && !MODES[mode]?.drill && !liveKey()) {
+    $("vocab-status").textContent = MODES[mode]?.office ? "Büro uses Gemini Live: tap “Change” at the top and add your Gemini (Live) key." : "Gemini 3.8 Live needs its key: tap “Change” at the top and add the Gemini 3.8 Live key, or untick Gemini 3.8 Live.";
     $("vocab-status").scrollIntoView({ block: "center", behavior: "smooth" });
     return;
   }
@@ -3958,12 +4292,13 @@ $("start").addEventListener("click", async () => {
   state.settings = {
     locale: languageSelect.selectedOptions[0].dataset.locale,
     level: $("level").value,
-    characterName: usesScene ? (SCENARIOS[scenario] ?? SCENARIOS.cafe).character : PARTNER.character,
+    characterName: MODES[mode]?.office ? "Büro" : usesScene ? (SCENARIOS[scenario] ?? SCENARIOS.cafe).character : PARTNER.character,
     vocab,
     sayAgain: $("say-again").checked,
     // Gemini Live: a real-time voice call (see startLive). Not for the sentence drill, which
     // needs the word chips and schedule of a normal call.
-    live: liveVoiceOn() && !MODES[mode]?.drill,
+    live: (liveVoiceOn() || Boolean(MODES[mode]?.office)) && !MODES[mode]?.drill,
+    officeGap: $("office-gap").value,
     request: {
       language: languageSelect.value,
       nativeLanguage: $("native").value,
@@ -4004,7 +4339,14 @@ $("start").addEventListener("click", async () => {
   if (!state.settings.live && hasPiperVoice(state.settings.locale)) {
     preloadPiper(state.settings.locale).catch((error) => console.warn("Piper download failed:", error));
   }
-  if (state.settings.live) {
+  if (MODES[mode]?.office) {
+    // Nobody is here yet: the first colleague drops by in a minute or two, then every so often.
+    state.handsFree = false;
+    $("call-avatar").textContent = "🏢";
+    getAudioCtx()?.resume(); // unlocked by this tap, so a later visit can play without one
+    if ("Notification" in window && Notification.permission === "default") Notification.requestPermission().catch(() => {});
+    officeScheduleNext({ soon: true });
+  } else if (state.settings.live) {
     state.handsFree = false; // Gemini listens itself: the browser's speech recognition stays off
     startLive();
   } else {
@@ -4102,7 +4444,7 @@ function refreshVocabUI(count) {
 // The scene only matters in scene role-play, the connector in the connector drill; grey them out otherwise.
 function showModeChoices() {
   const m = MODES[$("mode").value] ?? MODES.scene;
-  for (const [id, on] of [["scenario", m.usesScene], ["connector", Boolean(m.joiner)]]) {
+  for (const [id, on] of [["scenario", m.usesScene], ["connector", Boolean(m.joiner)], ["office-gap", Boolean(m.office)]]) {
     $(id).disabled = !on;
     $(id).closest("label").style.opacity = on ? "1" : "0.5";
   }
@@ -4122,6 +4464,8 @@ loadConnectors().then((list) => {
   if (!$("connector").value) $("connector").value = "mix";
 }).catch(() => { /* tried again at Start, which says what went wrong */ });
 $("connector").addEventListener("change", () => store.set("connector", $("connector").value));
+$("office-gap").value = store.get("office_gap", "normal");
+$("office-gap").addEventListener("change", () => store.set("office_gap", $("office-gap").value));
 
 $("language").addEventListener("change", preloadSelectedVoice);
 $("language").addEventListener("change", renderMistakes);
@@ -4329,6 +4673,7 @@ onTap($("explorer-close"), () => {
 
 // Quit the current conversation and return to the start screen.
 $("end").addEventListener("click", () => {
+  officeStop();
   stopLive();
   stopListening();
   stopSpeaking();
@@ -4369,7 +4714,7 @@ $("end").addEventListener("click", () => {
 if ("speechSynthesis" in window) speechSynthesis.onvoiceschanged = () => {};
 
 // With ?debug: which build this phone runs (a cached old one would explain old behaviour).
-debugLog(`Talkloop v67 · speech recognition ${Recognition ? "yes" : "no"}`);
+debugLog(`Talkloop v68 · speech recognition ${Recognition ? "yes" : "no"}`);
 if (!trainerSession()) goToLogin();
 refreshKeyGate();
 renderStats();

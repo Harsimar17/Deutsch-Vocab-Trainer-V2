@@ -429,3 +429,7 @@ select:focus, input:focus { outline: 2px solid var(--accent); outline-offset: 1p
   .tease { animation: none; }
   button:not(:disabled):hover { transform: none; }
 }
+
+/* Büro: a colleague coming over / going back to their desk. */
+.msg.divider { align-self: center; background: none; border: 0; box-shadow: none; font-size: 0.85em; padding: 4px 0; text-align: center; color: var(--muted); }
+.msg.divider::after { content: none; }
