@@ -3237,21 +3237,28 @@ function liveMicSamples(samples, rate) {
 // before it go too (so the first sound isn't cut off), and 1.2 s after it (so Gemini hears the
 // pause and answers); then audioStreamEnd tells Gemini the stream has stopped.
 const LIVE_PREROLL = 3; // chunks (100 ms each) sent from just before speech starts
-const LIVE_HANGOVER = 12; // chunks still sent after the last loud one
-const LIVE_MIN_LEVEL = 0.012; // RMS (0–1) below which nothing counts as speech, however quiet the room
+const LIVE_HANGOVER = 15; // chunks still sent after the last loud one (a short thinking pause)
+const LIVE_MIN_LEVEL = 0.006;
+const LIVE_BARGE_IN_LEVEL = 0.04; // the same, while Gemini is speaking // RMS (0–1) below which nothing counts as speech, however quiet the room
 
 function liveGate(chunk) {
   let sum = 0;
   for (const v of chunk) sum += v * v;
   const rms = Math.sqrt(sum / chunk.length) / 0x8000;
   live.micTotal++;
-  // The noise floor follows quiet stretches quickly and loud ones only slowly.
-  live.floor = live.floor == null ? rms : rms < live.floor ? live.floor * 0.7 + rms * 0.3 : live.floor * 0.995 + rms * 0.005;
+  // The noise floor follows quiet stretches quickly and loud ones only slowly. It stays put while
+  // Gemini speaks: what's left of its voice after echo cancellation would raise it, and the
+  // learner's answer right after would then pass for silence.
+  if (!live.speaking) live.floor = live.floor == null ? rms : rms < live.floor ? live.floor * 0.7 + rms * 0.3 : live.floor * 0.995 + rms * 0.005;
   const send = (c) => {
     liveSend({ realtimeInput: { audio: { data: bytesToBase64(new Uint8Array(c.buffer)), mimeType: `audio/pcm;rate=${LIVE_IN_RATE}` } } });
     live.micSent++;
   };
-  if (rms > Math.max(LIVE_MIN_LEVEL, live.floor * 3)) {
+  // While Gemini speaks, only a clearly raised voice counts (the learner cutting in), not the
+  // remains of Gemini's own voice in the mic.
+  const level = live.speaking ? LIVE_BARGE_IN_LEVEL : LIVE_MIN_LEVEL;
+  if (rms > Math.max(level, (live.floor ?? 0) * 2.5)) {
+    live.activeAt = Date.now(); // the learner is talking (the Büro doesn't wait for Gemini's transcript)
     if (!live.talking) {
       live.talking = true;
       live.preroll.forEach(send);
@@ -3290,7 +3297,7 @@ function livePlay(b64, mimeType) {
   updateCallState();
   src.onended = () => {
     live?.sources.delete(src);
-    if (live && !live.sources.size) { live.speaking = false; updateCallState(); }
+    if (live && !live.sources.size) { live.speaking = false; live.activeAt = Date.now(); updateCallState(); }
   };
 }
 
@@ -3529,12 +3536,12 @@ async function startLive() {
         }
         return;
       }
-      if (office) { officeAfterVisit(); if (!before) return; }
+      if (office) { officeAfterVisit({ why: "the line dropped" }); if (!before) return; }
       setStatus(`${before ? "The live call couldn't start" : "The live call stopped"}${event.reason ? ` (${event.reason})` : ""}. Tap 🎤 to ${before ? "try again" : "reconnect"}.`);
     };
   } catch (error) {
     stopLive();
-    if (office) officeAfterVisit();
+    if (office) officeAfterVisit({ why: "the line dropped" });
     setStatus(`Live voice couldn't start: ${error.message}. Tap 🎤 to try again.`);
   }
 }
@@ -3611,7 +3618,7 @@ const OFFICE_REASONS = [
 ];
 const OFFICE_GAPS = { short: [4, 10], normal: [10, 25], long: [25, 50] }; // minutes between visits
 const OFFICE_MEMORY_KEY = "office_memory"; // [{ name, at, lines }]: earlier visits, so colleagues remember
-const OFFICE_SILENCE_MS = 20_000; // nobody talks this long: the colleague leaves
+const OFFICE_SILENCE_MS = 30_000; // nobody talks this long (after the colleague finished speaking): they leave
 const OFFICE_WRAP_MS = 5 * 60_000; // a visit this long: the colleague is told to wrap up
 const OFFICE_MAX_MS = 7 * 60_000; // and the call ends here regardless
 let officeTimer = null; // checks, every few seconds, whether it's time for a visit / the visit is over
@@ -3655,8 +3662,11 @@ function officeTick() {
   if (!live?.ready || officeLeaving) return;
   const now = Date.now();
   const quiet = now - (live.activeAt ?? officeVisitAt);
-  if (now - officeVisitAt > OFFICE_MAX_MS || (quiet > OFFICE_SILENCE_MS && !live.speaking)) {
-    officeLeave();
+  if (now - officeVisitAt > OFFICE_MAX_MS) {
+    officeLeave({ why: "time's up" });
+  } else if (quiet > OFFICE_SILENCE_MS && !live.speaking && !live.talking) {
+    debugLog(`office: nobody spoke for ${Math.round(quiet / 1000)} s`);
+    officeLeave({ why: "no answer" });
   } else if (!officeWrapSent && now - officeVisitAt > OFFICE_WRAP_MS && !live.speaking) {
     officeWrapSent = true;
     liveNote("You need to get back to your desk now: wrap up naturally in one or two lines, say goodbye and call leave.");
@@ -3747,16 +3757,16 @@ function officeVisit() {
 }
 
 // The colleague goes back to their desk: let them finish their sentence, then hang up.
-async function officeLeave({ comeBack = false } = {}) {
+async function officeLeave({ comeBack = false, why = "" } = {}) {
   if (officeLeaving || !officeVisitAt) return;
   officeLeaving = true;
   for (let i = 0; i < 40 && live?.speaking; i++) await sleep(250);
   if (live) stopLive();
-  officeAfterVisit({ comeBack });
+  officeAfterVisit({ comeBack, why });
 }
 
 // After a visit (ended normally or cut off): remember it and wait for the next one.
-function officeAfterVisit({ comeBack = false } = {}) {
+function officeAfterVisit({ comeBack = false, why = "" } = {}) {
   if (!officeVisitAt) return;
   const name = state.settings?.colleague?.name ?? "Your colleague";
   // Only once: a colleague sent away twice doesn't come back a third time.
@@ -3767,7 +3777,8 @@ function officeAfterVisit({ comeBack = false } = {}) {
   officeLeaving = false;
   const divider = document.createElement("li");
   divider.className = "msg divider muted";
-  divider.textContent = `— ${name} goes back to their desk${back ? " (will come back later)" : ""} —`;
+  const note = back ? "will come back later" : why === "no answer" ? `no answer for ${OFFICE_SILENCE_MS / 1000} s` : why;
+  divider.textContent = `— ${name} goes back to their desk${note ? ` (${note})` : ""} —`;
   $("transcript").append(divider);
   scrollCallToBottom();
   $("call-name").textContent = "Büro";
