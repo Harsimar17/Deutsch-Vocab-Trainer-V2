@@ -553,6 +553,38 @@ class EndToEndTest {
     }
 
     @Test
+    @SuppressWarnings("unchecked")
+    void talkloopKeepsEachLearnersAiKeysInTheirAccount() throws Exception {
+        String ben = (String) ok(post("/api/talkloop/link"), login(BEN, "ben-test-pw"), null).get("token");
+        assertEquals(Map.of(), ok(get("/api/talkloop/keys"), ben, null).get("keys"));
+
+        // Saved once, loaded on every login; an empty value removes a key.
+        ok(post("/api/talkloop/keys"), ben, Map.of("keys", Map.of("groq", "gsk_abc123", "gemini", "AIza-xyz")));
+        assertEquals(Map.of("groq", "gsk_new", "gemini", "AIza-xyz"),
+                ok(post("/api/talkloop/keys"), ben, Map.of("keys", Map.of("groq", "gsk_new"))).get("keys"));
+        assertEquals(Map.of("groq", "gsk_new"), ok(post("/api/talkloop/keys"), ben, Map.of("keys", Map.of("gemini", ""))).get("keys"));
+        assertEquals(Map.of("groq", "gsk_new"), ok(get("/api/talkloop/keys"), ben, null).get("keys"));
+
+        // Unknown names and odd values are refused; another learner sees only their own keys.
+        assertEquals(400, status(post("/api/talkloop/keys"), ben, Map.of("keys", Map.of("evil", "x"))));
+        assertEquals(400, status(post("/api/talkloop/keys"), ben, Map.of("keys", Map.of("groq", "has space"))));
+        String anna = (String) ok(post("/api/talkloop/link"), login(ANNA, "anna-test-pw"), null).get("token");
+        assertEquals(Map.of(), ok(get("/api/talkloop/keys"), anna, null).get("keys"));
+        assertEquals(401, status(get("/api/talkloop/keys"), null, null));
+
+        // A save writes only the keys it sends: fields added by hand in the Firebase console
+        // (known names or not) are still there afterwards.
+        String uid = (String) ((Map<String, Object>) ok(post("/api/auth/login"), null,
+                Map.of("email", BEN, "password", "ben-test-pw")).get("user")).get("uid");
+        firestore.putTalkloopKeyField(uid, "openai", "sk-console");
+        firestore.putTalkloopKeyField(uid, "Groq_Typo", "gsk_console");
+        assertEquals(Map.of("groq", "gsk_new", "openai", "sk-console", "gemini", "AIza-2"),
+                ok(post("/api/talkloop/keys"), ben, Map.of("keys", Map.of("gemini", "AIza-2"))).get("keys"));
+        assertEquals("gsk_console", firestore.talkloopKeysDoc(uid).get("Groq_Typo"));
+        assertEquals("sk-console", firestore.talkloopKeysDoc(uid).get("openai"));
+    }
+
+    @Test
     void talkloopSyncsItsMistakeLogAcrossDevices() throws Exception {
         String t = login(BEN, "ben-test-pw");
         String link = (String) ok(post("/api/talkloop/link"), t, null).get("token");

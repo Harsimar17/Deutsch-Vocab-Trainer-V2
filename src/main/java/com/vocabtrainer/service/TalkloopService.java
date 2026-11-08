@@ -45,6 +45,10 @@ public class TalkloopService {
     private static final int MAX_SUBJECTS_PER_CHAT = 40;
     private static final int MAX_SUBJECT = 60;
     private static final Pattern CHAT_ID = Pattern.compile("[A-Za-z0-9_-]{1,40}");
+    /** The keys Talkloop knows (the names its getKey() uses), and what a key may look like. */
+    static final List<String> KEY_NAMES = List.of("gemini", "gemini2", "geminiLive", "groq", "groq2", "groq3",
+            "mistral", "openai", "cfAccount", "cfToken");
+    private static final Pattern KEY_VALUE = Pattern.compile("[!-~]{1,400}"); // printable ASCII, no spaces
 
     private final JwtService jwt;
     private final ProgressService progress;
@@ -69,6 +73,55 @@ public class TalkloopService {
         v.put("token", jwt.issueLink(session));
         v.put("expiresAt", System.currentTimeMillis() + JwtService.LINK_VALIDITY.toMillis());
         return v;
+    }
+
+    /** The learner's saved AI keys (name → key); empty when none are saved. */
+    public Map<String, Object> keys(Ctx ctx) {
+        Map<String, Object> saved = repo.findTalkloopKeys(ctx);
+        Map<String, Object> keys = new LinkedHashMap<>();
+        if (saved != null) {
+            for (String name : KEY_NAMES) {
+                if (saved.get(name) instanceof String k && !k.isBlank()) keys.put(name, k);
+            }
+        }
+        return Map.of("keys", keys);
+    }
+
+    /**
+     * Saves the keys sent (name → key); an empty value removes that key. Only the sent fields
+     * are written, so anything else in the document (e.g. added by hand in the Firebase
+     * console) stays. Returns all saved keys.
+     */
+    public Map<String, Object> saveKeys(Ctx ctx, Map<String, Object> body) {
+        if (!(body.get("keys") instanceof Map<?, ?> sent)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "keys: expected an object");
+        }
+        Map<String, Object> keys = new LinkedHashMap<>(castKeys(keys(ctx).get("keys")));
+        Map<String, Object> changes = new LinkedHashMap<>();
+        List<String> touched = new ArrayList<>();
+        for (Map.Entry<?, ?> e : sent.entrySet()) {
+            String name = String.valueOf(e.getKey());
+            if (!KEY_NAMES.contains(name)) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "unknown key: " + name);
+            }
+            String value = e.getValue() == null ? "" : String.valueOf(e.getValue()).trim();
+            if (value.isEmpty()) {
+                keys.remove(name);
+            } else if (KEY_VALUE.matcher(value).matches()) {
+                keys.put(name, value);
+                changes.put(name, value);
+            } else {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, name + ": doesn't look like an API key");
+            }
+            touched.add(name);
+        }
+        if (!touched.isEmpty()) repo.saveTalkloopKeys(ctx, changes, touched);
+        return Map.of("keys", keys);
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Map<String, Object> castKeys(Object o) {
+        return (Map<String, Object>) o;
     }
 
     /**
