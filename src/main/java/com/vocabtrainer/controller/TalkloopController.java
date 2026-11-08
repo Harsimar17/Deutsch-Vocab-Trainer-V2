@@ -45,6 +45,18 @@ public class TalkloopController {
         return talkloop.link(s);
     }
 
+    /** The learner's AI keys, saved in their Firebase record. Needs the link too. */
+    @GetMapping("/keys")
+    public ResponseEntity<Map<String, Object>> keys(Ctx ctx) {
+        return ResponseEntity.ok().header("Cache-Control", "no-store").body(talkloop.keys(ctx));
+    }
+
+    /** Saves AI keys (an empty value removes one) and returns all saved keys. Needs the link too. */
+    @PostMapping("/keys")
+    public ResponseEntity<Map<String, Object>> saveKeys(Ctx ctx, @RequestBody Map<String, Object> body) {
+        return ResponseEntity.ok().header("Cache-Control", "no-store").body(talkloop.saveKeys(ctx, body));
+    }
+
     /** Needs a Talkloop link, not a session (see TalkloopLinkInterceptor). */
     @GetMapping("/words")
     public Map<String, Object> words(Ctx ctx) {

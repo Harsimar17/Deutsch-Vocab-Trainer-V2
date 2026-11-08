@@ -251,7 +251,10 @@ body.in-call { overflow: hidden; }
 
 .muted { color: var(--muted); }
 .muted a { color: var(--accent); }
-.keyline { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 12px; font-size: 0.85rem; }
+.keyline { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; font-size: 0.85rem; }
+.keyline .ai-choice { display: flex; align-items: center; gap: 8px; margin: 0; font-weight: 600; }
+.keyline .ai-choice select { width: auto; margin: 0; }
+.keyline #key-summary { flex: 1 1 100%; order: 3; }
 
 .voice-status { margin: -4px 0 12px; font-size: 0.85rem; }
 .voice-status:empty { display: none; }

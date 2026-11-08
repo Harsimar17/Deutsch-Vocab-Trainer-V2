@@ -88,23 +88,36 @@ const OPENAI = {
   noTemperature: true,
 };
 
-const memoryKeys = {}; // fallback when localStorage is unavailable
-function getKey(service = "gemini") {
-  try {
-    return localStorage.getItem(`${service}_key`) || "";
-  } catch {
-    return memoryKeys[service] || "";
+// AI keys live only in memory. The Vocab Trainer hands them over with the link on every page
+// load (serverKeys, from its environment); one typed in lasts only until the page closes.
+// None is ever written to localStorage.
+let serverKeys = {};
+const memoryKeys = {};
+const KEY_SERVICES = ["openai", "mistral", "groq", "groq2", "groq3", "cfAccount", "cfToken", "gemini", "gemini2", "geminiLive"];
+// Keys an older Talkloop saved in this browser: used for now, moved into the learner's
+// account once linked (moveBrowserKeysToAccount), and only then wiped from the browser.
+try {
+  for (const s of KEY_SERVICES) {
+    const k = localStorage.getItem(`${s}_key`);
+    if (k) memoryKeys[s] = k;
   }
+} catch { /* storage blocked */ }
+function forgetBrowserKeys() {
+  try { for (const s of KEY_SERVICES) localStorage.removeItem(`${s}_key`); } catch { /* storage blocked */ }
+}
+// Saves the old browser keys the account doesn't have yet, then wipes them from the browser.
+async function moveBrowserKeysToAccount() {
+  const missing = Object.fromEntries(Object.entries(memoryKeys).filter(([s, k]) => KEY_SERVICES.includes(s) && k && !serverKeys[s]));
+  if (Object.keys(missing).length) await saveKeysToAccount(missing);
+  forgetBrowserKeys();
+}
+function getKey(service = "gemini") {
+  return serverKeys[service] || memoryKeys[service] || "";
 }
 function setKey(service, k) {
   memoryKeys[service] = k;
-  try {
-    if (k) localStorage.setItem(`${service}_key`, k);
-    else localStorage.removeItem(`${service}_key`);
-  } catch {
-    // storage unavailable; key lives only for this page load
-  }
 }
+const hasServerKeys = () => Object.keys(serverKeys).length > 0;
 
 // Which service runs the conversation. People who only ever saved a Gemini key stay on Gemini;
 // Mistral is no longer a choice of its own, so it moves to Groq (its backup stays).
@@ -115,8 +128,10 @@ function getProvider() {
   } catch {
     saved = memoryKeys.provider || "";
   }
-  if (["gemini", "groq", "cloudflare", "openai"].includes(saved)) return saved;
-  return getKey("gemini") && !getKey("mistral") && !getKey("groq") ? "gemini" : "groq";
+  const providers = ["groq", "gemini", "openai", "cloudflare"];
+  // The saved choice, unless it has no key while another one does.
+  if (providers.includes(saved) && (providerReady(saved) || !providers.some((p) => providerReady(p)))) return saved;
+  return providers.find((p) => providerReady(p)) ?? "groq";
 }
 // Whether the chosen service has what it needs: one key, or Cloudflare's account ID and token.
 function providerReady(provider = getProvider()) {
@@ -614,6 +629,32 @@ async function linkFromTrainerSession() {
   const renewed = res.headers.get("X-Auth-Token");
   if (renewed) localStorage.setItem(TRAINER_SESSION_KEY, JSON.stringify({ ...session, token: renewed }));
   store.set("trainer_link", { token: (await res.json()).token, api });
+  if (await fetchSavedKeys()) await moveBrowserKeysToAccount().catch((error) => console.warn("Couldn't move the keys:", error));
+}
+
+// The AI keys saved in the learner's Firebase record, fetched on every load and held in
+// memory only.
+async function fetchSavedKeys() {
+  const link = trainerLink();
+  if (!link) return false;
+  const res = await fetch(`${link.api}/api/talkloop/keys`, { headers: { Authorization: `Bearer ${link.token}` }, cache: "no-store" });
+  if (!res.ok) return false;
+  const { keys } = await res.json();
+  serverKeys = keys && typeof keys === "object" ? keys : {};
+  return true;
+}
+
+// Saves keys (name → key; "" removes one) to the learner's Firebase record.
+async function saveKeysToAccount(keys) {
+  const link = trainerLink();
+  if (!link) throw new Error("Not linked to the Vocab Trainer: log in again.");
+  const res = await fetch(`${link.api}/api/talkloop/keys`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${link.token}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ keys }),
+  });
+  if (!res.ok) throw new Error(`Couldn't save the keys (${res.status}).`);
+  serverKeys = (await res.json()).keys ?? {};
 }
 
 // Learnt words, the least secure first (the trainer sorts them).
@@ -4249,7 +4290,29 @@ function showKeyFields() {
   for (const [service, id] of Object.entries(KEY_INPUTS)) {
     $(id).placeholder = getKey(service) ? "Saved — leave blank to keep" : $(id).dataset.placeholder;
   }
+  // Keys saved in the account need no field (unless the learner wants to change them),
+  // and the AIs that have their key are marked.
+  if (!editingSavedKeys) {
+    for (const [service, id] of Object.entries(KEY_INPUTS)) {
+      if (serverKeys[service]) $(id).closest("label").hidden = true;
+    }
+  }
+  for (const option of $("provider").options) {
+    option.dataset.name ??= option.textContent;
+    option.textContent = option.dataset.name + (providerReady(option.value) ? " ✓" : "");
+  }
+  const ready = providerReady(provider);
+  $("save-key").textContent = ready ? "Connect" : "Save to my account";
+  $("edit-saved-keys").hidden = !hasServerKeys() || editingSavedKeys;
+  $("key-intro").textContent = hasServerKeys()
+    ? "Your AI keys are saved in your Vocab Trainer account and load when you log in. Pick the AI to talk to (✓ = key saved)."
+    : "Paste your AI key once: it is saved in your Vocab Trainer account (not in this browser) and loads every time you log in.";
 }
+let editingSavedKeys = false;
+$("edit-saved-keys").addEventListener("click", () => {
+  editingSavedKeys = true;
+  showKeyFields();
+});
 for (const id of Object.values(KEY_INPUTS)) $(id).dataset.placeholder = $(id).placeholder;
 $("provider").addEventListener("change", showKeyFields);
 // The LanguageTool switch is saved as soon as it changes (on unless switched off).
@@ -4275,10 +4338,18 @@ function refreshKeyGate() {
   $("key-saved").hidden = !haveKey;
   $("key-summary").textContent = keySummary();
   $("provider").value = getProvider();
+  // Every AI that has its key, to pick from right on the start screen.
+  const choice = $("ai-choice");
+  choice.replaceChildren(...[...$("provider").options].filter((o) => providerReady(o.value)).map((o) => new Option(o.dataset.name ?? o.textContent.replace(/ ✓$/, ""), o.value)));
+  choice.value = getProvider();
   showKeyFields();
 }
+$("ai-choice").addEventListener("change", () => {
+  setProvider($("ai-choice").value);
+  refreshKeyGate();
+});
 
-$("save-key").addEventListener("click", () => {
+$("save-key").addEventListener("click", async () => {
   const provider = $("provider").value;
   const typed = Object.fromEntries(Object.entries(KEY_INPUTS).map(([service, id]) => [service, $(id).value.trim()]));
   const missing = provider === "cloudflare"
@@ -4290,10 +4361,18 @@ $("save-key").addEventListener("click", () => {
       : `Paste your ${{ openai: "OpenAI", groq: "Groq", gemini: "Gemini" }[provider]} API key first.`;
     return;
   }
-  for (const [service, value] of Object.entries(typed)) {
-    if (value) setKey(service, value);
-    $(KEY_INPUTS[service]).value = "";
+  const toSave = Object.fromEntries(Object.entries(typed).filter(([, value]) => value));
+  if (Object.keys(toSave).length) {
+    $("key-status").textContent = "Saving to your account…";
+    try {
+      await saveKeysToAccount(toSave);
+    } catch (error) {
+      $("key-status").textContent = error.message;
+      return;
+    }
   }
+  for (const id of Object.values(KEY_INPUTS)) $(id).value = "";
+  editingSavedKeys = false;
   const model = $("openai-model").value.trim();
   if (provider === "openai" && model) store.set("openai_model", model);
   setProvider(provider);
@@ -4786,14 +4865,22 @@ $("end").addEventListener("click", () => {
 if ("speechSynthesis" in window) speechSynthesis.onvoiceschanged = () => {};
 
 // With ?debug: which build this phone runs (a cached old one would explain old behaviour).
-debugLog(`Talkloop v68 · speech recognition ${Recognition ? "yes" : "no"}`);
+debugLog(`Talkloop v69 · speech recognition ${Recognition ? "yes" : "no"}`);
 if (!trainerSession()) goToLogin();
+// Link to the Vocab Trainer right away: the AI keys come with the link, and a call from
+// before a reload can only come back once they are here.
+const linked = trainerSession() ? linkFromTrainerSession().catch(() => {}) : Promise.resolve();
+$("key-status").textContent = trainerSession() ? "Loading your saved AI keys…" : "";
 refreshKeyGate();
 renderStats();
 renderBookmarks();
 renderMistakes();
 renderChats();
-restoreCall().catch((error) => console.warn("Couldn't restore the call:", error));
+linked.then(() => {
+  $("key-status").textContent = "";
+  if ($("conversation").hidden) refreshKeyGate();
+  return restoreCall();
+}).catch((error) => console.warn("Couldn't restore the call:", error));
 // Get the voice ready while the learner picks their settings, so the first reply doesn't wait.
 preloadSelectedVoice();
 // Show the vocab kept from last time and fetch the latest in the background.
@@ -4806,7 +4893,7 @@ vocabMeta()
   })
   .catch(() => {})
   .finally(async () => {
-    await linkFromTrainerSession().catch(() => {});
+    await linked;
     refreshLearntWords();
     syncMistakes();
     syncSpoken();
