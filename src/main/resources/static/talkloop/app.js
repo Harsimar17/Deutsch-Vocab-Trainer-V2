@@ -88,23 +88,36 @@ const OPENAI = {
   noTemperature: true,
 };
 
-const memoryKeys = {}; // fallback when localStorage is unavailable
-function getKey(service = "gemini") {
-  try {
-    return localStorage.getItem(`${service}_key`) || "";
-  } catch {
-    return memoryKeys[service] || "";
+// AI keys live only in memory. The Vocab Trainer hands them over with the link on every page
+// load (serverKeys, from its environment); one typed in lasts only until the page closes.
+// None is ever written to localStorage.
+let serverKeys = {};
+const memoryKeys = {};
+const KEY_SERVICES = ["openai", "mistral", "groq", "groq2", "groq3", "cfAccount", "cfToken", "gemini", "gemini2", "geminiLive"];
+// Keys an older Talkloop saved in this browser: used for now, moved into the learner's
+// account once linked (moveBrowserKeysToAccount), and only then wiped from the browser.
+try {
+  for (const s of KEY_SERVICES) {
+    const k = localStorage.getItem(`${s}_key`);
+    if (k) memoryKeys[s] = k;
   }
+} catch { /* storage blocked */ }
+function forgetBrowserKeys() {
+  try { for (const s of KEY_SERVICES) localStorage.removeItem(`${s}_key`); } catch { /* storage blocked */ }
+}
+// Saves the old browser keys the account doesn't have yet, then wipes them from the browser.
+async function moveBrowserKeysToAccount() {
+  const missing = Object.fromEntries(Object.entries(memoryKeys).filter(([s, k]) => KEY_SERVICES.includes(s) && k && !serverKeys[s]));
+  if (Object.keys(missing).length) await saveKeysToAccount(missing);
+  forgetBrowserKeys();
+}
+function getKey(service = "gemini") {
+  return serverKeys[service] || memoryKeys[service] || "";
 }
 function setKey(service, k) {
   memoryKeys[service] = k;
-  try {
-    if (k) localStorage.setItem(`${service}_key`, k);
-    else localStorage.removeItem(`${service}_key`);
-  } catch {
-    // storage unavailable; key lives only for this page load
-  }
 }
+const hasServerKeys = () => Object.keys(serverKeys).length > 0;
 
 // Which service runs the conversation. People who only ever saved a Gemini key stay on Gemini;
 // Mistral is no longer a choice of its own, so it moves to Groq (its backup stays).
@@ -115,8 +128,10 @@ function getProvider() {
   } catch {
     saved = memoryKeys.provider || "";
   }
-  if (["gemini", "groq", "cloudflare", "openai"].includes(saved)) return saved;
-  return getKey("gemini") && !getKey("mistral") && !getKey("groq") ? "gemini" : "groq";
+  const providers = ["groq", "gemini", "openai", "cloudflare"];
+  // The saved choice, unless it has no key while another one does.
+  if (providers.includes(saved) && (providerReady(saved) || !providers.some((p) => providerReady(p)))) return saved;
+  return providers.find((p) => providerReady(p)) ?? "groq";
 }
 // Whether the chosen service has what it needs: one key, or Cloudflare's account ID and token.
 function providerReady(provider = getProvider()) {
@@ -614,6 +629,32 @@ async function linkFromTrainerSession() {
   const renewed = res.headers.get("X-Auth-Token");
   if (renewed) localStorage.setItem(TRAINER_SESSION_KEY, JSON.stringify({ ...session, token: renewed }));
   store.set("trainer_link", { token: (await res.json()).token, api });
+  if (await fetchSavedKeys()) await moveBrowserKeysToAccount().catch((error) => console.warn("Couldn't move the keys:", error));
+}
+
+// The AI keys saved in the learner's Firebase record, fetched on every load and held in
+// memory only.
+async function fetchSavedKeys() {
+  const link = trainerLink();
+  if (!link) return false;
+  const res = await fetch(`${link.api}/api/talkloop/keys`, { headers: { Authorization: `Bearer ${link.token}` }, cache: "no-store" });
+  if (!res.ok) return false;
+  const { keys } = await res.json();
+  serverKeys = keys && typeof keys === "object" ? keys : {};
+  return true;
+}
+
+// Saves keys (name → key; "" removes one) to the learner's Firebase record.
+async function saveKeysToAccount(keys) {
+  const link = trainerLink();
+  if (!link) throw new Error("Not linked to the Vocab Trainer: log in again.");
+  const res = await fetch(`${link.api}/api/talkloop/keys`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${link.token}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ keys }),
+  });
+  if (!res.ok) throw new Error(`Couldn't save the keys (${res.status}).`);
+  serverKeys = (await res.json()).keys ?? {};
 }
 
 // Learnt words, the least secure first (the trainer sorts them).
@@ -2935,12 +2976,15 @@ function updateCallState() {
   else if (live) {
     key = !live.ready ? "thinking" : live.speaking ? "speaking" : live.muted ? "idle" : "listening";
     text = !live.ready ? "Connecting…" : live.speaking ? "Speaking…" : live.muted ? "Muted" : "Live — just talk";
+    if (live.ready && !live.speaking && !live.muted && state.drill) { key = "drill"; text = "Say it again"; }
   }
+  else if (isOffice()) { key = "idle"; text = "Working… 💻"; }
   else if (state.busy) { key = "thinking"; text = "Thinking…"; }
   else if (state.speaking) { key = "speaking"; text = "Speaking…"; }
   else if (recognizer) { key = "listening"; text = "Listening…"; }
   else if (state.drill) { key = "drill"; text = "Say it again"; }
   $("conversation").dataset.state = key;
+  officeSceneUpdate();
   $("call-state").textContent = text;
 }
 
@@ -3044,6 +3088,7 @@ function enterCall() {
   $("call-topic").hidden = !topic && !card && !connector;
   $("call-topic").classList.toggle("expanded", Boolean(card)); // on a phone it is one line; a tap shows all of it
   renderSayThis();
+  officeSceneShow(Boolean(mode.office));
   lastVoiceNote = "";
   document.body.classList.add("in-call");
   $("conversation").hidden = false;
@@ -3054,6 +3099,7 @@ function enterCall() {
 $("call-topic").addEventListener("click", () => $("call-topic").classList.toggle("expanded"));
 
 function leaveCall() {
+  officeSceneShow(false);
   clearInterval(callTimer);
   callTimer = null;
   document.body.classList.remove("in-call");
@@ -3158,8 +3204,12 @@ function liveSystemPrompt(settings, recap = []) {
     ...(m.themes && settings.subjects?.length ? [`Start with ${themeByName(settings.subjects[0])?.ask ?? settings.subjects[0]}.`] : []),
     ...(settings.roleCard ? [`The learner's role card (they play this person): ${settings.roleCard}.`] : []),
     "The learner may pause to think: wait for them.",
+    "A message in brackets starting \"(Coach, not the learner:\" comes from the learning app: do what it says, in your own voice and in character, and never mention a coach or an app.",
     // A drill says its corrections out loud; a conversation only recasts, like a native speaker would.
-    ...(drill ? [] : ["If they make a mistake, repeat the right form naturally in your answer, like a friendly native speaker would, without a grammar lesson: the app shows written corrections itself."]),
+    ...(settings.sayAgain
+      // Say it again: Gemini runs it in its one reply, so a correction never costs a second answer.
+      ? ["If their sentence has a real grammar or word-choice mistake (not pronunciation), don't answer it yet: say the correct sentence and briefly ask them to say it once more. When they repeat it, judge it yourself: if it's right (ignore small pronunciation slips), praise it in two or three words and answer it as you normally would; if not, say what's still wrong in a few words, say the correct sentence again and let them try once more. After two misses, just carry on."]
+      : drill ? [] : ["If they make a mistake, repeat the right form naturally in your answer, like a friendly native speaker would, without a grammar lesson: the app shows written corrections itself."]),
   ];
   const t = TENSES[tense];
   if (t) lines.push(`Tense practice: ${t.form}. Use it yourself and ask things whose natural answer needs it (about ${t.ask}).`);
@@ -3237,23 +3287,31 @@ function liveMicSamples(samples, rate) {
 // before it go too (so the first sound isn't cut off), and 1.2 s after it (so Gemini hears the
 // pause and answers); then audioStreamEnd tells Gemini the stream has stopped.
 const LIVE_PREROLL = 3; // chunks (100 ms each) sent from just before speech starts
-const LIVE_HANGOVER = 12; // chunks still sent after the last loud one
-const LIVE_MIN_LEVEL = 0.012; // RMS (0–1) below which nothing counts as speech, however quiet the room
+const LIVE_HANGOVER = 15; // chunks still sent after the last loud one (a short thinking pause)
+const LIVE_MIN_LEVEL = 0.006;
+const LIVE_BARGE_IN_LEVEL = 0.04; // the same, while Gemini is speaking // RMS (0–1) below which nothing counts as speech, however quiet the room
 
 function liveGate(chunk) {
   let sum = 0;
   for (const v of chunk) sum += v * v;
   const rms = Math.sqrt(sum / chunk.length) / 0x8000;
   live.micTotal++;
-  // The noise floor follows quiet stretches quickly and loud ones only slowly.
-  live.floor = live.floor == null ? rms : rms < live.floor ? live.floor * 0.7 + rms * 0.3 : live.floor * 0.995 + rms * 0.005;
+  // The noise floor follows quiet stretches quickly and loud ones only slowly. It stays put while
+  // Gemini speaks: what's left of its voice after echo cancellation would raise it, and the
+  // learner's answer right after would then pass for silence.
+  if (!live.speaking) live.floor = live.floor == null ? rms : rms < live.floor ? live.floor * 0.7 + rms * 0.3 : live.floor * 0.995 + rms * 0.005;
   const send = (c) => {
     liveSend({ realtimeInput: { audio: { data: bytesToBase64(new Uint8Array(c.buffer)), mimeType: `audio/pcm;rate=${LIVE_IN_RATE}` } } });
     live.micSent++;
   };
-  if (rms > Math.max(LIVE_MIN_LEVEL, live.floor * 3)) {
+  // While Gemini speaks, only a clearly raised voice counts (the learner cutting in), not the
+  // remains of Gemini's own voice in the mic.
+  const level = live.speaking ? LIVE_BARGE_IN_LEVEL : LIVE_MIN_LEVEL;
+  if (rms > Math.max(level, (live.floor ?? 0) * 2.5)) {
+    live.activeAt = Date.now(); // the learner is talking (the Büro doesn't wait for Gemini's transcript)
     if (!live.talking) {
       live.talking = true;
+      officeSceneUpdate();
       live.preroll.forEach(send);
       live.preroll = [];
     }
@@ -3263,12 +3321,33 @@ function liveGate(chunk) {
     send(chunk);
     if (++live.quiet >= LIVE_HANGOVER) {
       live.talking = false;
+      officeSceneUpdate();
       liveSend({ realtimeInput: { audioStreamEnd: true } });
     }
   } else {
     live.preroll.push(chunk);
     if (live.preroll.length > LIVE_PREROLL) live.preroll.shift();
   }
+}
+
+// Gemini's voice goes out through an analyser: how loud it is right now moves the Büro
+// colleague's mouth.
+let liveOut = null; // { ctx, node, analyser, buf }
+function liveOutput(ctx) {
+  if (liveOut?.ctx !== ctx) {
+    const analyser = ctx.createAnalyser();
+    analyser.fftSize = 512;
+    analyser.connect(ctx.destination);
+    liveOut = { ctx, node: analyser, analyser, buf: new Float32Array(analyser.fftSize) };
+  }
+  return liveOut.node;
+}
+function liveVoiceLevel() {
+  if (!liveOut) return 0;
+  liveOut.analyser.getFloatTimeDomainData(liveOut.buf);
+  let sum = 0;
+  for (const v of liveOut.buf) sum += v * v;
+  return Math.min(1, Math.sqrt(sum / liveOut.buf.length) * 4);
 }
 
 // Gemini's voice, played gap-free as its chunks arrive.
@@ -3281,7 +3360,7 @@ function livePlay(b64, mimeType) {
   for (let i = 0; i < pcm.length; i++) data[i] = pcm[i] / 0x8000;
   const src = ctx.createBufferSource();
   src.buffer = buffer;
-  src.connect(ctx.destination);
+  src.connect(liveOutput(ctx));
   const at = Math.max(ctx.currentTime + 0.04, live.playHead);
   src.start(at);
   live.playHead = at + buffer.duration;
@@ -3290,7 +3369,7 @@ function livePlay(b64, mimeType) {
   updateCallState();
   src.onended = () => {
     live?.sources.delete(src);
-    if (live && !live.sources.size) { live.speaking = false; updateCallState(); }
+    if (live && !live.sources.size) { live.speaking = false; live.activeAt = Date.now(); updateCallState(); }
   };
 }
 
@@ -3311,13 +3390,42 @@ function liveFlushLearner() {
   setStatus("");
   addLearnerMessage(said);
   state.history.push({ role: "user", content: said });
-  liveCoach(said, live.lastReply ?? "");
+  if (state.drill?.live) liveDrillAttempt(said);
+  else liveCoach(said, live.lastReply ?? "");
+}
+
+// Say it again in a live call: Gemini asks for the corrected sentence in its own voice, and the
+// learner's next sentence (as Gemini heard it, or typed) is checked against it, not coached.
+function startLiveDrill(said, correction) {
+  state.drill = { target: correction.trim(), said, turn: null, live: true };
+  $("drill-target").textContent = state.drill.target;
+  $("drill-target").lang = state.settings.locale;
+  setDrillFeedback("");
+  $("drill").hidden = false;
+  // No note to Gemini: its system prompt already has it ask for the repeat in the same reply.
+  scrollCallToBottom();
+}
+
 // A note to Gemini from the app (not the learner): it cuts off what it was saying.
 function liveNote(text) {
   liveFlushReply();
   liveStopVoice();
   liveSend({ clientContent: { turns: [{ role: "user", parts: [{ text: `(Coach, not the learner: ${text})` }] }], turnComplete: true } });
 }
+
+// Gemini heard the attempt and answers it itself; the app only decides when to put the panel
+// away: once the attempt matches, or once the learner has clearly moved on to something else.
+function liveDrillAttempt(attempt) {
+  const d = state.drill;
+  if (isSkipCommand(attempt)) { skipDrill(); return; }
+  d.tries = (d.tries ?? 0) + 1;
+  const { ok } = drillMatch(attempt, d.target, d.said);
+  if (ok) {
+    setDrillFeedback(`✓ “${attempt}”`, true);
+    setTimeout(() => { if (state.drill === d) endDrill(); }, 1000);
+  } else if (d.tries >= 3 || similarity(drillWords(attempt), drillWords(d.target)) < 0.5) {
+    endDrill();
+  }
 }
 
 // The partner's words so far, in a bubble that grows while it speaks; saved once its turn is done.
@@ -3381,8 +3489,7 @@ function liveMessage(msg) {
   if (!c) return;
   if (c.inputTranscription?.text || c.outputTranscription?.text || c.modelTurn) live.activeAt = Date.now();
   if (c.inputTranscription?.text) {
-    live.heard += c.inputTranscription.text;
-    setStatus(`🎤 ${live.heard.trim()}`);
+    live.heard += c.inputTranscription.text; // not shown above the text box; it goes to the chat when the turn ends
   }
   const parts = c.modelTurn?.parts ?? [];
   if (c.outputTranscription?.text || parts.length) liveFlushLearner(); // the learner's turn is over
@@ -3431,6 +3538,7 @@ async function liveCoach(said, partner) {
       const types = turn.coach.mistakes.filter((x) => MISTAKE_TYPES[x]);
       recordMistakes(language, types.length ? [...new Set(types)] : ["other"], said, turn.coach.correction);
       renderMistakes();
+      if (state.settings.sayAgain && !state.drill && drillable(turn.coach.correction, said)) startLiveDrill(said, turn.coach.correction);
     }
   } catch (error) {
     debugLog(`live coach: ${error.message}`);
@@ -3529,12 +3637,12 @@ async function startLive() {
         }
         return;
       }
-      if (office) { officeAfterVisit(); if (!before) return; }
+      if (office) { officeAfterVisit({ why: "the line dropped" }); if (!before) return; }
       setStatus(`${before ? "The live call couldn't start" : "The live call stopped"}${event.reason ? ` (${event.reason})` : ""}. Tap 🎤 to ${before ? "try again" : "reconnect"}.`);
     };
   } catch (error) {
     stopLive();
-    if (office) officeAfterVisit();
+    if (office) officeAfterVisit({ why: "the line dropped" });
     setStatus(`Live voice couldn't start: ${error.message}. Tap 🎤 to try again.`);
   }
 }
@@ -3544,6 +3652,7 @@ function stopLive() {
   const l = live;
   l.ending = true;
   if (l.micTotal) debugLog(`live call: sent ${(l.micSent / 10).toFixed(1)} s of ${(l.micTotal / 10).toFixed(1)} s of mic audio`);
+  if (state.drill?.live) endDrill();
   liveFlushLearner();
   liveFlushReply();
   liveStopVoice();
@@ -3571,7 +3680,8 @@ function liveSendText(text) {
   state.history.push({ role: "user", content: text });
   liveStopVoice();
   liveSend({ clientContent: { turns: [{ role: "user", parts: [{ text }] }], turnComplete: true } });
-  liveCoach(text, live.lastReply);
+  if (state.drill?.live) liveDrillAttempt(text);
+  else liveCoach(text, live.lastReply);
 }
 
 // ---------- Büro: colleagues drop by while the learner works ----------
@@ -3582,12 +3692,12 @@ function liveSendText(text) {
 // As in a real German office: most colleagues say du, the boss and the older colleague from
 // accounting say Sie, and the learner has to answer in the same form.
 const OFFICE_COLLEAGUES = [
-  { name: "Lena", voice: "Kore", address: "du", role: "Product Ownerin in deinem Team", style: "organised and direct, talks quickly, thinks in sprints, deadlines and Jira tickets" },
-  { name: "Jonas", voice: "Puck", role: "Backend-Entwickler in deinem Team", address: "du", style: "relaxed and dry, a bit ironic, grumbles about legacy code and the coffee machine" },
-  { name: "Frau Becker", voice: "Leda", role: "Teamleiterin (your boss)", address: "Sie", style: "polite, factual and firm; gets to the point at once; expects clear answers and dates" },
-  { name: "Murat", voice: "Orus", role: "Kollege vom IT-Support", address: "du", style: "helpful and chatty, Ruhrpott humour, always in a hurry to the next ticket" },
-  { name: "Sophie", voice: "Aoede", role: "Werkstudentin in deinem Team", address: "du", style: "friendly and curious, a bit unsure, asks many questions" },
-  { name: "Herr Krüger", voice: "Charon", role: "Kollege aus der Buchhaltung, kurz vor der Rente", address: "Sie", style: "formal, correct and a bit pedantic about rules, forms and deadlines, but kind" },
+  { name: "Lena", look: { skin: "#f1c7a5", hair: "#9c4a22", hairStyle: "long", shirt: "#1f5f5b", trousers: "#1d1d22", prop: "notebook", lanyard: "#222", height: 0.97, shoulders: 0.9, hipWidth: 1.05 }, voice: "Kore", address: "du", role: "Product Ownerin in deinem Team", style: "organised and direct, talks quickly, thinks in sprints, deadlines and Jira tickets" },
+  { name: "Jonas", look: { skin: "#e8b991", hair: "#3a2618", hairStyle: "curly", shirt: "#5f6368", trousers: "#2d3a52", glasses: "#151515", prop: "mug", height: 1.02 }, voice: "Puck", role: "Backend-Entwickler in deinem Team", address: "du", style: "relaxed and dry, a bit ironic, grumbles about legacy code and the coffee machine" },
+  { name: "Frau Becker", look: { skin: "#f0c8a8", hair: "#d8c08a", hairStyle: "bun", shirt: "#1f2a44", jacket: "#141c30", trousers: "#1f2a44", prop: "tablet", height: 0.98, shoulders: 0.92, hipWidth: 1.05 }, voice: "Leda", role: "Teamleiterin (your boss)", address: "Sie", style: "polite, factual and firm; gets to the point at once; expects clear answers and dates" },
+  { name: "Murat", look: { skin: "#c68e62", hair: "#15100c", hairStyle: "short", beard: true, shirt: "#1f7a74", sleeves: "short", lanyard: "#222", trousers: "#2b2b30", prop: "laptop", height: 1.0, shoulders: 1.05 }, voice: "Orus", role: "Kollege vom IT-Support", address: "du", style: "helpful and chatty, Ruhrpott humour, always in a hurry to the next ticket" },
+  { name: "Sophie", look: { skin: "#f6d3b8", hair: "#e0bf73", hairStyle: "long", shirt: "#e2725b", trousers: "#4a6fa5", prop: "papers", height: 0.95, shoulders: 0.88, hipWidth: 1.05 }, voice: "Aoede", role: "Werkstudentin in deinem Team", address: "du", style: "friendly and curious, a bit unsure, asks many questions" },
+  { name: "Herr Krüger", look: { skin: "#ecc3a0", hair: "#c4c4c4", hairStyle: "receding", glasses: "#8a8a8a", shirt: "#8a8d91", tie: "#2c3e75", trousers: "#4a4e5a", prop: "folder", height: 1.0 }, voice: "Charon", role: "Kollege aus der Buchhaltung, kurz vor der Rente", address: "Sie", style: "formal, correct and a bit pedantic about rules, forms and deadlines, but kind" },
 ];
 // Things that really bring a German colleague to your desk. Some fit only a time of day
 // (when: [from, to] in hours) and are skipped outside it.
@@ -3611,7 +3721,7 @@ const OFFICE_REASONS = [
 ];
 const OFFICE_GAPS = { short: [4, 10], normal: [10, 25], long: [25, 50] }; // minutes between visits
 const OFFICE_MEMORY_KEY = "office_memory"; // [{ name, at, lines }]: earlier visits, so colleagues remember
-const OFFICE_SILENCE_MS = 20_000; // nobody talks this long: the colleague leaves
+const OFFICE_SILENCE_MS = 30_000; // nobody talks this long (after the colleague finished speaking): they leave
 const OFFICE_WRAP_MS = 5 * 60_000; // a visit this long: the colleague is told to wrap up
 const OFFICE_MAX_MS = 7 * 60_000; // and the call ends here regardless
 let officeTimer = null; // checks, every few seconds, whether it's time for a visit / the visit is over
@@ -3655,8 +3765,11 @@ function officeTick() {
   if (!live?.ready || officeLeaving) return;
   const now = Date.now();
   const quiet = now - (live.activeAt ?? officeVisitAt);
-  if (now - officeVisitAt > OFFICE_MAX_MS || (quiet > OFFICE_SILENCE_MS && !live.speaking)) {
-    officeLeave();
+  if (now - officeVisitAt > OFFICE_MAX_MS) {
+    officeLeave({ why: "time's up" });
+  } else if (quiet > OFFICE_SILENCE_MS && !live.speaking && !live.talking) {
+    debugLog(`office: nobody spoke for ${Math.round(quiet / 1000)} s`);
+    officeLeave({ why: "no answer" });
   } else if (!officeWrapSent && now - officeVisitAt > OFFICE_WRAP_MS && !live.speaking) {
     officeWrapSent = true;
     liveNote("You need to get back to your desk now: wrap up naturally in one or two lines, say goodbye and call leave.");
@@ -3737,26 +3850,28 @@ function officeVisit() {
   $("transcript").append(divider);
   scrollCallToBottom();
   officeChime();
+  const visit = officeVisitAt;
+  const arrived = officeSceneEnter(colleague);
   if (document.hidden && "Notification" in window && Notification.permission === "granted") {
     try {
       const n = new Notification(`${colleague.name} kommt ${back ? "nochmal " : ""}vorbei`, { body: colleague.address === "Sie" ? "Haben Sie kurz Zeit?" : "Hast du kurz Zeit?", tag: "talkloop-office" });
       n.onclick = () => { window.focus(); n.close(); };
     } catch { /* notifications unavailable */ }
   }
-  startLive();
+  arrived.then(() => { if (officeVisitAt === visit && !live) startLive(); });
 }
 
 // The colleague goes back to their desk: let them finish their sentence, then hang up.
-async function officeLeave({ comeBack = false } = {}) {
+async function officeLeave({ comeBack = false, why = "" } = {}) {
   if (officeLeaving || !officeVisitAt) return;
   officeLeaving = true;
   for (let i = 0; i < 40 && live?.speaking; i++) await sleep(250);
   if (live) stopLive();
-  officeAfterVisit({ comeBack });
+  officeAfterVisit({ comeBack, why });
 }
 
 // After a visit (ended normally or cut off): remember it and wait for the next one.
-function officeAfterVisit({ comeBack = false } = {}) {
+function officeAfterVisit({ comeBack = false, why = "" } = {}) {
   if (!officeVisitAt) return;
   const name = state.settings?.colleague?.name ?? "Your colleague";
   // Only once: a colleague sent away twice doesn't come back a third time.
@@ -3767,9 +3882,11 @@ function officeAfterVisit({ comeBack = false } = {}) {
   officeLeaving = false;
   const divider = document.createElement("li");
   divider.className = "msg divider muted";
-  divider.textContent = `— ${name} goes back to their desk${back ? " (will come back later)" : ""} —`;
+  const note = back ? "will come back later" : why === "no answer" ? `no answer for ${OFFICE_SILENCE_MS / 1000} s` : why;
+  divider.textContent = `— ${name} goes back to their desk${note ? ` (${note})` : ""} —`;
   $("transcript").append(divider);
   scrollCallToBottom();
+  officeSceneLeave();
   $("call-name").textContent = "Büro";
   $("call-avatar").textContent = "🏢";
   $("call-topic").hidden = true;
@@ -3810,6 +3927,48 @@ function officeSystemPrompt(settings, recap = []) {
   lines.push(...liveVocabLines(settings, MODES.office));
   if (recap.length) lines.push(`Your conversation was cut off and has just reconnected. The end of it so far:\n${recap.join("\n")}\nCarry on from there in one short line, without greeting again.`);
   return lines.join("\n");
+}
+
+// ---------- Büro: the office in 3D ----------
+// Above the conversation, a small real-time 3D office seen through your eyes (office3d.js):
+// your laptop while you work; a colleague walks in and down the aisle, your view turns to them,
+// they talk (their mouth follows the voice you hear) and walk off again. Three.js is loaded only
+// for the Büro, from the CDN; if it can't load, there is simply no scene.
+let office3d = null; // the scene, once made
+let office3dLoading = null;
+
+async function officeSceneShow(on) {
+  $("office-scene").hidden = !on;
+  if (!on || office3d) return;
+  office3dLoading ??= import("./office3d.js?v=2")
+    .then(({ createOffice3D }) => {
+      office3d = createOffice3D($("os-3d"), {
+        speaking: () => Boolean(live?.speaking && officeVisitAt),
+        level: liveVoiceLevel,
+        youTalking: () => Boolean(live?.talking),
+      });
+    })
+    .catch((error) => {
+      debugLog(`office 3D: ${error.message}`);
+      $("office-scene").hidden = true;
+    });
+  await office3dLoading;
+}
+
+// A colleague walks over; resolves once they stand at your desk (at most ~12 s; at once without a scene).
+function officeSceneEnter(c) {
+  if (!office3d || $("office-scene").hidden) return Promise.resolve();
+  return Promise.race([office3d.enter(c.look ?? {}), sleep(12_000)]);
+}
+
+function officeSceneLeave() {
+  office3d?.leave();
+}
+
+// "I hear you" while the app hears the learner (the 3D scene reads the rest itself, every frame).
+function officeSceneUpdate() {
+  if ($("office-scene").hidden) return;
+  $("office-scene").classList.toggle("you-talking", Boolean(live?.talking));
 }
 
 const OFFICE_TOOLS = [{
@@ -4055,7 +4214,15 @@ function endDrill() {
   if (recognizer) { dropNextResult = true; recognizer.abort(); }
   stopSpeaking();
   updateCallState();
+  if (d.live) return; // a live call carries on by itself
   presentReply(d.turn);
+}
+
+// Skipped by the button or by voice: in a live call, Gemini is told to carry on.
+function skipDrill() {
+  const wasLive = state.drill?.live;
+  endDrill();
+  if (wasLive && live?.ready) liveNote("The learner skipped saying it again: carry on with the conversation.");
 }
 
 function isSkipCommand(text) {
@@ -4238,7 +4405,29 @@ function showKeyFields() {
   for (const [service, id] of Object.entries(KEY_INPUTS)) {
     $(id).placeholder = getKey(service) ? "Saved — leave blank to keep" : $(id).dataset.placeholder;
   }
+  // Keys saved in the account need no field (unless the learner wants to change them),
+  // and the AIs that have their key are marked.
+  if (!editingSavedKeys) {
+    for (const [service, id] of Object.entries(KEY_INPUTS)) {
+      if (serverKeys[service]) $(id).closest("label").hidden = true;
+    }
+  }
+  for (const option of $("provider").options) {
+    option.dataset.name ??= option.textContent;
+    option.textContent = option.dataset.name + (providerReady(option.value) ? " ✓" : "");
+  }
+  const ready = providerReady(provider);
+  $("save-key").textContent = ready ? "Connect" : "Save to my account";
+  $("edit-saved-keys").hidden = !hasServerKeys() || editingSavedKeys;
+  $("key-intro").textContent = hasServerKeys()
+    ? "Your AI keys are saved in your Vocab Trainer account and load when you log in. Pick the AI to talk to (✓ = key saved)."
+    : "Paste your AI key once: it is saved in your Vocab Trainer account (not in this browser) and loads every time you log in.";
 }
+let editingSavedKeys = false;
+$("edit-saved-keys").addEventListener("click", () => {
+  editingSavedKeys = true;
+  showKeyFields();
+});
 for (const id of Object.values(KEY_INPUTS)) $(id).dataset.placeholder = $(id).placeholder;
 $("provider").addEventListener("change", showKeyFields);
 // The LanguageTool switch is saved as soon as it changes (on unless switched off).
@@ -4264,10 +4453,18 @@ function refreshKeyGate() {
   $("key-saved").hidden = !haveKey;
   $("key-summary").textContent = keySummary();
   $("provider").value = getProvider();
+  // Every AI that has its key, to pick from right on the start screen.
+  const choice = $("ai-choice");
+  choice.replaceChildren(...[...$("provider").options].filter((o) => providerReady(o.value)).map((o) => new Option(o.dataset.name ?? o.textContent.replace(/ ✓$/, ""), o.value)));
+  choice.value = getProvider();
   showKeyFields();
 }
+$("ai-choice").addEventListener("change", () => {
+  setProvider($("ai-choice").value);
+  refreshKeyGate();
+});
 
-$("save-key").addEventListener("click", () => {
+$("save-key").addEventListener("click", async () => {
   const provider = $("provider").value;
   const typed = Object.fromEntries(Object.entries(KEY_INPUTS).map(([service, id]) => [service, $(id).value.trim()]));
   const missing = provider === "cloudflare"
@@ -4279,10 +4476,18 @@ $("save-key").addEventListener("click", () => {
       : `Paste your ${{ openai: "OpenAI", groq: "Groq", gemini: "Gemini" }[provider]} API key first.`;
     return;
   }
-  for (const [service, value] of Object.entries(typed)) {
-    if (value) setKey(service, value);
-    $(KEY_INPUTS[service]).value = "";
+  const toSave = Object.fromEntries(Object.entries(typed).filter(([, value]) => value));
+  if (Object.keys(toSave).length) {
+    $("key-status").textContent = "Saving to your account…";
+    try {
+      await saveKeysToAccount(toSave);
+    } catch (error) {
+      $("key-status").textContent = error.message;
+      return;
+    }
   }
+  for (const id of Object.values(KEY_INPUTS)) $(id).value = "";
+  editingSavedKeys = false;
   const model = $("openai-model").value.trim();
   if (provider === "openai" && model) store.set("openai_model", model);
   setProvider(provider);
@@ -4542,6 +4747,10 @@ function submitComposer() {
   if (!text) return;
   $("text").value = "";
   if (unsent) { dropNextResult = true; recognizer.abort(); showHeard(""); }
+  if (state.drill?.live && live?.ready) {
+    liveSendText(text); // typed: Gemini judges it like a spoken try
+    return;
+  }
   if (state.drill) {
     checkDrill(text); // typing the corrected sentence also counts
     return;
@@ -4691,16 +4900,24 @@ onTap($("coach"), () => {
 // Say-it-again panel: speak the correction (or type it), hear it again, or move on.
 onTap($("drill-say"), () => {
   if (!state.drill || recognizer) return;
+  if (state.drill.live) { // Gemini is already listening: just make sure the mic is on
+    if (live?.muted) setLiveMuted(false);
+    return;
+  }
   $("text").blur(); // speaking, not typing: let the keyboard go
   setDrillFeedback("");
   startListening();
 });
 onTap($("drill-hear"), () => {
   if (!state.drill) return;
+  if (state.drill.live) {
+    if (live?.ready) liveNote(`Say «${state.drill.target}» once more, slowly, and nothing else.`);
+    return;
+  }
   if (recognizer) { dropNextResult = true; recognizer.abort(); }
   speak(state.drill.target, [], () => maybeResumeListening());
 });
-onTap($("drill-skip"), () => endDrill());
+onTap($("drill-skip"), () => skipDrill());
 
 // Before what was heard is sent (it goes after the pause): fix it in the text box, or drop it
 // and say it again.
@@ -4775,14 +4992,22 @@ $("end").addEventListener("click", () => {
 if ("speechSynthesis" in window) speechSynthesis.onvoiceschanged = () => {};
 
 // With ?debug: which build this phone runs (a cached old one would explain old behaviour).
-debugLog(`Talkloop v68 · speech recognition ${Recognition ? "yes" : "no"}`);
+debugLog(`Talkloop v69 · speech recognition ${Recognition ? "yes" : "no"}`);
 if (!trainerSession()) goToLogin();
+// Link to the Vocab Trainer right away: the AI keys come with the link, and a call from
+// before a reload can only come back once they are here.
+const linked = trainerSession() ? linkFromTrainerSession().catch(() => {}) : Promise.resolve();
+$("key-status").textContent = trainerSession() ? "Loading your saved AI keys…" : "";
 refreshKeyGate();
 renderStats();
 renderBookmarks();
 renderMistakes();
 renderChats();
-restoreCall().catch((error) => console.warn("Couldn't restore the call:", error));
+linked.then(() => {
+  $("key-status").textContent = "";
+  if ($("conversation").hidden) refreshKeyGate();
+  return restoreCall();
+}).catch((error) => console.warn("Couldn't restore the call:", error));
 // Get the voice ready while the learner picks their settings, so the first reply doesn't wait.
 preloadSelectedVoice();
 // Show the vocab kept from last time and fetch the latest in the background.
@@ -4795,7 +5020,7 @@ vocabMeta()
   })
   .catch(() => {})
   .finally(async () => {
-    await linkFromTrainerSession().catch(() => {});
+    await linked;
     refreshLearntWords();
     syncMistakes();
     syncSpoken();

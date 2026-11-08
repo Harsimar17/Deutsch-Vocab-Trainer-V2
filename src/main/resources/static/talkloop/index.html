@@ -8,7 +8,7 @@
     <link rel="apple-touch-icon" href="favicon.svg" />
     <meta name="theme-color" content="#e62429" />
     <!-- ?v= makes phones fetch the new file after a change instead of a cached copy: bump it with each change. -->
-    <link rel="stylesheet" href="styles.css?v=26" />
+    <link rel="stylesheet" href="styles.css?v=32" />
     <!-- Inside the trainer's Talkloop tab the trainer is already around it, so its "back" arrow goes. -->
     <script>if (window.self !== window.top) document.write("<style>.home{display:none}</style>");</script>
   </head>
@@ -23,9 +23,8 @@
 
     <section id="keygate" class="card" hidden>
       <h2>Recruit your AI sidekick 🤖</h2>
-      <p class="muted">
-        Talkloop runs entirely in your browser and talks to the AI you pick with your own free key.
-        Keys are stored only in this browser and are sent only to that service (the Cloudflare backup goes through the Vocab Trainer, which forwards it without storing it).
+      <p id="key-intro" class="muted">
+        Your AI keys are saved in your Vocab Trainer account and load when you log in.
       </p>
       <label>Conversation AI
         <select id="provider">
@@ -79,14 +78,18 @@
       <label>Gemini 3.8 Live key <span class="muted">(optional — for the Gemini 3.8 Live voice call; leave blank to use the Gemini key above)</span>
         <input id="gemini-live-key" type="password" autocomplete="off" placeholder="Paste your Gemini Live key (AIza… or AQ.…)" />
       </label>
-      <button id="save-key" class="primary">Save</button>
+      <button id="save-key" class="primary">Connect</button>
+      <button id="edit-saved-keys" type="button" hidden>Change my saved keys</button>
       <p id="key-status" class="status"></p>
     </section>
 
     <section id="setup" class="card" hidden>
       <div id="key-saved" class="keyline" hidden>
+        <label class="ai-choice">Talk with
+          <select id="ai-choice"></select>
+        </label>
         <span id="key-summary" class="muted"></span>
-        <button id="change-key" type="button">Change</button>
+        <button id="change-key" type="button">Add or change keys</button>
       </div>
       <div id="recap" class="recap" hidden></div>
       <h2>Start a conversation 🗯</h2>
@@ -232,6 +235,14 @@
         <div id="call-state" class="call-state">Connecting…</div>
       </header>
 
+      <!-- Büro: a photo of the office from your desk; the colleague's photo appears when they come over (see officeScene*). -->
+      <!-- Büro: a 3D office through your eyes; a colleague walks over, talks and walks off (office3d.js). -->
+      <div id="office-scene" class="office-scene" hidden aria-hidden="true">
+        <div id="os-3d" class="os-3d">
+          <div id="os-photo-waves" class="os-photo-waves">🎙️ I hear you</div>
+        </div>
+      </div>
+
       <div id="call-scroll" class="call-scroll">
         <ol id="transcript" aria-live="polite"></ol>
         <div id="coach" class="card coach" hidden></div>
@@ -334,6 +345,8 @@
       <ul id="bookmarks" class="bookmarks"></ul>
     </section>
 
-    <script src="app.js?v=76" type="module"></script> <!-- bump with app.js changes, like styles.css above -->
+    <!-- Three.js for the Büro's 3D office (loaded only when it is used). -->
+    <script type="importmap">{ "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js" } }</script>
+    <script src="app.js?v=86" type="module"></script> <!-- bump with app.js changes, like styles.css above -->
   </body>
 </html>

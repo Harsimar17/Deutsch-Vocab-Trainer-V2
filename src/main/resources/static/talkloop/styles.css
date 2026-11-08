@@ -251,7 +251,10 @@ body.in-call { overflow: hidden; }
 
 .muted { color: var(--muted); }
 .muted a { color: var(--accent); }
-.keyline { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 12px; font-size: 0.85rem; }
+.keyline { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; font-size: 0.85rem; }
+.keyline .ai-choice { display: flex; align-items: center; gap: 8px; margin: 0; font-weight: 600; }
+.keyline .ai-choice select { width: auto; margin: 0; }
+.keyline #key-summary { flex: 1 1 100%; order: 3; }
 
 .voice-status { margin: -4px 0 12px; font-size: 0.85rem; }
 .voice-status:empty { display: none; }
@@ -433,3 +436,16 @@ select:focus, input:focus { outline: 2px solid var(--accent); outline-offset: 1p
 /* Büro: a colleague coming over / going back to their desk. */
 .msg.divider { align-self: center; background: none; border: 0; box-shadow: none; font-size: 0.85em; padding: 4px 0; text-align: center; color: var(--muted); }
 .msg.divider::after { content: none; }
+
+/* Büro: the 3D office through your eyes (office3d.js draws into .os-3d). */
+.office-scene { flex: none; padding: 0 16px; }
+.office-scene[hidden] { display: none; }
+.os-3d { position: relative; aspect-ratio: 16 / 9; max-height: 340px; margin: 0 auto; overflow: hidden; border-radius: 14px; border: 2.5px solid var(--edge); background: #dfe6ec; }
+@media (max-height: 760px) { .os-3d { max-height: 230px; } }
+.os-3d canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+/* Shown while the app hears you, so you know your voice gets through. */
+.os-photo-waves {
+  position: absolute; right: 10px; bottom: 10px; z-index: 1; font: 700 12px system-ui, sans-serif; color: #fff;
+  background: rgba(0, 0, 0, 0.6); padding: 4px 10px; border-radius: 999px; opacity: 0; transition: opacity 0.2s;
+}
+.office-scene.you-talking .os-photo-waves { opacity: 1; }

@@ -324,6 +324,24 @@ public class ProgressRepository {
         commit(ctx.token(), List.of(update(progressName(ctx) + "/talkloop/sentences", data, null)));
     }
 
+    // Talkloop's AI keys (Groq, Gemini, OpenAI…), saved once and fetched on every login, so
+    // the page never keeps them in the browser. Like the rest of scores/{uid}, only the
+    // learner's own login can read them.
+
+    public Map<String, Object> findTalkloopKeys(Ctx ctx) {
+        Map<String, Object> doc = getDocument(ctx.token(), progressName(ctx) + "/talkloop/keys");
+        return doc == null ? null : fieldsOf(doc);
+    }
+
+    /**
+     * Writes only the named fields (a named field missing from data is deleted), so other
+     * fields in the document are left as they are.
+     */
+    public void saveTalkloopKeys(Ctx ctx, Map<String, Object> data, List<String> fields) {
+        commit(ctx.token(), List.of(update(progressName(ctx) + "/talkloop/keys", data,
+                fields.stream().map(FirestoreValues::fieldPath).toList())));
+    }
+
     // Talkloop's topic chats: one document each in scores/{uid}/talkloopChats, as a
     // long chat can be large, and the topics ever discussed in talkloop/topics.
 

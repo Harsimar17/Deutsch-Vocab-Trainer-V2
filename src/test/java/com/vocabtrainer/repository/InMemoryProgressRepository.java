@@ -34,6 +34,7 @@ public class InMemoryProgressRepository extends ProgressRepository {
     private int talkloopSentenceWrites;
     private final Map<String, Map<String, Map<String, Object>>> talkloopChats = new ConcurrentHashMap<>();
     private final Map<String, Map<String, Object>> talkloopTopics = new ConcurrentHashMap<>();
+    private final Map<String, Map<String, Object>> talkloopKeys = new ConcurrentHashMap<>();
 
     public InMemoryProgressRepository() {
         super(RestClient.create(), new AppProperties(new AppProperties.Firebase("fake", "fake-key", "http://unused"),
@@ -158,6 +159,32 @@ public class InMemoryProgressRepository extends ProgressRepository {
         rules(ctx);
         talkloopSentences.put(ctx.uid(), copy(data));
         talkloopSentenceWrites++;
+    }
+
+    @Override
+    public synchronized Map<String, Object> findTalkloopKeys(Ctx ctx) {
+        rules(ctx);
+        Map<String, Object> m = talkloopKeys.get(ctx.uid());
+        return m == null ? null : copy(m);
+    }
+
+    @Override
+    public synchronized void saveTalkloopKeys(Ctx ctx, Map<String, Object> data, List<String> fields) {
+        rules(ctx);
+        Map<String, Object> doc = talkloopKeys.computeIfAbsent(ctx.uid(), k -> new java.util.LinkedHashMap<>());
+        for (String f : fields) {
+            if (data.containsKey(f)) doc.put(f, data.get(f));
+            else doc.remove(f);
+        }
+    }
+
+    /** Puts a field into a learner's keys document as if added by hand in the Firebase console. */
+    public synchronized void putTalkloopKeyField(String uid, String field, Object value) {
+        talkloopKeys.computeIfAbsent(uid, k -> new java.util.LinkedHashMap<>()).put(field, value);
+    }
+
+    public synchronized Map<String, Object> talkloopKeysDoc(String uid) {
+        return copy(talkloopKeys.getOrDefault(uid, Map.of()));
     }
 
     @Override
