@@ -734,6 +734,246 @@ function nextVocabBatch(n = 12) {
   return vocabBatch;
 }
 
+// ---------- topic words ----------
+// Every conversation has a subject (the topic, the scene, the theme, the role card, the
+// colleague's matter). The learner's own words that fit it are shown in a panel beside the
+// call, the partner gets openings for them, and each one is ticked once the learner says it.
+// Nothing here ever holds up the call: a local match fills the panel at once, the AI's better
+// pick replaces it whenever it arrives, and if it never does the local one simply stays.
+// Kept in state.settings.topicWords, so it is saved with the call:
+// { subject, gen, source: "local" | "ai", words: [{ de, en, example, angle, fit, status: "open" | "used" }] }
+const TOPIC_WORDS_MAX = 10;
+const TOPIC_WORDS_MISSED_KEY = "topic_words_missed"; // offered last time but not used: they get a head start
+const TOPIC_STOP = new Set("aber alle auch eine einem einen einer eines oder sein sind sollte sollten soll wird werden wurde haben hast hatte nicht noch schon sehr viel mehr dann wenn weil dass denn doch kann können könnte muss müssen ihre ihren seine deine meine mein dein unser euer über unter durch gegen ohne zwischen wie was wer wann warum welche welcher lieber besser gute guter gutes eine ist the and for with your what when where which their about from that this they them into than then have has had are was were will would could should over some other more most very just like make made does did".split(" "));
+
+const topicTokens = (text) => normalizeSpeech(text ?? "").split(" ").filter((t) => t.length >= 4 && !TOPIC_STOP.has(t));
+
+// The conversation's subject in a few words, or "" when there is none yet (a free chat before
+// its first subject). Drills have no subject: they bring their own words or sentences.
+function conversationSubject(settings) {
+  const m = MODES[settings?.request?.mode];
+  if (!m || m.drill || m.interpreter || m.joiner) return "";
+  if (m.office) {
+    const c = settings.colleague;
+    return c ? `${c.role}: ${c.reason}` : "";
+  }
+  if (m.topics) return settings.topic ?? "";
+  if (m.roleCard) return settings.roleCard ? `introducing yourself as: ${settings.roleCard}` : "";
+  if (m.usesScene) {
+    const s = SCENARIOS[settings.request.scenario] ?? SCENARIOS.cafe;
+    return `${s.setting}. ${s.goal}`;
+  }
+  if (m.subjects) {
+    const latest = settings.subjects?.at(-1);
+    if (latest) return themeByName(latest)?.ask ?? latest;
+    // A live call has no subject field to follow, so it gets the kind of chat it is.
+    return settings.live ? "everyday life: work, home, family, free time and plans" : "";
+  }
+  return "";
+}
+
+// Every word of this call's vocab, once (the learnt B1 words and the known A1/A2 ones).
+function topicWordPool() {
+  const seen = new Set();
+  const pool = [];
+  for (const p of vocabPools) for (const w of p.words) if (!seen.has(w.de)) { seen.add(w.de); pool.push(w); }
+  return pool;
+}
+
+// A quick local guess: words whose German, English, example or category share a stem with the
+// subject. Rough, but instant and free; learnt (B1) words and last time's unused ones go first.
+function scoreTopicWord(w, subjectTokens, missed) {
+  const match = (t) => subjectTokens.some((s) => s === t || (s.startsWith(t) && s.length - t.length <= 2) || (t.length >= 5 && s.length >= 5 && (s.startsWith(t.slice(0, 5)) || t.startsWith(s.slice(0, 5)))) || (t.length >= 5 && s.includes(t)));
+  let score = 0;
+  for (const t of topicTokens(bareWord(w.de))) if (match(t)) score += 3;
+  for (const t of topicTokens(w.en)) if (match(t)) score += 2;
+  for (const t of topicTokens(w.cat)) if (match(t)) score += 1;
+  for (const t of new Set(topicTokens(w.example))) if (match(t)) score += 1;
+  if (!score) return 0;
+  return score + (KNOWN_LEVELS.includes(w.level) ? 0 : 1.5) + (missed.has(w.de) ? 1 : 0);
+}
+
+function localTopicWords(subject, pool) {
+  const tokens = topicTokens(subject);
+  const missed = new Set(store.get(TOPIC_WORDS_MISSED_KEY, []));
+  return pool
+    .map((w) => [scoreTopicWord(w, tokens, missed), w])
+    .filter(([s]) => s >= 3)
+    .sort((a, b) => b[0] - a[0])
+    .slice(0, TOPIC_WORDS_MAX)
+    .map(([, w]) => w);
+}
+
+const TOPIC_WORDS_SCHEMA = {
+  type: "OBJECT",
+  properties: {
+    words: {
+      type: "ARRAY",
+      items: {
+        type: "OBJECT",
+        properties: { de: { type: "STRING" }, fit: { type: "INTEGER" }, angle: { type: "STRING" } },
+        required: ["de", "fit", "angle"],
+        propertyOrdering: ["de", "fit", "angle"],
+      },
+    },
+  },
+  required: ["words"],
+  propertyOrdering: ["words"],
+};
+
+// The AI's pick: from the learner's words, only the ones a native speaker would really use on
+// this subject, each with an angle (a question whose natural answer needs it).
+async function aiTopicWords(subject, pool, local, language) {
+  const learnt = pool.filter((w) => !KNOWN_LEVELS.includes(w.level));
+  const known = pool.filter((w) => KNOWN_LEVELS.includes(w.level));
+  const tokens = topicTokens(subject);
+  const missed = new Set(store.get(TOPIC_WORDS_MISSED_KEY, []));
+  // All learnt words (the point of it), the best local matches, then a few known words to choose from.
+  const candidates = [...new Set([
+    ...local,
+    ...learnt.slice(0, 220),
+    ...known.map((w) => [scoreTopicWord(w, tokens, missed), w]).filter(([s]) => s > 0).sort((a, b) => b[0] - a[0]).slice(0, 60).map(([, w]) => w),
+    ...shuffled(known).slice(0, Math.max(0, 120 - learnt.length)),
+  ])].slice(0, 320);
+  if (!candidates.length) return [];
+  const raw = await aiJson({
+    systemInstruction: `You help a ${language} learner practise their own vocabulary in a real conversation. From the candidate list, choose only the words a native speaker would naturally use when talking about the subject. fit: 3 = central to the subject, 2 = comes up naturally, 1 = would need forcing (leave those out). Choose at most ${TOPIC_WORDS_MAX}, fewer if few fit; an empty list is fine. Prefer words marked *. angle: in English, at most 10 words, a question about the subject itself whose natural answer uses the word (e.g. "ask about the disadvantages of a car ban"). Write de exactly as in the list.`,
+    schema: TOPIC_WORDS_SCHEMA,
+    contents: [{ role: "user", parts: [{ text: `Subject: ${subject}\nCandidates (* = learnt recently):\n${candidates.map((w) => `${KNOWN_LEVELS.includes(w.level) ? "" : "*"}${w.de}${w.en ? ` — ${w.en}` : ""}`).join("\n")}` }] }],
+    temperature: 0.3,
+  });
+  const picked = [];
+  for (const p of Array.isArray(raw?.words) ? raw.words : []) {
+    if (!(Number(p?.fit) >= 2)) continue;
+    const w = candidates.find((c) => c.de === p.de) ?? candidates.find((c) => bareWord(c.de) === bareWord(p.de ?? ""));
+    if (w && !picked.some((x) => x.w === w)) picked.push({ w, fit: Number(p.fit), angle: String(p.angle ?? "").slice(0, 120) });
+  }
+  return picked.sort((a, b) => b.fit - a.fit).slice(0, TOPIC_WORDS_MAX);
+}
+
+const topicWordEntry = (w, extra = {}) => ({ de: w.de, en: w.en ?? "", example: w.example ?? "", angle: "", fit: 0, status: "open", ...extra });
+
+// Picks the words for the conversation's current subject: the local list at once, the AI's
+// in the background. Called when a call starts, a subject changes or a colleague comes over.
+function prepareTopicWords(settings = state.settings) {
+  if (!settings?.vocab?.enabled) return;
+  const subject = conversationSubject(settings);
+  const prev = settings.topicWords;
+  if (!subject) { renderTopicWords(); return; }
+  if (prev?.subject === subject) { renderTopicWords(); return; }
+  const pool = topicWordPool();
+  if (!pool.length) return;
+  // Words already said in this call stay (ticked) when the subject moves on.
+  const kept = (prev?.words ?? []).filter((w) => w.status === "used");
+  const local = localTopicWords(subject, pool);
+  const gen = (prev?.gen ?? 0) + 1;
+  settings.topicWords = {
+    subject,
+    gen,
+    source: "local",
+    words: [...kept, ...local.filter((w) => !kept.some((k) => k.de === w.de)).map((w) => topicWordEntry(w))],
+  };
+  renderTopicWords();
+  aiTopicWords(subject, pool, local, settings.request.language)
+    .then((picked) => {
+      const tw = settings.topicWords;
+      if (!tw || tw.gen !== gen || state.settings !== settings) return; // the subject moved on meanwhile
+      const used = tw.words.filter((w) => w.status === "used");
+      tw.words = [...used, ...picked.filter((p) => !used.some((u) => u.de === p.w.de)).map((p) => topicWordEntry(p.w, { fit: p.fit, angle: p.angle }))];
+      tw.source = "ai";
+      renderTopicWords();
+      liveQueueTopicWords();
+      saveCall();
+    })
+    .catch((error) => debugLog(`topic words: kept the quick list (${error.message})`));
+}
+
+// The learner's sentence: every panel word in it is ticked. Returns the words newly used.
+function markTopicWords(text) {
+  const tw = state.settings?.topicWords;
+  if (!tw || !text) return [];
+  const fresh = tw.words.filter((w) => w.status !== "used" && saysWord(text, w.de));
+  for (const w of fresh) { w.status = "used"; w.usedAt = Date.now(); }
+  if (fresh.length) renderTopicWords(fresh.map((w) => w.de));
+  return fresh;
+}
+
+// The partner's instructions for the panel's words: conversation first, words only as openings.
+function topicWordLines(settings, { live: isLive = false } = {}) {
+  const tw = settings?.topicWords;
+  if (!tw?.words.length) return [];
+  const open = tw.words.filter((w) => w.status !== "used");
+  const used = tw.words.filter((w) => w.status === "used");
+  const fmt = (w) => `${w.de}${w.en ? ` (${w.en})` : ""}${w.angle ? ` [opening: ${w.angle}]` : ""}`;
+  const lines = [];
+  if (open.length) {
+    lines.push(
+      `Words the learner has learnt that fit this conversation (the app shows them in a side panel): ${open.map(fmt).join("; ")}.`,
+      `The conversation always comes first. Have a real one: build on what the learner just said, give your own opinion or experience, and disagree now and then. Bring in at most one of these words per ${isLive ? "turn, and not on every turn" : "reply, and not in every reply"}, and only when it is the natural next thing to talk about here; if none fits right now, use none. Prefer asking a question whose natural answer needs the word (its opening says how) over saying it yourself. Never change the subject to fit one in, never quiz ("Kennst du das Wort…?"), never list them. Not in your first ${isLive ? "lines" : "reply"}: let the conversation get going first. It is fine if some stay unused.`,
+    );
+  }
+  if (used.length) lines.push(`The learner has already used: ${used.map((w) => w.de).join("; ")}; don't steer towards these again.`);
+  return lines;
+}
+
+// A live call got its instructions when it connected: the AI's better pick reaches it as a quiet
+// note once the partner's current turn is over (see liveMessage), never cutting it off.
+function liveQueueTopicWords() {
+  if (!live?.ready) return;
+  const lines = topicWordLines(state.settings, { live: true });
+  if (lines.length) live.wordsNote = `(Coach, not the learner: an updated word list for this conversation, nothing to say about it now. ${lines.join(" ")})`;
+}
+
+// The panel beside the call. `flash` lists words just ticked, for a short highlight.
+function renderTopicWords(flash = []) {
+  const box = $("topic-words");
+  if (!box) return;
+  const tw = state.settings?.topicWords;
+  const subjectless = state.settings?.vocab?.enabled && !tw && MODES[state.settings?.request?.mode]?.subjects;
+  if (!tw && !subjectless) { box.hidden = true; return; }
+  box.hidden = false;
+  const words = tw?.words ?? [];
+  const used = words.filter((w) => w.status === "used").length;
+  $("tw-count").textContent = words.length ? `${used} / ${words.length}` : "";
+  $("tw-sub").textContent = !tw
+    ? "Words appear once a subject comes up."
+    : !words.length
+      ? tw.source === "ai" ? "None of your words fit this one: just talk!" : "Looking for your words that fit…"
+      : tw.source === "ai" ? "Your learnt words that fit. Use them where they come naturally." : "Quick match: refining…";
+  const list = $("tw-list");
+  list.replaceChildren(...words.map((w) => {
+    const li = document.createElement("li");
+    li.className = `tw-word ${w.status}` + (flash.includes(w.de) ? " flash" : "");
+    const mark = document.createElement("span");
+    mark.className = "tw-mark";
+    mark.textContent = w.status === "used" ? "✓" : "○";
+    const de = document.createElement("span");
+    de.className = "tw-de";
+    de.textContent = w.de;
+    de.lang = state.settings?.locale ?? "de-DE";
+    const en = document.createElement("span");
+    en.className = "tw-en";
+    en.textContent = w.en;
+    const more = document.createElement("span");
+    more.className = "tw-more";
+    more.textContent = [w.angle && `💬 ${w.angle}`, w.example && `„${w.example}“`].filter(Boolean).join("  ");
+    li.append(mark, de, en, ...(more.textContent ? [more] : []));
+    li.tabIndex = 0;
+    li.addEventListener("click", () => li.classList.toggle("open"));
+    return li;
+  }));
+}
+
+// After a call: which panel words were used, and the unused ones get a head start next time.
+function topicWordsRecap() {
+  const tw = state.settings?.topicWords;
+  if (!tw?.words.length) return null;
+  const used = tw.words.filter((w) => w.status === "used").map((w) => w.de);
+  const unused = tw.words.filter((w) => w.status !== "used").map((w) => w.de);
+  store.set(TOPIC_WORDS_MISSED_KEY, [...new Set([...unused, ...store.get(TOPIC_WORDS_MISSED_KEY, [])])].filter((de) => !used.includes(de)).slice(0, 60));
+  return { used, unused, total: tw.words.length };
+}
+
 // ---------- mistake tracker ----------
 // Every correction is tagged with the kinds of mistake it fixes. The tags are kept per
 // language in this browser, and the ones that keep coming back go into the prompt so the
@@ -961,7 +1201,8 @@ function renderRecap() {
     renderSentenceRecap(box, sentences.right, sentences.again.filter((s) => !sentences.right.includes(s)));
     return;
   }
-  if (!said.length && !tried.length) {
+  const topic = topicWordsRecap();
+  if (!said.length && !tried.length && !topic) {
     box.hidden = true;
     return;
   }
@@ -979,7 +1220,10 @@ function renderRecap() {
   const total = document.createElement("p");
   total.className = "muted";
   total.textContent = `${automatic} word${automatic === 1 ? "" : "s"} automatic so far. Words come back after 1, 3, 7 and 21 days.`;
-  box.replaceChildren(head, ...[line("Said ✓", said), line("Practise again", tried), line("Not reached", missed)].filter(Boolean), total);
+  const topicLines = topic
+    ? [line(`Topic words used ${topic.used.length}/${topic.total} ✓`, topic.used.length ? topic.used : ["none yet"]), line("Topic words for next time", topic.unused)]
+    : [];
+  box.replaceChildren(head, ...[line("Said ✓", said), line("Practise again", tried), line("Not reached", missed), ...topicLines].filter(Boolean), total);
   box.hidden = false;
 }
 
@@ -1629,8 +1873,10 @@ async function chatTurn(settings, history, message) {
   const learnt = Boolean(settings.vocab?.learnt);
   const today = todayWords ? { words: todayWords.active, status: todayWords.status, situation: todayWords.situation, asked: todayWords.asked ?? {}, turn: Math.floor(history.length / 2) } : null;
   const todaySet = new Set(today?.words.map((w) => w.de));
-  // A drill is only about today's words: no background words to weave in.
-  const targetWords = settings.vocab?.enabled && !mode.drill ? nextVocabBatch(learnt ? 8 : 12).filter((w) => !todaySet.has(w.de)) : [];
+  // A drill is only about today's words: no background words to weave in. With topic words
+  // (the words that fit this conversation, see prepareTopicWords) they replace the random batch.
+  const topicWordsOn = Boolean(settings.topicWords);
+  const targetWords = settings.vocab?.enabled && !mode.drill && !topicWordsOn ? nextVocabBatch(learnt ? 8 : 12).filter((w) => !todaySet.has(w.de)) : [];
   const startedAt = performance.now();
   let voiced = false;
   const hints = mode.topics ? topicHints(history, settings.topic ?? "")
@@ -1639,7 +1885,9 @@ async function chatTurn(settings, history, message) {
     : mode.interpreter ? { target: settings.sayThis ?? "", given: sentencesGiven(settings) }
     : mode.joiner ? { target: settings.joinThis ?? "", pool: settings.connectors ?? [] }
     : null;
-  const systemInstruction = turnSystemPrompt(settings.request, targetWords, learnt, message.trim(), recurringMistakes(settings.request.language), today, hints);
+  // Topic words only once the conversation is going (never in the opening reply).
+  const wordLines = history.length >= 2 ? topicWordLines(settings) : [];
+  const systemInstruction = [turnSystemPrompt(settings.request, targetWords, learnt, message.trim(), recurringMistakes(settings.request.language), today, hints), ...wordLines].join("\n");
   // A drill is short, plain and only needs the last few turns: less to read and write, so
   // replies come sooner, and a low temperature keeps its questions sensible.
   const contents = historyToContents(mode.drill ? history.slice(-DRILL_HISTORY) : history, userText);
@@ -2618,6 +2866,9 @@ async function resumeCall(snap, { note, refreshWords = false } = {}) {
   saveCall();
   renderStats();
   renderFocusWords([]);
+  // The panel as it was (saved with the call); a call from before it existed gets one now.
+  if (state.settings.vocab?.enabled && !MODES[state.settings.request.mode]?.office) prepareTopicWords(state.settings);
+  else renderTopicWords();
   setStatus(note);
 }
 
@@ -3093,6 +3344,10 @@ function enterCall() {
 }
 
 $("call-topic").addEventListener("click", () => $("call-topic").classList.toggle("expanded"));
+$("tw-head").addEventListener("click", () => {
+  const folded = $("topic-words").classList.toggle("folded");
+  $("tw-head").setAttribute("aria-expanded", String(!folded));
+});
 
 function leaveCall() {
   clearInterval(callTimer);
@@ -3221,6 +3476,12 @@ function liveVocabLines(settings, m) {
   const fmt = (w) => (w.en ? `${w.de} (${w.en})` : w.de);
   const today = todayWords?.active ?? [];
   const todaySet = new Set(today.map((w) => w.de));
+  // With topic words (see prepareTopicWords), only those: they fit the conversation.
+  if (settings.topicWords) {
+    const lines = topicWordLines(settings, { live: true });
+    if (today.length) lines.push(`Today's words, which the learner must recall and say: ${today.map(fmt).join("; ")}. Only where one is the natural thing to say on the current subject, ask a question whose answer needs it. Never say, translate or hint at one before they have said it.`);
+    return lines;
+  }
   const words = nextVocabBatch(LIVE_VOCAB_WORDS).filter((w) => !todaySet.has(w.de));
   const lines = [];
   if (words.length) {
@@ -3359,6 +3620,7 @@ function liveFlushLearner() {
   setStatus("");
   addLearnerMessage(said);
   state.history.push({ role: "user", content: said });
+  markTopicWords(said);
   liveCoach(said, live.lastReply ?? "");
 // A note to Gemini from the app (not the learner): it cuts off what it was saying.
 function liveNote(text) {
@@ -3443,6 +3705,11 @@ function liveMessage(msg) {
   if (c.turnComplete) {
     liveFlushLearner();
     liveFlushReply();
+    // The AI's word pick, as context only (turnComplete false: no reply is asked for).
+    if (live.wordsNote) {
+      liveSend({ clientContent: { turns: [{ role: "user", parts: [{ text: live.wordsNote }] }], turnComplete: false } });
+      live.wordsNote = null;
+    }
     if (live.leaveAfterTurn) officeLeave(live.leaveAfterTurn); // waits for the goodbye to finish playing
   }
 }
@@ -3774,6 +4041,9 @@ function officeVisit() {
   state.settings.colleague = colleague;
   state.settings.characterName = colleague.name;
   state.settings.visitLogStart = callLog.length;
+  // This colleague's matter gets its own words (before the call connects, never waited for).
+  state.settings.topicWords = null;
+  prepareTopicWords(state.settings);
   clearLiveHandle(); // a new visit: Gemini's copy of the last one doesn't belong to it
   officeVisitAt = Date.now();
   officeLeaving = false;
@@ -3930,6 +4200,7 @@ async function addGrammarCheck(turn, said, check) {
 async function sendTurn(message) {
   if (state.busy || state.finished) return;
   if (message) addLearnerMessage(message);
+  if (message) markTopicWords(message); // ticked at once, not after the reply
   setBusy(true);
   setStatus(`${state.settings.characterName} is thinking…`);
   const slowHint = setTimeout(() => setStatus("Still thinking… longer replies take a moment."), 6000);
@@ -3940,7 +4211,10 @@ async function sendTurn(message) {
     if (message) await addGrammarCheck(turn, message, check);
     state.history.push({ role: "user", content: message || userText });
     state.history.push({ role: "assistant", content: turn.reply });
-    if (MODES[state.settings.request.mode]?.subjects) noteSubject(turn.subject);
+    if (MODES[state.settings.request.mode]?.subjects) {
+      noteSubject(turn.subject);
+      prepareTopicWords(); // a new subject gets its own words (in the background)
+    }
     // The interpreter's try goes into the sentence deck, and the next sentence is chosen: kept
     // with the call (it survives a reload) and shown with the reply.
     if (MODES[state.settings.request.mode]?.interpreter) {
@@ -4474,6 +4748,10 @@ $("start").addEventListener("click", async () => {
     chatId = String(Date.now()); // a new chat; it is saved with the first message
     chatStarted = Date.now();
   }
+  // The learnt words that fit this conversation, in the side panel: a quick list now, the AI's
+  // pick in the background (never waited for). The Büro picks them per visit.
+  if (!MODES[mode]?.office) prepareTopicWords(state.settings);
+  else renderTopicWords();
   bumpStreak();
   renderStats();
   $("setup").hidden = true;
@@ -4851,6 +5129,7 @@ $("end").addEventListener("click", () => {
   $("say-this").hidden = true;
   store.set(CALL_KEY, null); // ended on purpose: nothing to resume
   renderFocusWords([]);
+  $("topic-words").hidden = true;
   setBusy(false);
   leaveCall();
   $("setup").hidden = false;
