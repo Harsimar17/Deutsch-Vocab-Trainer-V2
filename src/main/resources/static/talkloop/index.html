@@ -8,7 +8,7 @@
     <link rel="apple-touch-icon" href="favicon.svg" />
     <meta name="theme-color" content="#e62429" />
     <!-- ?v= makes phones fetch the new file after a change instead of a cached copy: bump it with each change. -->
-    <link rel="stylesheet" href="styles.css?v=27" />
+    <link rel="stylesheet" href="styles.css?v=28" />
     <!-- Inside the trainer's Talkloop tab the trainer is already around it, so its "back" arrow goes. -->
     <script>if (window.self !== window.top) document.write("<style>.home{display:none}</style>");</script>
   </head>
@@ -240,6 +240,18 @@
         <div id="coach" class="card coach" hidden></div>
       </div>
 
+      <!-- Your learnt words that fit this conversation: beside the call on a wide screen, a
+           folding strip above the dock on a phone. Ticked as you say them (see renderTopicWords). -->
+      <aside id="topic-words" class="topic-words" hidden aria-label="Words to use in this conversation">
+        <button type="button" id="tw-head" class="tw-head" aria-expanded="true">
+          <strong>Use these words</strong>
+          <span id="tw-count" class="tw-count"></span>
+          <span class="tw-fold" aria-hidden="true">▾</span>
+        </button>
+        <p id="tw-sub" class="tw-sub"></p>
+        <ul id="tw-list" class="tw-list"></ul>
+      </aside>
+
       <footer class="call-dock">
         <div id="focus" class="focus" hidden aria-label="Vocabulary being practised"></div>
         <!-- Say it again: after a correction, the corrected sentence is said before the reply comes. -->
@@ -337,6 +349,6 @@
       <ul id="bookmarks" class="bookmarks"></ul>
     </section>
 
-    <script src="app.js?v=78" type="module"></script> <!-- bump with app.js changes, like styles.css above -->
+    <script src="app.js?v=79" type="module"></script> <!-- bump with app.js changes, like styles.css above -->
   </body>
 </html>
