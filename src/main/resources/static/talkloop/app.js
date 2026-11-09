@@ -772,13 +772,28 @@ function conversationSubject(settings) {
   return "";
 }
 
-// Every word of this call's vocab, once (the learnt B1 words and the known A1/A2 ones).
-function topicWordPool() {
+// Every word to choose from, once: the learnt B1 words and the known A1/A2 ones. The panel is
+// about the learner's own words, so it doesn't need "Weave my vocab" ticked: without it, they
+// are read from the browser's copy (the trainer's learnt words, else the imported list).
+async function topicWordPool(settings) {
   const seen = new Set();
   const pool = [];
-  for (const p of vocabPools) for (const w of p.words) if (!seen.has(w.de)) { seen.add(w.de); pool.push(w); }
+  const add = (w) => { if (w?.de && !seen.has(w.de)) { seen.add(w.de); pool.push(w); } };
+  if (settings.vocab?.enabled) {
+    for (const p of vocabPools) p.words.forEach(add);
+    return pool;
+  }
+  const VOCAB_LEVELS = ["A1", "A2", "B1"];
+  const upTo = VOCAB_LEVELS.indexOf(settings.level);
+  const levels = upTo === -1 ? VOCAB_LEVELS : VOCAB_LEVELS.slice(0, upTo + 1);
+  const learnt = trainerLink() ? ((await idbGet("learnt_words").catch(() => null)) ?? []) : [];
+  const all = (await idbGet("vocab_words").catch(() => null)) ?? [];
+  learnt.filter((w) => levels.includes(w.level) && !KNOWN_LEVELS.includes(w.level)).forEach(add);
+  // Linked: A1/A2 count as known, as in a call with the box ticked. Not linked: the imported list.
+  all.filter((w) => levels.includes(w.level) && (!learnt.length || KNOWN_LEVELS.includes(w.level))).forEach(add);
   return pool;
 }
+let topicWordsLoading = null; // { settings, subject } while the words are being read
 
 // A quick local guess: words whose German, English, example or category share a stem with the
 // subject. Rough, but instant and free; learnt (B1) words and last time's unused ones go first.
@@ -856,13 +871,24 @@ const topicWordEntry = (w, extra = {}) => ({ de: w.de, en: w.en ?? "", example: 
 // Picks the words for the conversation's current subject: the local list at once, the AI's
 // in the background. Called when a call starts, a subject changes or a colleague comes over.
 function prepareTopicWords(settings = state.settings) {
-  if (!settings?.vocab?.enabled) return;
+  if (!settings?.request) return;
   const subject = conversationSubject(settings);
-  const prev = settings.topicWords;
   if (!subject) { renderTopicWords(); return; }
-  if (prev?.subject === subject) { renderTopicWords(); return; }
-  const pool = topicWordPool();
-  if (!pool.length) return;
+  if (settings.topicWords?.subject === subject) { renderTopicWords(); return; }
+  if (topicWordsLoading?.settings === settings && topicWordsLoading.subject === subject) return;
+  const loading = (topicWordsLoading = { settings, subject });
+  // Reading the words takes a few milliseconds and is never waited for.
+  topicWordPool(settings)
+    .then((pool) => {
+      if (topicWordsLoading !== loading) return; // a newer subject came along meanwhile
+      topicWordsLoading = null;
+      if (pool.length && state.settings === settings) pickTopicWords(settings, subject, pool);
+    })
+    .catch((error) => { topicWordsLoading = null; debugLog(`topic words: no words (${error.message})`); });
+}
+
+function pickTopicWords(settings, subject, pool) {
+  const prev = settings.topicWords;
   // Words already said in this call stay (ticked) when the subject moves on.
   const kept = (prev?.words ?? []).filter((w) => w.status === "used");
   const local = localTopicWords(subject, pool);
@@ -929,7 +955,7 @@ function renderTopicWords(flash = []) {
   const box = $("topic-words");
   if (!box) return;
   const tw = state.settings?.topicWords;
-  const subjectless = state.settings?.vocab?.enabled && !tw && MODES[state.settings?.request?.mode]?.subjects;
+  const subjectless = !tw && (state.settings?.vocab?.enabled || Boolean(trainerLink())) && MODES[state.settings?.request?.mode]?.subjects;
   if (!tw && !subjectless) { box.hidden = true; return; }
   box.hidden = false;
   const words = tw?.words ?? [];
@@ -2867,7 +2893,7 @@ async function resumeCall(snap, { note, refreshWords = false } = {}) {
   renderStats();
   renderFocusWords([]);
   // The panel as it was (saved with the call); a call from before it existed gets one now.
-  if (state.settings.vocab?.enabled && !MODES[state.settings.request.mode]?.office) prepareTopicWords(state.settings);
+  if (!MODES[state.settings.request.mode]?.office) prepareTopicWords(state.settings);
   else renderTopicWords();
   setStatus(note);
 }
