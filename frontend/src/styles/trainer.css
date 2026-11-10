@@ -1,0 +1,354 @@
+/* Theme: "next-gen" — aurora light behind frosted-glass surfaces, a violet→cyan signature
+   gradient, soft glows instead of hard shadows, Space Grotesk for display type and Inter
+   for reading. Dark mode is the showcase; light mode is the same idea in daylight. */
+:root {
+  --paper: #F3F4FA;
+  --paper-raised: rgba(255,255,255,.78);
+  --ink: #0B1020;
+  --ink-soft: #4A5270;
+  --ink-faint: #8E95AE;
+  --line: rgba(15,20,45,.10);
+  --accent: #6D4AFF;
+  --accent-2: #06B6D4;
+  --konj: #7C3AED;
+  --verb: #B45309;
+  --font-serif: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-mono: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-display: 'Space Grotesk', 'Inter', -apple-system, sans-serif;
+  --font-code: 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+  --font-comic: var(--font-display);
+  --shadow-soft: 0 1px 2px rgba(20,16,60,.06), 0 0 0 1px rgba(255,255,255,.5) inset;
+  --shadow-card: 0 0 0 1px rgba(109,74,255,.10), 0 24px 60px -28px rgba(76,48,200,.38);
+  --glow: 0 8px 28px -8px rgba(109,74,255,.55);
+  --ink-muted: #646C88;
+  --line-card: rgba(109,74,255,.16);
+  --tint: rgba(109,74,255,.06);
+  --card-grad: linear-gradient(160deg, rgba(255,255,255,.92) 0%, rgba(245,243,255,.82) 100%);
+  --btn-grad: linear-gradient(135deg, #6D4AFF 0%, #4F7BFF 55%, #06B6D4 100%);
+  --btn-border: transparent;
+  --good: #10B981;
+  --good-hi: #34D399;
+  --good-soft: rgba(16,185,129,.35);
+  --bad: #F43F5E;
+  --bad-hi: #FB7185;
+  --glow-1: transparent; --glow-1-fade: transparent; --glow-2: transparent; --glow-2-fade: transparent;
+  --word-hover: rgba(109,74,255,.16);
+  --target-line: rgba(109,74,255,.6);
+  --rule-case: rgba(16,185,129,.10);
+  --rule-sing: rgba(244,63,94,.09);
+  --rule-pl: rgba(6,182,212,.11);
+  --dots: transparent;
+  --pow: var(--ink);
+  --header-bg: rgba(243,244,250,.62);
+  --aurora-1: rgba(124,92,255,.28);
+  --aurora-2: rgba(6,182,212,.22);
+  --aurora-3: rgba(236,72,153,.14);
+  --grid: rgba(20,24,60,.045);
+  color-scheme: light;
+}
+:root[data-theme="dark"] {
+  --paper: #05060D;
+  --paper-raised: rgba(18,20,38,.72);
+  --ink: #EEF0FF;
+  --ink-soft: #A6ACCB;
+  --ink-faint: #6A7194;
+  --ink-muted: #8A91B4;
+  --line: rgba(160,170,255,.12);
+  --line-card: rgba(150,130,255,.22);
+  --accent: #9B87FF;
+  --accent-2: #22D3EE;
+  --konj: #C4B5FD;
+  --verb: #FBBF24;
+  --tint: rgba(155,135,255,.08);
+  --card-grad: linear-gradient(160deg, rgba(30,30,62,.82) 0%, rgba(14,16,32,.78) 100%);
+  --btn-grad: linear-gradient(135deg, #7C5CFF 0%, #4F7BFF 55%, #22D3EE 100%);
+  --btn-border: transparent;
+  --good: #34D399;
+  --good-hi: #6EE7B7;
+  --good-soft: rgba(52,211,153,.35);
+  --bad: #FB7185;
+  --bad-hi: #FDA4AF;
+  --shadow-soft: 0 1px 0 rgba(255,255,255,.05) inset, 0 1px 2px rgba(0,0,0,.5);
+  --shadow-card: 0 0 0 1px rgba(155,135,255,.16), 0 30px 70px -30px rgba(124,92,255,.55), 0 1px 0 rgba(255,255,255,.06) inset;
+  --glow: 0 10px 34px -8px rgba(124,92,255,.7);
+  --word-hover: rgba(155,135,255,.24);
+  --target-line: rgba(155,135,255,.7);
+  --rule-case: rgba(52,211,153,.12);
+  --rule-sing: rgba(251,113,133,.12);
+  --rule-pl: rgba(34,211,238,.12);
+  --header-bg: rgba(5,6,13,.55);
+  --aurora-1: rgba(124,92,255,.55);
+  --aurora-2: rgba(34,211,238,.32);
+  --aurora-3: rgba(236,72,153,.26);
+  --grid: rgba(160,170,255,.045);
+  color-scheme: dark;
+}
+html,body,#root {
+  margin:0;
+  min-height:100%;
+}
+body {
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--font-serif);
+  font-feature-settings: "cv11", "ss01";
+  -webkit-tap-highlight-color:transparent;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+/* The aurora and a faint blueprint grid, fixed behind everything (a fixed layer, not
+   background-attachment, which iOS ignores). Drifts slowly unless motion is reduced. */
+body::before, body::after { content: ""; position: fixed; z-index: -1; pointer-events: none; }
+body::before {
+  inset: -20vmax;
+  background:
+    radial-gradient(38vmax 30vmax at 18% 12%, var(--aurora-1), transparent 70%),
+    radial-gradient(34vmax 28vmax at 86% 18%, var(--aurora-2), transparent 70%),
+    radial-gradient(40vmax 30vmax at 60% 96%, var(--aurora-3), transparent 70%);
+  filter: blur(10px);
+  animation: aurora 28s ease-in-out infinite alternate;
+}
+body::after {
+  inset: 0;
+  background-image: linear-gradient(var(--grid) 1px, transparent 1px), linear-gradient(90deg, var(--grid) 1px, transparent 1px);
+  background-size: 44px 44px;
+  -webkit-mask-image: radial-gradient(ellipse 90% 70% at 50% 0%, #000 30%, transparent 85%);
+  mask-image: radial-gradient(ellipse 90% 70% at 50% 0%, #000 30%, transparent 85%);
+}
+@keyframes aurora {
+  0% { transform: translate3d(0, 0, 0) rotate(0deg); }
+  50% { transform: translate3d(3vmax, -2vmax, 0) rotate(6deg); }
+  100% { transform: translate3d(-3vmax, 2vmax, 0) rotate(-4deg); }
+}
+@media (prefers-reduced-motion: reduce) { body::before { animation: none; } }
+button,input,select,textarea { font:inherit; }
+button {
+  touch-action:manipulation;
+  transition: transform .12s ease, box-shadow .16s ease, filter .16s ease,
+              background-color .16s ease, color .16s ease, border-color .16s ease;
+}
+@media (hover: hover) {
+  button:not(:disabled):hover { filter: brightness(1.04); }
+}
+button:not(:disabled):active { transform: scale(.98); }
+input:focus, textarea:focus, select:focus { outline: none; border-color: var(--accent) !important; box-shadow: 0 0 0 3px var(--word-hover); }
+.tease { display: none; }
+/* The wordmark */
+.comic-title { font-family: var(--font-serif); font-weight: 700; letter-spacing: -.025em; color: var(--ink); display: inline-block; }
+/* Frosted glass panel (used by the progress card; the Rules groups get it too). */
+.glass, .rgroup { background: var(--paper-raised); border: 1px solid var(--line-card); box-shadow: var(--shadow-card);
+  -webkit-backdrop-filter: saturate(160%) blur(18px); backdrop-filter: saturate(160%) blur(18px); }
+h1, h2, h3 { font-family: var(--font-display); letter-spacing: -.02em; }
+.rhead { font-family: var(--font-serif) !important; }
+.bubble { display: inline-block; color: var(--ink-soft); }
+button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+::selection { background: var(--word-hover); }
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-thumb {
+  background: linear-gradient(var(--accent), var(--accent-2));
+  border-radius: 999px;
+  border: 3px solid var(--paper);
+}
+@keyframes tipIn { from { opacity: 0; } to { opacity: 1; } }
+/* Loader on the button that started a request: the label is covered by the
+   button's own background and a ring spins in the label's colour. */
+.btn-busy { color: transparent !important; pointer-events: none; cursor: progress; }
+.btn-busy::before {
+  content: ""; position: absolute; inset: 0; border-radius: inherit; background: inherit;
+}
+.btn-busy::after {
+  content: ""; position: absolute; top: 50%; left: 50%; width: 1.25em; height: 1.25em; margin: -0.625em 0 0 -0.625em;
+  box-sizing: border-box; border-radius: 50%; border: 2px solid var(--busy-color, currentColor); border-right-color: transparent;
+  animation: btnSpin .65s linear infinite;
+}
+@keyframes btnSpin { to { transform: rotate(360deg); } }
+/* Requests not started by a button (Enter key, opening a tab): a thin bar at the top. */
+#net-bar { position: fixed; top: 0; left: 0; right: 0; height: 3px; z-index: 100; overflow: hidden; pointer-events: none; opacity: 0; transition: opacity .2s ease; }
+#net-bar.on { opacity: 1; }
+#net-bar::before {
+  content: ""; position: absolute; top: 0; bottom: 0; width: 40%; border-radius: 3px;
+  background: linear-gradient(90deg, transparent, var(--accent), transparent); animation: netSlide 1s ease-in-out infinite;
+}
+@keyframes netSlide { from { left: -40%; } to { left: 100%; } }
+@media (prefers-reduced-motion: reduce) {
+  .btn-busy::after { animation-duration: 1.6s; }
+  #net-bar::before { animation-duration: 2.4s; }
+}
+@keyframes cardIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+/* Horizontally scrollable tab strip — momentum scroll on iOS, no visible bar */
+.tabstrip {
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  overscroll-behavior-x: contain;
+}
+.tabstrip::-webkit-scrollbar { display: none; width: 0; height: 0; }
+/* Geschichten reader as a notebook page on a desk, like a mission briefing: ruled
+   paper, red margin, punched holes, a paper clip, a typed header and a red stamp.
+   The page keeps the light palette in both themes — paper stays paper. */
+.notebook {
+  --ink: #2b2620; --ink-soft: #5d5446; --ink-faint: #8f8571; --ink-muted: #7a715f; --line: #d9ccb0; --line-card: #d9ccb0;
+  --paper-raised: #fbf6e9; --tint: #00000008; --word-hover: rgba(138,106,43,.2); --target-line: rgba(178,52,52,.55);
+  --btn-grad: linear-gradient(180deg, #35302a 0%, #2b2620 100%); --shadow-soft: 0 1px 2px rgba(60,50,20,.08);
+  --rule: 32px;
+  position: relative; color: var(--ink);
+  padding: 34px 26px 30px 76px; border-radius: 3px;
+  background-color: #f6efdc;
+  background-image:
+    linear-gradient(90deg, transparent 58px, rgba(196,62,62,.5) 58px, rgba(196,62,62,.5) 60px, transparent 60px),
+    repeating-linear-gradient(180deg, transparent 0, transparent calc(var(--rule) - 1px), rgba(84,118,170,.22) calc(var(--rule) - 1px), rgba(84,118,170,.22) var(--rule));
+  background-position: 0 0, 0 22px;
+  box-shadow: 0 1px 2px rgba(0,0,0,.18), 0 22px 46px -16px rgba(0,0,0,.55), inset 0 0 60px rgba(160,130,70,.12);
+  transform: rotate(-0.35deg);
+  animation: pageIn .75s cubic-bezier(.2,.8,.2,1) both;
+}
+.notebook .holes { position: absolute; left: 20px; top: 0; bottom: 0; width: 18px; pointer-events: none;
+  background: radial-gradient(circle at 9px 9px, rgba(0,0,0,.28) 0 6px, transparent 7px) 0 60px / 18px 180px repeat-y; opacity: .55; }
+.notebook .clip { position: absolute; top: -18px; right: 14px; width: 26px; height: 64px; transform: rotate(8deg); pointer-events: none; }
+.notebook .typed { font-family: 'Special Elite', 'Courier New', monospace; font-size: 12px; letter-spacing: .08em; color: #5d5446; text-transform: uppercase; min-height: 1.4em; }
+.notebook .typed .caret { display: inline-block; width: .55em; border-bottom: 2px solid currentColor; margin-left: 1px; animation: caretBlink .8s steps(1) infinite; }
+.notebook .stamp {
+  position: absolute; top: 30px; right: 54px; padding: 4px 10px; border: 3px double rgba(178,40,40,.75); border-radius: 4px;
+  font-family: 'Special Elite', 'Courier New', monospace; font-size: 15px; letter-spacing: .14em; color: rgba(178,40,40,.8);
+  transform: rotate(-9deg); animation: stampIn .35s cubic-bezier(.2,1.6,.4,1) .9s both; mix-blend-mode: multiply;
+}
+.notebook .hand { font-family: 'Caveat', 'Segoe Print', cursive; }
+.notebook .title { font-family: 'Caveat', 'Segoe Print', cursive; font-weight: 700; font-size: 38px; line-height: 1.05; color: #23324f; margin: 14px 90px 0 0; }
+.notebook .para { margin: 0; font-family: var(--font-serif); font-size: 18px; line-height: var(--rule); color: var(--ink); }
+.notebook .reveal { animation: lineIn .5s ease both; }
+.notebook .pencil { margin: 2px 0 0; font-family: 'Caveat', 'Segoe Print', cursive; font-size: 21px; line-height: var(--rule); color: #4a5f8a; }
+@keyframes pageIn { from { opacity: 0; transform: translateY(26px) rotate(-2.2deg) scale(.985); } to { opacity: 1; transform: translateY(0) rotate(-0.35deg) scale(1); } }
+@keyframes stampIn { from { opacity: 0; transform: rotate(-9deg) scale(1.9); } to { opacity: 1; transform: rotate(-9deg) scale(1); } }
+@keyframes lineIn { from { opacity: 0; transform: translateX(-6px); } to { opacity: 1; transform: translateX(0); } }
+@keyframes caretBlink { 50% { opacity: 0; } }
+@keyframes pulse { 50% { opacity: .55; } }
+@media (max-width: 520px) {
+  .notebook { padding: 30px 14px 24px 50px; background-image:
+    linear-gradient(90deg, transparent 38px, rgba(196,62,62,.5) 38px, rgba(196,62,62,.5) 40px, transparent 40px),
+    repeating-linear-gradient(180deg, transparent 0, transparent calc(var(--rule) - 1px), rgba(84,118,170,.22) calc(var(--rule) - 1px), rgba(84,118,170,.22) var(--rule)); }
+  .notebook .holes { left: 10px; }
+  .notebook .stamp { position: relative; top: 0; right: 0; display: inline-block; margin-top: 10px; font-size: 13px; }
+  .notebook .title { font-size: 32px; margin-right: 0; margin-top: 12px; }
+  .notebook .para { font-size: 17px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .notebook, .notebook .stamp, .notebook .reveal { animation: none; }
+  .notebook .typed .caret { animation: none; }
+}
+/* Geschichten reader: tappable words (.sw) and B1 target words (.st) */
+.sw { cursor: pointer; border-radius: 4px; transition: background-color .12s ease; }
+.sw:hover, .sw.on { background: var(--word-hover); }
+.st { font-weight: 600; box-shadow: inset 0 -2px 0 var(--target-line); }
+/* Formulas page: a table of three columns; on phones each rule with its parts indented below */
+.formulas { display: grid; grid-template-columns: auto auto auto; column-gap: 24px; row-gap: 12px; align-items: baseline; }
+.formulas .frow { display: contents; }
+.formulas .wide { grid-column: 2 / span 2; }
+.formulas .all { grid-column: 1 / -1; }
+@media (max-width: 600px) {
+  .formulas { display: block; }
+  .formulas .frow { display: block; margin-top: 12px; }
+  .formulas .frow:first-child { margin-top: 0; }
+  .formulas .frow > div + div { margin-left: 22px; color: var(--ink-soft); }
+}
+/* Rules page: one card per group, a headline per rule, charts like a grammar book */
+.rgroup { display: flex; flex-direction: column; gap: 18px; padding: 20px; border-radius: 14px; border: 1px solid var(--line-card);
+  background: var(--paper-raised); box-shadow: var(--shadow-soft); scroll-margin-top: 16px; }
+.rhead { margin: 0; font-family: var(--font-mono); font-size: 11px; font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase;
+  color: var(--accent); padding-bottom: 6px; border-bottom: 1px solid var(--line); }
+.rwrap { overflow-x: auto; }
+.rtable { width: 100%; border-collapse: collapse; font-family: var(--font-mono); font-size: 13px; color: var(--ink); }
+.rtable th, .rtable td { border: 1px solid var(--line); padding: 8px 10px; text-align: center; }
+.rtable thead th { font-weight: 600; }
+.rtable tbody th { font-weight: 600; white-space: nowrap; }
+.rtable .h-case { background: var(--rule-case); }
+.rtable .h-sing { background: var(--rule-sing); }
+.rtable .h-pl { background: var(--rule-pl); }
+@media (max-width: 480px) {
+  .rgroup { padding: 16px 12px; }
+  .rtable { font-size: 12px; }
+  .rtable th, .rtable td { padding: 6px 5px; }
+  .rtable tbody th { white-space: normal; }
+}
+/* Phones: cards, inputs and boxes sized from the screen width (e.g. min(440px, 92vw)) would
+   ignore the page padding and stick out past both edges, cutting off their comic shadows. */
+@media (max-width: 600px) {
+  #root [style*="vw)"] { max-width: 100%; box-sizing: border-box; }
+}
+/* ---------- App shell: floating glass header; a floating glass tab bar on phones ---------- */
+.app-header { position: sticky; top: 0; z-index: 30; padding-top: env(safe-area-inset-top);
+  background: var(--header-bg);
+  -webkit-backdrop-filter: saturate(180%) blur(20px); backdrop-filter: saturate(180%) blur(20px); }
+/* a hairline that fades in and out at the ends, in the signature gradient */
+.app-header::after { content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(124,92,255,.45), rgba(34,211,238,.45), transparent); }
+.app-header-inner { max-width: 1120px; margin: 0 auto; height: 62px; padding: 0 20px; display: flex; align-items: center; gap: 20px; }
+.brand { display: flex; align-items: center; gap: 10px; font-family: var(--font-display); font-weight: 700; font-size: 18px; letter-spacing: -.02em; color: var(--ink); white-space: nowrap; }
+.brand-mark { position: relative; width: 32px; height: 32px; border-radius: 10px; display: grid; place-items: center; background: var(--btn-grad); color: #fff;
+  font-family: var(--font-display); font-size: 16px; font-weight: 700; letter-spacing: -.04em; box-shadow: var(--glow); }
+.brand-mark::after { content: ""; position: absolute; inset: 0; border-radius: inherit; box-shadow: inset 0 1px 0 rgba(255,255,255,.45); }
+.brand-sub { font-family: var(--font-serif); font-weight: 500; color: var(--ink-faint); font-size: 12px; letter-spacing: .08em; text-transform: uppercase; }
+.topnav { position: relative; display: flex; gap: 2px; margin: 0 auto; padding: 4px; border-radius: 14px; background: var(--tint); border: 1px solid var(--line); }
+.topnav button { position: relative; display: inline-flex; align-items: center; gap: 8px; height: 34px; padding: 0 15px; border: 0; border-radius: 10px; background: transparent;
+  color: var(--ink-soft); font-size: 14px; font-weight: 500; cursor: pointer; white-space: nowrap; }
+.topnav button svg { width: 16px; height: 16px; }
+.topnav button[aria-current="page"] { background: var(--btn-grad); color: #fff; box-shadow: var(--glow); }
+@media (hover: hover) { .topnav button:not([aria-current="page"]):hover { color: var(--ink); background: var(--tint); filter: none; } }
+.header-actions { display: flex; align-items: center; gap: 10px; margin-left: auto; }
+.topnav + .header-actions { margin-left: 0; }
+.icon-btn { width: 38px; height: 38px; display: grid; place-items: center; padding: 0; border-radius: 12px; border: 1px solid var(--line);
+  background: var(--paper-raised); color: var(--ink-soft); cursor: pointer; -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px); }
+.icon-btn svg { width: 18px; height: 18px; }
+@media (hover: hover) { .icon-btn:hover { color: var(--accent); border-color: var(--line-card); filter: none; } }
+/* the account button: initial inside a rotating gradient ring */
+.avatar-btn { position: relative; width: 38px; height: 38px; border-radius: 999px; border: 0; padding: 2px; cursor: pointer; display: grid; place-items: center;
+  background: conic-gradient(from 0deg, #7C5CFF, #22D3EE, #EC4899, #7C5CFF); color: var(--ink); font-family: var(--font-display); font-weight: 700; font-size: 15px; }
+.avatar-btn { isolation: isolate; }
+.avatar-btn::before { content: ""; position: absolute; inset: 2px; z-index: -1; border-radius: inherit; background: var(--paper); }
+.menu { position: absolute; top: 50px; right: 0; z-index: 40; min-width: 250px; max-width: min(300px, 86vw); padding: 6px;
+  border-radius: 16px; border: 1px solid var(--line-card); background: var(--paper-raised); box-shadow: var(--shadow-card);
+  -webkit-backdrop-filter: saturate(160%) blur(24px); backdrop-filter: saturate(160%) blur(24px); animation: menuIn .16s cubic-bezier(.2,.9,.3,1.2) both; }
+@keyframes menuIn { from { opacity: 0; transform: translateY(-6px) scale(.97); } to { opacity: 1; transform: none; } }
+.menu-head { padding: 10px 12px 12px; border-bottom: 1px solid var(--line); margin-bottom: 6px; }
+.menu-head small { display: block; font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--ink-faint); margin-bottom: 3px; }
+.menu-head div { font-size: 14px; font-weight: 500; color: var(--ink); overflow-wrap: anywhere; }
+.menu button { display: flex; width: 100%; align-items: center; gap: 10px; padding: 10px 12px; border: 0; border-radius: 10px; background: transparent;
+  color: var(--ink); font-size: 14px; text-align: left; cursor: pointer; }
+.menu button:hover { background: var(--tint); filter: none; }
+.menu button.danger { color: var(--bad); }
+.menu button svg { width: 16px; height: 16px; flex: none; }
+.bottomnav { display: none; }
+.app-main { padding: 32px 20px 72px; }
+.page-eyebrow { display: inline-flex; align-items: center; gap: 8px; font-size: 11px; font-weight: 600; letter-spacing: .14em; text-transform: uppercase; color: var(--accent); margin-bottom: 10px; }
+.page-eyebrow::before { content: ""; width: 6px; height: 6px; border-radius: 99px; background: var(--accent-2); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent-2) 25%, transparent), 0 0 12px var(--accent-2); }
+.page-title { margin: 0; font-family: var(--font-display); font-size: 40px; line-height: 1.05; font-weight: 700; letter-spacing: -.035em;
+  background: linear-gradient(120deg, var(--ink) 30%, var(--accent) 75%, var(--accent-2) 100%); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.page-sub { margin-top: 8px; font-size: 15px; color: var(--ink-soft); line-height: 1.55; }
+.settings-toggle { display: inline-flex; align-items: center; gap: 8px; max-width: 100%; padding: 9px 15px; border-radius: 12px; border: 1px solid var(--line);
+  background: var(--paper-raised); color: var(--ink-soft); font-size: 13px; font-weight: 500; cursor: pointer; box-shadow: var(--shadow-soft);
+  -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px); }
+.settings-toggle span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.settings-toggle svg { width: 16px; height: 16px; flex: none; color: var(--accent); }
+@media (hover: hover) { .settings-toggle:hover { border-color: var(--line-card); color: var(--ink); filter: none; } }
+@media (max-width: 760px) {
+  .topnav { display: none; }
+  .topnav + .header-actions { margin-left: auto; }
+  .brand-sub { display: none; }
+  .app-header-inner { height: 56px; padding: 0 16px; }
+  .app-main { padding: 22px 16px calc(100px + env(safe-area-inset-bottom)); }
+  .page-title { font-size: 32px; }
+  /* a floating glass dock, clear of the home indicator */
+  .bottomnav { display: grid; grid-template-columns: repeat(4, 1fr); position: fixed; left: 12px; right: 12px; bottom: calc(10px + env(safe-area-inset-bottom)); z-index: 30;
+    height: 64px; padding: 6px; border-radius: 22px; border: 1px solid var(--line-card); background: var(--header-bg); box-shadow: var(--shadow-card);
+    -webkit-backdrop-filter: saturate(180%) blur(24px); backdrop-filter: saturate(180%) blur(24px); }
+  .bottomnav button { position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; border: 0; border-radius: 16px; background: none;
+    color: var(--ink-faint); font-size: 10.5px; font-weight: 600; letter-spacing: .02em; cursor: pointer; padding: 0; }
+  .bottomnav button svg { width: 22px; height: 22px; }
+  .bottomnav button[aria-current="page"] { color: #fff; background: var(--btn-grad); box-shadow: var(--glow); }
+  .bottomnav button:not(:disabled):active { transform: scale(.94); }
+  /* During a Talkloop call the call is the whole screen: the app's header and tab bar step aside. */
+  body.in-call .app-header, body.in-call .bottomnav { display: none; }
+}

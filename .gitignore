@@ -8,3 +8,6 @@ target/
 .classpath
 .project
 .settings/
+
+# the React app's packages (frontend/package-lock.json is kept)
+frontend/node_modules/
