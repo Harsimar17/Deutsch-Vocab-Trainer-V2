@@ -774,8 +774,10 @@ class EndToEndTest {
         assertEquals(302, mvc.perform(get("/talkloop")).andReturn().getResponse().getStatus());
         MvcResult page = mvc.perform(get("/talkloop/")).andReturn();
         assertEquals(200, page.getResponse().getStatus());
+        // Talkloop is a page of the React app now: /talkloop/ is a redirect to its tab. Its voice
+        // (also used by the ChatGPT screen) is still served on its own.
         assertEquals("/talkloop/index.html", page.getResponse().getForwardedUrl());
-        assertEquals(200, mvc.perform(get("/talkloop/app.js")).andReturn().getResponse().getStatus());
+        assertEquals(200, mvc.perform(get("/talkloop/piper.js")).andReturn().getResponse().getStatus());
     }
 
     // ---- separate users ----

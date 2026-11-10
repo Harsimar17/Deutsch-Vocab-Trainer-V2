@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useEffect, useRef, useMemo } from "react";
-import { API_BASE, API_CONFIGURED, PROD_API_BASE, api, session } from "./lib/api.js";
+import { api, session } from "./lib/api.js";
 import { loadContent } from "./lib/content.js";
 import { Loading, Switch, applyCategoryPalette, counterStyle, navBtnStyle } from "./ui/common.jsx";
 import { ArticleQuiz, ClozeQuiz, Flashcards, MistakesReview, Quiz, SeparableVerbs, StudyMode, WriteMode } from "./practice/drills.jsx";
@@ -164,7 +164,6 @@ export function App() {
   useEffect(() => {
     let cancelled = false;
     setStatus("loading");
-    if (!API_CONFIGURED) { setStatus({ error: "No backend configured — set PROD_API_BASE in index.html to the Spring Boot URL." }); return; }
     if (!user) {
       // someone else may log in next: drop everything of the last user
       STORY_PROGRESS.value = null; STORY_PROGRESS.stale = true; setNav(NAV_START); visited.current = {};
@@ -209,7 +208,6 @@ export function App() {
         <div style={{ maxWidth: "440px", textAlign: "center", display: "flex", flexDirection: "column", gap: "16px" }}>
           <div style={{ fontSize: "22px", color: "var(--ink)" }}>Can’t reach the server</div>
           <div style={{ fontFamily: "var(--font-mono)", fontSize: "12px", color: "var(--bad)" }}>{status.error}</div>
-          <div style={{ fontSize: "13px", color: "var(--ink-muted)" }}>Backend: <code>{API_CONFIGURED ? (API_BASE || location.origin) : "(not configured)"}</code></div>
           <button onClick={() => setAttempt((n) => n + 1)} style={navBtnStyle}>Try again</button>
         </div>
       </div>

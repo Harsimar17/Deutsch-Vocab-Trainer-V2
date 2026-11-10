@@ -33,7 +33,7 @@ import tools.jackson.databind.json.JsonMapper;
  * reads aloud, and which goes to the same speaking schedule and mistake log Talkloop's page uses.
  *
  * The modes, scenes, topics, level guide and mistake kinds are copied from
- * static/talkloop/app.js (turnSystemPrompt and around it): change them in both places.
+ * frontend/src/talkloop/engine.js (turnSystemPrompt and around it): change them in both places.
  * The instructions are written for a plain chat instead of Talkloop's JSON turns.
  */
 @Service
@@ -69,7 +69,7 @@ public class TalkloopChatGptService {
     static final Map<String, String> MISTAKE_TYPES = new LinkedHashMap<>();
     // "Mein Leben" and "Erzähl mal" start from a theme the app picks, one about the learner's own
     // life that takes a lot to tell (the AI's own easy questions are nearly always about free
-    // time). As THEMES in static/talkloop/app.js: name (also the subject saved), what to ask about.
+    // time). As THEMES in frontend/src/talkloop/engine.js: name (also the subject saved), what to ask about.
     record Theme(String name, String ask) {
     }
 
@@ -206,7 +206,7 @@ public class TalkloopChatGptService {
 
     static final String SCREEN_URI = "ui://talkloop/screen.html";
 
-    // What each kind of connector does to the word order, as connectorsLine in static/talkloop/app.js says it.
+    // What each kind of connector does to the word order, as connectorsLine in frontend/src/talkloop/engine.js says it.
     static final Map<String, String> CONNECTOR_TYPES = new LinkedHashMap<>();
 
     static {
@@ -574,7 +574,7 @@ public class TalkloopChatGptService {
                 || want.equals(String.valueOf(c.get("name")).toLowerCase(Locale.ROOT).replaceAll("[^a-zäöüß]", ""))).findFirst().orElse(null);
     }
 
-    /** As connectorsLine in static/talkloop/app.js: one connector with its rule, or every one up to the level, by kind. */
+    /** As connectorsLine in frontend/src/talkloop/engine.js: one connector with its rule, or every one up to the level, by kind. */
     String connectorsLine(Map<String, Object> one, String level) {
         String forever = " The drill goes on until the learner stops: ";
         if (one != null) {
