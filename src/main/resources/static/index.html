@@ -3,14 +3,14 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta name="theme-color" content="#FFF8E1">
+<meta name="theme-color" content="#F3F4FA">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="Wortschatz">
-<title>Wortschatz 💥 · German Vocab Trainer</title>
-<link rel="icon" href="/favicon.svg" type="image/svg+xml">
-<link rel="icon" href="/favicon-32.png" type="image/png" sizes="32x32">
-<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<title>Wortschatz · German Vocab Trainer</title>
+<link rel="icon" href="/favicon.svg?v=2" type="image/svg+xml">
+<link rel="icon" href="/favicon-32.png?v=2" type="image/png" sizes="32x32">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png?v=2">
 <script>
   // Start with the system theme before first paint; the saved choice arrives
   // with the rest of your progress from the backend (only the login token is kept in the browser).
@@ -20,7 +20,7 @@
 
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Bangers&family=Comic+Neue:wght@400;700&family=Space+Mono:wght@400;700&family=Caveat:wght@500;700&family=Special+Elite&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&family=JetBrains+Mono:wght@400;500&family=Caveat:wght@500;700&family=Special+Elite&display=swap" rel="stylesheet">
 
 <!-- React runtime -->
 <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
@@ -30,82 +30,89 @@
 <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 
 <style>
-/* Theme: comic book — newsprint paper, heavy black ink outlines, hard offset
-   shadows, red/yellow pop colours and halftone dots. Dark mode is the night panel. */
+/* Theme: "next-gen" — aurora light behind frosted-glass surfaces, a violet→cyan signature
+   gradient, soft glows instead of hard shadows, Space Grotesk for display type and Inter
+   for reading. Dark mode is the showcase; light mode is the same idea in daylight. */
 :root {
-  --paper: #FFF8E1;
-  --paper-raised: #FFFFFF;
-  --ink: #111111;
-  --ink-soft: #3d3a33;
-  --ink-faint: #8a8577;
-  --line: #2b2b2b;
-  --accent: #E62429;
-  --konj: #6B4A8A;
-  --verb: #8A6A2B;
-  --font-serif: 'Comic Neue', 'Comic Sans MS', 'Trebuchet MS', sans-serif;
-  --font-mono: 'Space Mono', 'Courier New', ui-monospace, monospace;
-  --font-comic: 'Bangers', 'Impact', sans-serif;
-  --shadow-soft: 3px 3px 0 #111111;
-  --shadow-card: 6px 6px 0 #111111;
-  --ink-muted: #6b665a;
-  --line-card: #111111;
-  --tint: #FFD60040;
-  --card-grad: linear-gradient(160deg, #FFFFFF 0%, #FFF3C4 100%);
-  --btn-grad: linear-gradient(180deg, #F0353A 0%, #C81B20 100%);
-  --btn-border: #111111;
-  --good: #1B8F3A;
-  --good-hi: #22A846;
-  --good-soft: #1B8F3A66;
-  --bad: #D11A20;
-  --bad-hi: #E62429;
-  --glow-1: #FFE98A;
-  --glow-1-fade: rgba(255,233,138,0);
-  --glow-2: #BDEBFF;
-  --glow-2-fade: rgba(189,235,255,0);
-  --word-hover: rgba(255,214,0,.45);
-  --target-line: rgba(230,36,41,.6);
-  --rule-case: #D3F4D9;
-  --rule-sing: #FFD9D9;
-  --rule-pl: #CFEFFF;
-  --dots: rgba(0,0,0,.09);
-  --pow: #FFD600;
+  --paper: #F3F4FA;
+  --paper-raised: rgba(255,255,255,.78);
+  --ink: #0B1020;
+  --ink-soft: #4A5270;
+  --ink-faint: #8E95AE;
+  --line: rgba(15,20,45,.10);
+  --accent: #6D4AFF;
+  --accent-2: #06B6D4;
+  --konj: #7C3AED;
+  --verb: #B45309;
+  --font-serif: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-mono: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-display: 'Space Grotesk', 'Inter', -apple-system, sans-serif;
+  --font-code: 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+  --font-comic: var(--font-display);
+  --shadow-soft: 0 1px 2px rgba(20,16,60,.06), 0 0 0 1px rgba(255,255,255,.5) inset;
+  --shadow-card: 0 0 0 1px rgba(109,74,255,.10), 0 24px 60px -28px rgba(76,48,200,.38);
+  --glow: 0 8px 28px -8px rgba(109,74,255,.55);
+  --ink-muted: #646C88;
+  --line-card: rgba(109,74,255,.16);
+  --tint: rgba(109,74,255,.06);
+  --card-grad: linear-gradient(160deg, rgba(255,255,255,.92) 0%, rgba(245,243,255,.82) 100%);
+  --btn-grad: linear-gradient(135deg, #6D4AFF 0%, #4F7BFF 55%, #06B6D4 100%);
+  --btn-border: transparent;
+  --good: #10B981;
+  --good-hi: #34D399;
+  --good-soft: rgba(16,185,129,.35);
+  --bad: #F43F5E;
+  --bad-hi: #FB7185;
+  --glow-1: transparent; --glow-1-fade: transparent; --glow-2: transparent; --glow-2-fade: transparent;
+  --word-hover: rgba(109,74,255,.16);
+  --target-line: rgba(109,74,255,.6);
+  --rule-case: rgba(16,185,129,.10);
+  --rule-sing: rgba(244,63,94,.09);
+  --rule-pl: rgba(6,182,212,.11);
+  --dots: transparent;
+  --pow: var(--ink);
+  --header-bg: rgba(243,244,250,.62);
+  --aurora-1: rgba(124,92,255,.28);
+  --aurora-2: rgba(6,182,212,.22);
+  --aurora-3: rgba(236,72,153,.14);
+  --grid: rgba(20,24,60,.045);
   color-scheme: light;
 }
-/* Dark mode: the night panel — deep navy, cream ink, yellow outlines and shadows. */
 :root[data-theme="dark"] {
-  --paper: #14182B;
-  --paper-raised: #1F2540;
-  --ink: #FFF6D6;
-  --ink-soft: #D3CBAE;
-  --ink-faint: #858170;
-  --ink-muted: #ABA48D;
-  --line: #4A537A;
-  --line-card: #FFD600;
-  --accent: #FFD600;
-  --konj: #C9A2FF;
-  --verb: #FFC861;
-  --tint: #FFD6001a;
-  --card-grad: linear-gradient(160deg, #262D4D 0%, #1C2139 100%);
-  --btn-grad: linear-gradient(180deg, #F0353A 0%, #C81B20 100%);
-  --btn-border: #FFD600;
-  --good: #22A846;
-  --good-hi: #2BBD52;
-  --good-soft: rgba(34,168,70,.45);
-  --bad: #E62429;
-  --bad-hi: #F0454A;
-  --glow-1: #232A4A;
-  --glow-1-fade: rgba(35,42,74,0);
-  --glow-2: #1A2A44;
-  --glow-2-fade: rgba(26,42,68,0);
-  --shadow-soft: 3px 3px 0 #000000;
-  --shadow-card: 6px 6px 0 #FFD600;
-  --word-hover: rgba(255,214,0,.25);
-  --target-line: rgba(255,214,0,.6);
-  --rule-case: rgba(34,168,70,.26);
-  --rule-sing: rgba(230,36,41,.26);
-  --rule-pl: rgba(80,180,255,.28);
-  --dots: rgba(255,255,255,.06);
-  --pow: #FFD600;
+  --paper: #05060D;
+  --paper-raised: rgba(18,20,38,.72);
+  --ink: #EEF0FF;
+  --ink-soft: #A6ACCB;
+  --ink-faint: #6A7194;
+  --ink-muted: #8A91B4;
+  --line: rgba(160,170,255,.12);
+  --line-card: rgba(150,130,255,.22);
+  --accent: #9B87FF;
+  --accent-2: #22D3EE;
+  --konj: #C4B5FD;
+  --verb: #FBBF24;
+  --tint: rgba(155,135,255,.08);
+  --card-grad: linear-gradient(160deg, rgba(30,30,62,.82) 0%, rgba(14,16,32,.78) 100%);
+  --btn-grad: linear-gradient(135deg, #7C5CFF 0%, #4F7BFF 55%, #22D3EE 100%);
+  --btn-border: transparent;
+  --good: #34D399;
+  --good-hi: #6EE7B7;
+  --good-soft: rgba(52,211,153,.35);
+  --bad: #FB7185;
+  --bad-hi: #FDA4AF;
+  --shadow-soft: 0 1px 0 rgba(255,255,255,.05) inset, 0 1px 2px rgba(0,0,0,.5);
+  --shadow-card: 0 0 0 1px rgba(155,135,255,.16), 0 30px 70px -30px rgba(124,92,255,.55), 0 1px 0 rgba(255,255,255,.06) inset;
+  --glow: 0 10px 34px -8px rgba(124,92,255,.7);
+  --word-hover: rgba(155,135,255,.24);
+  --target-line: rgba(155,135,255,.7);
+  --rule-case: rgba(52,211,153,.12);
+  --rule-sing: rgba(251,113,133,.12);
+  --rule-pl: rgba(34,211,238,.12);
+  --header-bg: rgba(5,6,13,.55);
+  --aurora-1: rgba(124,92,255,.55);
+  --aurora-2: rgba(34,211,238,.32);
+  --aurora-3: rgba(236,72,153,.26);
+  --grid: rgba(160,170,255,.045);
   color-scheme: dark;
 }
 html,body,#root {
@@ -113,54 +120,65 @@ html,body,#root {
   min-height:100%;
 }
 body {
-  background:
-    radial-gradient(1200px 620px at 8% -10%, var(--glow-1) 0%, var(--glow-1-fade) 60%),
-    radial-gradient(1000px 560px at 104% -4%, var(--glow-2) 0%, var(--glow-2-fade) 55%),
-    var(--paper);
-  background-attachment: fixed;
+  background: var(--paper);
   color: var(--ink);
+  font-family: var(--font-serif);
+  font-feature-settings: "cv11", "ss01";
   -webkit-tap-highlight-color:transparent;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   text-rendering: optimizeLegibility;
 }
-/* Halftone dots over the whole page, like cheap comic-book print. */
+/* The aurora and a faint blueprint grid, fixed behind everything (a fixed layer, not
+   background-attachment, which iOS ignores). Drifts slowly unless motion is reduced. */
+body::before, body::after { content: ""; position: fixed; z-index: -1; pointer-events: none; }
 body::before {
-  content: ""; position: fixed; inset: 0; z-index: -1; pointer-events: none;
-  background-image: radial-gradient(circle, var(--dots) 1.3px, transparent 1.7px);
-  background-size: 10px 10px;
+  inset: -20vmax;
+  background:
+    radial-gradient(38vmax 30vmax at 18% 12%, var(--aurora-1), transparent 70%),
+    radial-gradient(34vmax 28vmax at 86% 18%, var(--aurora-2), transparent 70%),
+    radial-gradient(40vmax 30vmax at 60% 96%, var(--aurora-3), transparent 70%);
+  filter: blur(10px);
+  animation: aurora 28s ease-in-out infinite alternate;
 }
+body::after {
+  inset: 0;
+  background-image: linear-gradient(var(--grid) 1px, transparent 1px), linear-gradient(90deg, var(--grid) 1px, transparent 1px);
+  background-size: 44px 44px;
+  -webkit-mask-image: radial-gradient(ellipse 90% 70% at 50% 0%, #000 30%, transparent 85%);
+  mask-image: radial-gradient(ellipse 90% 70% at 50% 0%, #000 30%, transparent 85%);
+}
+@keyframes aurora {
+  0% { transform: translate3d(0, 0, 0) rotate(0deg); }
+  50% { transform: translate3d(3vmax, -2vmax, 0) rotate(6deg); }
+  100% { transform: translate3d(-3vmax, 2vmax, 0) rotate(-4deg); }
+}
+@media (prefers-reduced-motion: reduce) { body::before { animation: none; } }
 button,input,select,textarea { font:inherit; }
 button {
   touch-action:manipulation;
-  transition: transform .13s ease, box-shadow .18s ease,
+  transition: transform .12s ease, box-shadow .16s ease, filter .16s ease,
               background-color .16s ease, color .16s ease, border-color .16s ease;
 }
-button:active { transform: translateY(1px) scale(.995); }
-/* Buttons jump a little when you hover them, like a panel that wants your attention. */
 @media (hover: hover) {
-  button:not(:disabled):hover { transform: rotate(-1.2deg) scale(1.03); }
-  button:not(:disabled):active { transform: translateY(1px) scale(.98); }
+  button:not(:disabled):hover { filter: brightness(1.04); }
 }
-input:focus, textarea:focus, select:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
-@keyframes wiggle { 0%,100% { transform: rotate(0); } 25% { transform: rotate(-6deg); } 75% { transform: rotate(6deg); } }
-.tease { display: inline-block; animation: wiggle 2.4s ease-in-out infinite; transform-origin: 50% 80%; }
-/* Comic-book logo lettering and the speech bubble under it */
-.comic-title { font-family: var(--font-comic); font-weight: 400; letter-spacing: .05em; color: var(--pow);
-  -webkit-text-stroke: 1.5px #111; paint-order: stroke fill; text-shadow: 3px 3px 0 #111; display: inline-block; transform: rotate(-2deg); }
-.bubble { position: relative; display: inline-block; padding: 8px 16px; border: 2.5px solid var(--line-card); border-radius: 18px;
-  background: var(--paper-raised); box-shadow: var(--shadow-soft); }
-.bubble::after { content: ""; position: absolute; left: 50%; top: -10px; width: 16px; height: 16px; margin-left: -8px;
-  background: var(--paper-raised); border-left: 2.5px solid var(--line-card); border-top: 2.5px solid var(--line-card); transform: rotate(45deg); }
-@media (prefers-reduced-motion: reduce) {
-  .tease { animation: none; }
-  @media (hover: hover) { button:not(:disabled):hover { transform: none; } }
-}
+button:not(:disabled):active { transform: scale(.98); }
+input:focus, textarea:focus, select:focus { outline: none; border-color: var(--accent) !important; box-shadow: 0 0 0 3px var(--word-hover); }
+.tease { display: none; }
+/* The wordmark */
+.comic-title { font-family: var(--font-serif); font-weight: 700; letter-spacing: -.025em; color: var(--ink); display: inline-block; }
+/* Frosted glass panel (used by the progress card; the Rules groups get it too). */
+.glass, .rgroup { background: var(--paper-raised); border: 1px solid var(--line-card); box-shadow: var(--shadow-card);
+  -webkit-backdrop-filter: saturate(160%) blur(18px); backdrop-filter: saturate(160%) blur(18px); }
+h1, h2, h3 { font-family: var(--font-display); letter-spacing: -.02em; }
+.rhead { font-family: var(--font-serif) !important; }
+.bubble { display: inline-block; color: var(--ink-soft); }
 button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 ::selection { background: var(--word-hover); }
 ::-webkit-scrollbar { width: 10px; height: 10px; }
 ::-webkit-scrollbar-thumb {
-  background: var(--line);
+  background: linear-gradient(var(--accent), var(--accent-2));
   border-radius: 999px;
   border: 3px solid var(--paper);
 }
@@ -292,10 +310,89 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 @media (max-width: 600px) {
   #root [style*="vw)"] { max-width: 100%; box-sizing: border-box; }
 }
-/* Practice / Stories / Formulas switch: no icons and tighter on phones, so it fits between avatar and theme button */
-@media (max-width: 480px) {
-  .modeseg .ic { display: none; }
-  .modeseg button { padding: 8px 11px !important; letter-spacing: 0.05em !important; }
+/* ---------- App shell: floating glass header; a floating glass tab bar on phones ---------- */
+.app-header { position: sticky; top: 0; z-index: 30; padding-top: env(safe-area-inset-top);
+  background: var(--header-bg);
+  -webkit-backdrop-filter: saturate(180%) blur(20px); backdrop-filter: saturate(180%) blur(20px); }
+/* a hairline that fades in and out at the ends, in the signature gradient */
+.app-header::after { content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(124,92,255,.45), rgba(34,211,238,.45), transparent); }
+.app-header-inner { max-width: 1120px; margin: 0 auto; height: 62px; padding: 0 20px; display: flex; align-items: center; gap: 20px; }
+.brand { display: flex; align-items: center; gap: 10px; font-family: var(--font-display); font-weight: 700; font-size: 18px; letter-spacing: -.02em; color: var(--ink); white-space: nowrap; }
+.brand-mark { position: relative; width: 32px; height: 32px; border-radius: 10px; display: grid; place-items: center; background: var(--btn-grad); color: #fff;
+  font-family: var(--font-display); font-size: 16px; font-weight: 700; letter-spacing: -.04em; box-shadow: var(--glow); }
+.brand-mark::after { content: ""; position: absolute; inset: 0; border-radius: inherit; box-shadow: inset 0 1px 0 rgba(255,255,255,.45); }
+.brand-sub { font-family: var(--font-serif); font-weight: 500; color: var(--ink-faint); font-size: 12px; letter-spacing: .08em; text-transform: uppercase; }
+.topnav { position: relative; display: flex; gap: 2px; margin: 0 auto; padding: 4px; border-radius: 14px; background: var(--tint); border: 1px solid var(--line); }
+.topnav button { position: relative; display: inline-flex; align-items: center; gap: 8px; height: 34px; padding: 0 15px; border: 0; border-radius: 10px; background: transparent;
+  color: var(--ink-soft); font-size: 14px; font-weight: 500; cursor: pointer; white-space: nowrap; }
+.topnav button svg { width: 16px; height: 16px; }
+.topnav button[aria-current="page"] { background: var(--btn-grad); color: #fff; box-shadow: var(--glow); }
+@media (hover: hover) { .topnav button:not([aria-current="page"]):hover { color: var(--ink); background: var(--tint); filter: none; } }
+.header-actions { display: flex; align-items: center; gap: 10px; margin-left: auto; }
+.topnav + .header-actions { margin-left: 0; }
+.icon-btn { width: 38px; height: 38px; display: grid; place-items: center; padding: 0; border-radius: 12px; border: 1px solid var(--line);
+  background: var(--paper-raised); color: var(--ink-soft); cursor: pointer; -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px); }
+.icon-btn svg { width: 18px; height: 18px; }
+@media (hover: hover) { .icon-btn:hover { color: var(--accent); border-color: var(--line-card); filter: none; } }
+/* the account button: initial inside a rotating gradient ring */
+.avatar-btn { position: relative; width: 38px; height: 38px; border-radius: 999px; border: 0; padding: 2px; cursor: pointer; display: grid; place-items: center;
+  background: conic-gradient(from 0deg, #7C5CFF, #22D3EE, #EC4899, #7C5CFF); color: var(--ink); font-family: var(--font-display); font-weight: 700; font-size: 15px; }
+.avatar-btn { isolation: isolate; }
+.avatar-btn::before { content: ""; position: absolute; inset: 2px; z-index: -1; border-radius: inherit; background: var(--paper); }
+.menu { position: absolute; top: 50px; right: 0; z-index: 40; min-width: 250px; max-width: min(300px, 86vw); padding: 6px;
+  border-radius: 16px; border: 1px solid var(--line-card); background: var(--paper-raised); box-shadow: var(--shadow-card);
+  -webkit-backdrop-filter: saturate(160%) blur(24px); backdrop-filter: saturate(160%) blur(24px); animation: menuIn .16s cubic-bezier(.2,.9,.3,1.2) both; }
+@keyframes menuIn { from { opacity: 0; transform: translateY(-6px) scale(.97); } to { opacity: 1; transform: none; } }
+.menu-head { padding: 10px 12px 12px; border-bottom: 1px solid var(--line); margin-bottom: 6px; }
+.menu-head small { display: block; font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--ink-faint); margin-bottom: 3px; }
+.menu-head div { font-size: 14px; font-weight: 500; color: var(--ink); overflow-wrap: anywhere; }
+.menu button { display: flex; width: 100%; align-items: center; gap: 10px; padding: 10px 12px; border: 0; border-radius: 10px; background: transparent;
+  color: var(--ink); font-size: 14px; text-align: left; cursor: pointer; }
+.menu button:hover { background: var(--tint); filter: none; }
+.menu button.danger { color: var(--bad); }
+.menu button svg { width: 16px; height: 16px; flex: none; }
+.bottomnav { display: none; }
+.app-main { padding: 32px 20px 72px; }
+.page-eyebrow { display: inline-flex; align-items: center; gap: 8px; font-size: 11px; font-weight: 600; letter-spacing: .14em; text-transform: uppercase; color: var(--accent); margin-bottom: 10px; }
+.page-eyebrow::before { content: ""; width: 6px; height: 6px; border-radius: 99px; background: var(--accent-2); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent-2) 25%, transparent), 0 0 12px var(--accent-2); }
+.page-title { margin: 0; font-family: var(--font-display); font-size: 40px; line-height: 1.05; font-weight: 700; letter-spacing: -.035em;
+  background: linear-gradient(120deg, var(--ink) 30%, var(--accent) 75%, var(--accent-2) 100%); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.page-sub { margin-top: 8px; font-size: 15px; color: var(--ink-soft); line-height: 1.55; }
+.settings-toggle { display: inline-flex; align-items: center; gap: 8px; max-width: 100%; padding: 9px 15px; border-radius: 12px; border: 1px solid var(--line);
+  background: var(--paper-raised); color: var(--ink-soft); font-size: 13px; font-weight: 500; cursor: pointer; box-shadow: var(--shadow-soft);
+  -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px); }
+.settings-toggle span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.settings-toggle svg { width: 16px; height: 16px; flex: none; color: var(--accent); }
+@media (hover: hover) { .settings-toggle:hover { border-color: var(--line-card); color: var(--ink); filter: none; } }
+/* Talkloop sits in the page like any other section: no frame, full height under the header. */
+.talk-page { margin: -32px -20px -72px; }
+.talk-frame { display: block; width: 100%; border: 0; background: transparent; color-scheme: normal;
+  height: calc(100dvh - 63px - env(safe-area-inset-top)); }
+@media (max-width: 760px) {
+  .topnav { display: none; }
+  .topnav + .header-actions { margin-left: auto; }
+  .brand-sub { display: none; }
+  .app-header-inner { height: 56px; padding: 0 16px; }
+  .app-main { padding: 22px 16px calc(100px + env(safe-area-inset-bottom)); }
+  .talk-page { margin: -22px -16px calc(-100px - env(safe-area-inset-bottom)); }
+  .talk-frame { height: calc(100dvh - 57px - 84px - env(safe-area-inset-top) - env(safe-area-inset-bottom)); }
+  .page-title { font-size: 32px; }
+  /* a floating glass dock, clear of the home indicator */
+  .bottomnav { display: grid; grid-template-columns: repeat(4, 1fr); position: fixed; left: 12px; right: 12px; bottom: calc(10px + env(safe-area-inset-bottom)); z-index: 30;
+    height: 64px; padding: 6px; border-radius: 22px; border: 1px solid var(--line-card); background: var(--header-bg); box-shadow: var(--shadow-card);
+    -webkit-backdrop-filter: saturate(180%) blur(24px); backdrop-filter: saturate(180%) blur(24px); }
+  .bottomnav button { position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; border: 0; border-radius: 16px; background: none;
+    color: var(--ink-faint); font-size: 10.5px; font-weight: 600; letter-spacing: .02em; cursor: pointer; padding: 0; }
+  .bottomnav button svg { width: 22px; height: 22px; }
+  .bottomnav button[aria-current="page"] { color: #fff; background: var(--btn-grad); box-shadow: var(--glow); }
+  .bottomnav button:not(:disabled):active { transform: scale(.94); }
+  /* During a Talkloop call the call is the whole screen: no app header or tab bar. Iframes get
+     no safe-area insets on iOS, so the notch and home-indicator space is kept out here. */
+  html.page-talk.talk-call .app-header, html.page-talk.talk-call .bottomnav { display: none; }
+  html.page-talk.talk-call .talk-page { position: fixed; inset: 0; z-index: 50; margin: 0;
+    padding: env(safe-area-inset-top) 0 env(safe-area-inset-bottom); background: var(--paper); }
+  html.page-talk.talk-call .talk-frame { height: calc(100dvh - env(safe-area-inset-top) - env(safe-area-inset-bottom)); }
 }
 </style>
 </head>
@@ -931,24 +1028,24 @@ if (typeof window !== "undefined" && window.speechSynthesis) {
   window.speechSynthesis.onvoiceschanged = () => window.speechSynthesis.getVoices();
 }
 
-const monoLabel = { fontFamily: "var(--font-mono)", fontSize: "10px", letterSpacing: "0.12em", textTransform: "uppercase", color: "var(--ink-faint)" };
-const counterStyle = { fontFamily: "var(--font-mono)", fontSize: "12px", letterSpacing: "0.1em", color: "var(--ink-muted)" };
+const monoLabel = { fontFamily: "var(--font-mono)", fontSize: "11px", fontWeight: 600, letterSpacing: "0.06em", textTransform: "uppercase", color: "var(--ink-faint)" };
+const counterStyle = { fontFamily: "var(--font-mono)", fontSize: "13px", fontWeight: 500, fontVariantNumeric: "tabular-nums", color: "var(--ink-muted)" };
 const srsCol = { display: "flex", flexDirection: "column", alignItems: "center", gap: "16px" };
 const srsNote = { textAlign: "center", color: "var(--ink-soft)", maxWidth: "min(440px, 92vw)", margin: "0 auto", lineHeight: 1.7 };
 const navBtnStyle = {
-  fontFamily: "var(--font-mono)", fontSize: "12px", fontWeight: 500, letterSpacing: "0.08em", textTransform: "uppercase",
-  padding: "10px 18px", borderRadius: "8px", border: "1px solid var(--btn-border)", background: "var(--btn-grad)",
-  color: "#F6F1E5", cursor: "pointer", boxShadow: "0 1px 2px rgba(60,50,20,.12), 0 8px 18px -10px rgba(60,50,20,.5)",
+  fontFamily: "var(--font-serif)", fontSize: "14px", fontWeight: 600, letterSpacing: "0",
+  padding: "11px 20px", borderRadius: "10px", border: "1px solid var(--btn-border)", background: "var(--btn-grad)",
+  color: "#FFFFFF", cursor: "pointer", boxShadow: "var(--glow)",
 };
-const ghostBtn = { ...navBtnStyle, background: "transparent", color: "var(--ink)", boxShadow: "none" };
+const ghostBtn = { ...navBtnStyle, background: "var(--paper-raised)", color: "var(--ink)", border: "1px solid var(--line)", boxShadow: "var(--shadow-soft)" };
 const miniBtn = {
-  fontFamily: "var(--font-mono)", fontSize: "10px", letterSpacing: "0.06em", textTransform: "uppercase",
-  padding: "8px 10px", borderRadius: "8px", border: "1px solid var(--line)",
+  fontFamily: "var(--font-serif)", fontSize: "13px", fontWeight: 500,
+  padding: "8px 12px", borderRadius: "8px", border: "1px solid var(--line)",
   background: "var(--paper-raised)", color: "var(--ink-soft)", cursor: "pointer", flexShrink: 0,
 };
 const smallOutline = (color) => ({
-  fontFamily: "var(--font-mono)", fontSize: "10px", letterSpacing: "0.08em", textTransform: "uppercase",
-  color, background: "transparent", border: "1px solid " + color, borderRadius: "10px", padding: "4px 10px", cursor: "pointer",
+  fontFamily: "var(--font-serif)", fontSize: "13px", fontWeight: 500,
+  color, background: "transparent", border: "1px solid " + color, borderRadius: "8px", padding: "6px 12px", cursor: "pointer",
 });
 const cardFace = {
   width: "min(440px, 92vw)", background: "var(--card-grad)", border: "1px solid var(--line-card)",
@@ -957,8 +1054,8 @@ const cardFace = {
 // Colours of a multiple-choice option once the answer is known.
 function optionColors(isCorrect, isPicked, revealed) {
   if (!revealed) return { bg: "var(--paper-raised)", border: "var(--line-card)", color: "var(--ink)", shadow: "var(--shadow-soft)" };
-  if (isCorrect) return { bg: "linear-gradient(180deg,var(--good-hi),var(--good))", border: "var(--good)", color: "#F6F1E5", shadow: "0 10px 22px -10px rgba(63,122,85,.7)" };
-  if (isPicked) return { bg: "linear-gradient(180deg,var(--bad-hi),var(--bad))", border: "var(--bad)", color: "#F6F1E5", shadow: "0 10px 22px -10px rgba(165,53,74,.7)" };
+  if (isCorrect) return { bg: "var(--good)", border: "var(--good)", color: "#FFFFFF", shadow: "var(--shadow-soft)" };
+  if (isPicked) return { bg: "var(--bad)", border: "var(--bad)", color: "#FFFFFF", shadow: "var(--shadow-soft)" };
   return { bg: "transparent", border: "var(--line-card)", color: "var(--ink-faint)", shadow: "none" };
 }
 
@@ -993,7 +1090,7 @@ function CatChip({ cat }) {
   );
 }
 
-function Loading({ text = "loading … (dramatic music) 🎵" }) {
+function Loading({ text = "Loading…" }) {
   return <p style={{ ...srsNote, fontFamily: "var(--font-mono)", fontSize: "11px", letterSpacing: "0.1em" }}>{text}</p>;
 }
 
@@ -1218,7 +1315,7 @@ function Flashcards({ settings, version, onChange }) {
   if (done) {
     return (
       <div style={{ ...srsCol, padding: "40px 0" }}>
-        <div style={{ fontFamily: "var(--font-serif)", fontSize: "22px", color: "var(--ink)", textAlign: "center" }}>All {total} / {total} cards done — KAPOW! 💥</div>
+        <div style={{ fontFamily: "var(--font-serif)", fontSize: "22px", color: "var(--ink)", textAlign: "center" }}>All {total} / {total} cards done</div>
         <button onClick={reshuffle} style={navBtnStyle}>⟲ start over</button>
       </div>
     );
@@ -1491,7 +1588,7 @@ function StudyMode({ version, onChange, geminiKey }) {
       if (v.state === "caughtUp") {
         return (
           <div style={{ ...srsCol, padding: "36px 0" }}>
-            <div style={{ fontFamily: "var(--font-serif)", fontSize: "22px", textAlign: "center" }}>All caught up — the city is safe for today 🦸</div>
+            <div style={{ fontFamily: "var(--font-serif)", fontSize: "22px", textAlign: "center" }}>All caught up for today</div>
             <p style={srsNote}>Every word that's due has been reviewed, and today's {v.newPerDay} new words are done. Come back tomorrow — or set <strong>focus → everything</strong> in settings ▸ to keep drilling now.</p>
           </div>
         );
@@ -1499,7 +1596,7 @@ function StudyMode({ version, onChange, geminiKey }) {
       if (v.state === "roundDone") {
         return (
           <div style={{ ...srsCol, padding: "36px 0" }}>
-            <div style={{ fontFamily: "var(--font-serif)", fontSize: "22px", textAlign: "center" }}>{v.graded} reviewed this round — BOOM! 💥</div>
+            <div style={{ fontFamily: "var(--font-serif)", fontSize: "22px", textAlign: "center" }}>{v.graded} reviewed this round</div>
             <button onClick={() => act("keepGoing")} style={navBtnStyle}>⟲ keep going</button>
           </div>
         );
@@ -1629,7 +1726,7 @@ function WriteMode({ version, onChange, geminiKey }) {
           )}
           {answered && (
             <div style={{ ...srsCol, gap: "10px" }}>
-              <div style={{ fontFamily: "var(--font-mono)", fontSize: "12px", letterSpacing: "0.08em", color: tone }}>{ok ? "✓ RICHTIG — POW! 💥" : close ? "≈ FAST — ARGH, so close!" : "✗ NOCH NICHT — OOF! 🤕"}</div>
+              <div style={{ fontFamily: "var(--font-mono)", fontSize: "12px", letterSpacing: "0.08em", color: tone }}>{ok ? "✓ Richtig" : close ? "≈ Fast — almost" : "✗ Noch nicht"}</div>
               {!ok && <div style={{ fontFamily: "var(--font-serif)", fontWeight: 600, fontSize: "22px", color: "var(--ink)", textAlign: "center" }}>{v.forms}</div>}
               {ok && v.spelled && <div style={{ fontFamily: "var(--font-serif)", fontSize: "15px", color: "var(--ink-soft)", textAlign: "center" }}>accepted — the umlaut spelling is <strong style={{ color: "var(--ink)" }}>{v.spelled}</strong></div>}
               {v.hint && <div style={{ fontFamily: "var(--font-serif)", fontStyle: "italic", fontSize: "14px", color: "var(--ink-soft)", textAlign: "center" }}>{v.hint}</div>}
@@ -1713,7 +1810,7 @@ function Quiz({ settings, version, onChange, geminiKey }) {
     return (
       <div style={{ ...srsCol, padding: "40px 0" }}>
         <ScoreLine score={score} />
-        <div style={{ fontFamily: "var(--font-serif)", fontSize: "22px", color: "var(--ink)", textAlign: "center" }}>All {r.pool.length} / {r.pool.length} words done — KAPOW! 💥</div>
+        <div style={{ fontFamily: "var(--font-serif)", fontSize: "22px", color: "var(--ink)", textAlign: "center" }}>All {r.pool.length} / {r.pool.length} words done</div>
         <div style={{ display: "flex", gap: "10px" }}>{saveBtn}<button onClick={() => update(reset)} style={navBtnStyle}>⟲ start over</button></div>
       </div>
     );
@@ -2309,7 +2406,7 @@ function ConnectorPractice() {
       <div style={{ ...srsCol, padding: "28px 0" }}>
         {picker}
         <div style={{ fontFamily: "var(--font-serif)", fontSize: "22px", textAlign: "center", color: "var(--ink)" }}>
-          {score} / {order.length} right the first time with <strong style={{ color: "var(--konj)" }}>{con.name}</strong> {score === order.length ? "— KAPOW! 💥" : "— keep swinging 🥊"}
+          {score} / {order.length} right the first time with <strong style={{ color: "var(--konj)" }}>{con.name}</strong> {score === order.length ? "— perfect" : ""}
         </div>
         <div style={{ display: "flex", gap: "10px", flexWrap: "wrap", justifyContent: "center" }}>
           <button onClick={begin} style={navBtnStyle}>⟲ again</button>
@@ -2355,7 +2452,7 @@ function ConnectorPractice() {
       )}
       {result && result.ok && (
         <div style={{ ...srsCol, gap: "10px" }}>
-          <div style={{ fontFamily: "var(--font-mono)", fontSize: "12px", letterSpacing: "0.08em", color: "var(--good)" }}>{result.selfMarked ? "✓ COUNTED — your call, hero 🦸" : "✓ RICHTIG — POW! 💥"}</div>
+          <div style={{ fontFamily: "var(--font-mono)", fontSize: "12px", letterSpacing: "0.08em", color: "var(--good)" }}>{result.selfMarked ? "✓ Counted" : "✓ Richtig"}</div>
           {ex.answers.length > 1 && (
             <div style={{ fontFamily: "var(--font-serif)", fontSize: "14px", color: "var(--ink-soft)", textAlign: "center" }}>
               also right: {ex.answers.filter((a) => answerWords(a).join(" ") !== answerWords(val).join(" ")).map((a, i) => <div key={i} style={{ color: "var(--ink)" }}>{a}</div>)}
@@ -2370,7 +2467,7 @@ function ConnectorPractice() {
       {result && !result.ok && (
         <div style={{ ...srsCol, gap: "10px", width: "min(480px, 92vw)" }}>
           <div style={{ fontFamily: "var(--font-mono)", fontSize: "12px", letterSpacing: "0.08em", color: result.orderOnly ? "var(--accent)" : "var(--bad)" }}>
-            {result.orderOnly ? "≈ RIGHT WORDS — WRONG ORDER 🔀" : "✗ NOCH NICHT — OOF! 🤕"}
+            {result.orderOnly ? "≈ Right words, wrong order" : "✗ Noch nicht"}
           </div>
           <div style={{ fontFamily: "var(--font-serif)", fontSize: "14px", color: "var(--ink-soft)", textAlign: "center", lineHeight: 1.6 }}>{con.rule}</div>
           <div style={{ fontFamily: "var(--font-serif)", fontSize: "17px", textAlign: "center" }}>
@@ -2855,7 +2952,7 @@ function PhaseRound({ idx, set, refresh, retake, onExit, onNext, onChange }) {
     return wrap(
       <React.Fragment>
         <div style={{ textAlign: "center", padding: "20px 0 6px" }}>
-          <div style={{ fontFamily: "var(--font-serif)", fontWeight: 600, fontSize: "24px", color: "var(--ink)" }}>{retake ? "Wiederholung fertig" : v.passedNow ? "Phase bestanden — BAM! 🏆" : v.refresh ? "Auffrischung fertig" : "Runde fertig"}</div>
+          <div style={{ fontFamily: "var(--font-serif)", fontWeight: 600, fontSize: "24px", color: "var(--ink)" }}>{retake ? "Wiederholung fertig" : v.passedNow ? "Phase bestanden" : v.refresh ? "Auffrischung fertig" : "Runde fertig"}</div>
           <div style={{ fontFamily: "var(--font-mono)", fontSize: "11px", letterSpacing: "0.08em", color: "var(--ink-soft)", marginTop: "10px" }}>{v.right} / {v.first} {retake ? "richtig" : "beim ersten Versuch richtig"} ({pct}%)</div>
         </div>
         <MasteryBar status={v.status} />
@@ -2874,7 +2971,7 @@ function PhaseRound({ idx, set, refresh, retake, onExit, onNext, onChange }) {
   const deEn = v.dir === "de-en";
   const a = v.answer;
   const tone = a ? (a.correct ? "var(--good)" : "var(--bad)") : "var(--line)";
-  const verdictText = !a ? "" : a.correct ? "✓ RICHTIG — BAM! 💥" : retake ? "✗ FALSCH — OOF! 🤕" : "✗ NOCH NICHT — kommt gleich nochmal 🔁";
+  const verdictText = !a ? "" : a.correct ? "✓ Richtig" : retake ? "✗ Falsch" : "✗ Noch nicht — comes back shortly";
   return wrap(
     <React.Fragment>
       <MasteryBar status={v.status} />
@@ -2953,14 +3050,14 @@ function StoriesPage({ settings, onSettings, onChange }) {
 
 function LevelToggle({ levels, selected, onToggle }) {
   return (
-    <div style={{ display: "flex", justifyContent: "center", gap: "4px", padding: "4px", background: "var(--tint)", border: "1px solid var(--line)", borderRadius: "999px", alignSelf: "center", margin: "0 auto" }}>
+    <div style={{ display: "flex", justifyContent: "center", gap: "2px", padding: "3px", background: "var(--tint)", borderRadius: "11px", alignSelf: "center", margin: "0 auto" }}>
       {levels.map((lv) => {
         const on = selected.includes(lv);
         return (
           <button key={lv} onClick={() => onToggle(lv)} style={{
-            fontFamily: "var(--font-mono)", fontSize: "12px", fontWeight: 500, letterSpacing: "0.14em", textTransform: "uppercase", padding: "8px 20px",
-            border: "none", borderRadius: "999px", background: on ? "var(--btn-grad)" : "transparent", color: on ? "#FCF8EE" : "var(--ink-soft)",
-            boxShadow: on ? "0 6px 16px -8px rgba(60,50,20,.55)" : "none", cursor: "pointer",
+            fontFamily: "var(--font-serif)", fontSize: "13px", fontWeight: 600, padding: "7px 18px",
+            border: "none", borderRadius: "8px", background: on ? "var(--btn-grad)" : "transparent", color: on ? "#FFFFFF" : "var(--ink-soft)",
+            boxShadow: on ? "var(--shadow-soft)" : "none", cursor: "pointer",
           }}>{lv}</button>
         );
       })}
@@ -3037,8 +3134,6 @@ function SettingsPanel({ summary, onSettings, geminiKey, setGeminiKey, ghToken, 
         </div>
       </div>
       <GeminiKeyField value={geminiKey} onChange={setGeminiKey} />
-      <GeminiKeyField value={ghToken} onChange={setGhToken} label="🔑 GitHub token" placeholder="fine-grained token (github_pat_…)"
-        help="Kept in memory for this visit only — never saved. Sent with “+ Add word” so the backend can commit to german_vocab.json in Harsimar17/Deutsch-Vocab-Helper. Create a fine-grained token at github.com/settings/personal-access-tokens limited to that one repo, with Contents: Read and write — nothing else." />
     </div>
   );
 }
@@ -3135,38 +3230,27 @@ const TABS = [
 ];
 
 function TabBar({ mode, setMode, mistakeCount }) {
-  const [open, setOpen] = useState(true);
   const stripRef = useRef(null);
-  const active = TABS.find((t) => t.id === mode) || TABS[0];
   useEffect(() => {
-    if (!open || !stripRef.current) return;
+    if (!stripRef.current) return;
     const el = stripRef.current.querySelector('[data-on="1"]');
     if (el && el.scrollIntoView) el.scrollIntoView({ inline: "center", block: "nearest", behavior: "smooth" });
-  }, [mode, open]);
+  }, [mode]);
   const tabLabel = (t) => (t.id === "mistakes" && mistakeCount ? `${t.label} ${mistakeCount}` : t.label);
   const pill = (on, isMistakes) => ({
-    flex: "0 0 auto", scrollSnapAlign: "center", whiteSpace: "nowrap", fontFamily: "var(--font-mono)", fontSize: "10px", fontWeight: 500,
-    letterSpacing: "0.05em", textTransform: "uppercase", padding: "9px 15px", border: "none", borderRadius: "999px",
-    background: on ? "var(--btn-grad)" : "transparent", color: on ? "#FCF8EE" : isMistakes && mistakeCount ? "var(--bad)" : "var(--ink-soft)",
-    boxShadow: on ? "0 6px 16px -8px rgba(60,50,20,.55)" : "none", cursor: "pointer",
+    flex: "0 0 auto", scrollSnapAlign: "center", whiteSpace: "nowrap", fontFamily: "var(--font-serif)", fontSize: "13px", fontWeight: on ? 600 : 500,
+    padding: "8px 14px", border: "none", borderRadius: "8px",
+    background: on ? "var(--paper-raised)" : "transparent", color: on ? "var(--ink)" : isMistakes && mistakeCount ? "var(--bad)" : "var(--ink-soft)",
+    boxShadow: on ? "0 1px 2px rgba(15,23,42,.08), 0 0 0 1px var(--line)" : "none", cursor: "pointer",
   });
   return (
-    <div style={{ display: "flex", alignItems: "center", gap: "6px", width: "min(460px, 94vw)", alignSelf: "center" }}>
-      <button onClick={() => setOpen((o) => !o)} aria-label={open ? "collapse tabs" : "expand tabs"} aria-expanded={open}
-        style={{ flexShrink: 0, width: "34px", height: "34px", borderRadius: "999px", fontFamily: "var(--font-mono)", fontSize: "13px", lineHeight: 1, border: "1px solid var(--line)", background: "var(--paper-raised)", color: "var(--ink-soft)", cursor: "pointer" }}>
-        {open ? "‹" : "›"}
-      </button>
-      {!open && <button onClick={() => setOpen(true)} style={{ ...pill(true, false), padding: "9px 18px" }}>{tabLabel(active)}</button>}
-      <div ref={stripRef} className="tabstrip" style={{
-        display: "flex", gap: "3px", alignItems: "center", flex: 1, minWidth: 0, padding: open ? "3px" : "0", background: open ? "var(--tint)" : "transparent",
-        border: `1px solid ${open ? "var(--line)" : "transparent"}`, borderRadius: "999px", overflowX: "auto", scrollSnapType: "x proximity",
-        maxWidth: open ? "1200px" : "0px", opacity: open ? 1 : 0, pointerEvents: open ? "auto" : "none",
-        transition: "max-width .34s cubic-bezier(.4,0,.2,1), opacity .18s ease, padding .2s ease",
-      }}>
-        {TABS.map((t) => (
-          <button key={t.id} data-on={mode === t.id ? "1" : "0"} onClick={() => setMode(t.id)} style={pill(mode === t.id, t.id === "mistakes")}>{tabLabel(t)}</button>
-        ))}
-      </div>
+    <div ref={stripRef} className="tabstrip" role="tablist" aria-label="Exercises" style={{
+      display: "flex", gap: "2px", alignItems: "center", width: "100%", boxSizing: "border-box", padding: "3px", background: "var(--tint)",
+      borderRadius: "11px", overflowX: "auto", scrollSnapType: "x proximity",
+    }}>
+      {TABS.map((t) => (
+        <button key={t.id} role="tab" aria-selected={mode === t.id} data-on={mode === t.id ? "1" : "0"} onClick={() => setMode(t.id)} style={pill(mode === t.id, t.id === "mistakes")}>{tabLabel(t)}</button>
+      ))}
     </div>
   );
 }
@@ -3175,8 +3259,8 @@ function TabBar({ mode, setMode, mistakeCount }) {
 // reads this learner's learnt words and keeps its mistake log with the login session kept in this browser.
 // It opens as a tab next to Rules, in a frame, so no reload is needed.
 
-// The logged-in user as a round initial; click for their email, Talkloop and "log out".
-function UserMenu({ user, onLogout, onTalk }) {
+// The logged-in user as a round initial; click for their email and "Sign out".
+function UserMenu({ user, onLogout }) {
   const [open, setOpen] = useState(false);
   const ref = useRef(null);
   useEffect(() => {
@@ -3190,22 +3274,12 @@ function UserMenu({ user, onLogout, onTalk }) {
   const email = user.email || "";
   const initial = (email.trim()[0] || "?").toUpperCase();
   return (
-    <div ref={ref} style={{ position: "absolute", left: 0 }}>
-      <button onClick={() => setOpen((o) => !o)} aria-label={"logged in as " + email} aria-expanded={open} title={"Logged in as " + email}
-        style={{ width: "36px", height: "36px", borderRadius: "999px", border: "1px solid var(--btn-border)", background: "var(--btn-grad)", color: "#FCF8EE",
-          fontFamily: "var(--font-serif)", fontSize: "17px", fontWeight: 600, lineHeight: 1, cursor: "pointer", boxShadow: "var(--shadow-soft)",
-          display: "flex", alignItems: "center", justifyContent: "center", padding: 0 }}>
-        {initial}
-      </button>
+    <div ref={ref} style={{ position: "relative" }}>
+      <button className="avatar-btn" onClick={() => setOpen((o) => !o)} aria-label={"Account: " + email} aria-expanded={open} title={email}>{initial}</button>
       {open && (
-        <div role="menu" style={{ position: "absolute", top: "44px", left: 0, zIndex: 20, minWidth: "200px", maxWidth: "min(280px, 80vw)", padding: "12px",
-          borderRadius: "12px", border: "1px solid var(--line)", background: "var(--paper-raised)", boxShadow: "var(--shadow-soft)",
-          display: "flex", flexDirection: "column", gap: "10px" }}>
-          <div style={{ ...monoLabel, fontSize: "9px" }}>secret identity</div>
-          <div style={{ fontFamily: "var(--font-mono)", fontSize: "12px", color: "var(--ink)", overflowWrap: "anywhere" }}>{email}</div>
-          <button role="menuitem" onClick={() => { setOpen(false); onTalk(); }}
-            style={{ ...miniBtn, alignSelf: "flex-start" }}>🗯 practise talking (Talkloop)</button>
-          <button role="menuitem" onClick={() => { setOpen(false); onLogout(); }} style={{ ...miniBtn, color: "var(--bad)", borderColor: "var(--bad)", alignSelf: "flex-start" }}>🚪 exit stage left (log out)</button>
+        <div role="menu" className="menu">
+          <div className="menu-head"><small>Signed in as</small><div>{email}</div></div>
+          <button role="menuitem" className="danger" onClick={() => { setOpen(false); onLogout(); }}><Icon name="logout" />Sign out</button>
         </div>
       )}
     </div>
@@ -3608,9 +3682,10 @@ function FormulasPage() {
   const jump = (id) => { const el = document.getElementById("rules-" + id); if (el) el.scrollIntoView({ behavior: "smooth", block: "start" }); };
   return (
     <div style={{ ...srsCol, width: "100%", maxWidth: "760px", margin: "0 auto", alignItems: "stretch", gap: "18px" }}>
-      <div style={{ textAlign: "center" }}>
-        <div style={{ fontFamily: "var(--font-serif)", fontWeight: 600, fontSize: "26px", color: "var(--ink)" }}>Rules</div>
-        <div style={{ ...monoLabel, marginTop: "6px" }}>word order, cases, endings and verb charts</div>
+      <div>
+        <div className="page-eyebrow">Reference</div>
+        <h1 className="page-title">Grammar</h1>
+        <div className="page-sub">Word order, cases, endings and verb charts</div>
       </div>
       <div style={{ display: "flex", flexWrap: "wrap", gap: "8px", justifyContent: "center" }}>
         {RULES.map((g) => <button key={g.id} onClick={() => jump(g.id)} style={{ ...smallOutline("var(--ink-soft)"), borderColor: "var(--line)" }}>{g.title}</button>)}
@@ -3636,58 +3711,88 @@ function FormulasPage() {
   );
 }
 
-function TopBar({ storyMode, onStoryMode, formulas, onFormulas, talk, onTalk, theme, onTheme, user, onLogout }) {
-  const seg = (on) => ({
-    fontFamily: "var(--font-mono)", fontSize: "10px", fontWeight: 500, letterSpacing: "0.1em", textTransform: "uppercase", padding: "8px 16px",
-    border: "none", borderRadius: "999px", background: on ? "var(--btn-grad)" : "transparent", color: on ? "#FCF8EE" : "var(--ink-soft)",
-    boxShadow: on ? "0 6px 16px -8px rgba(0,0,0,.55)" : "none", cursor: "pointer", whiteSpace: "nowrap",
-  });
-  const dark = theme === "dark";
+// Line icons (24px grid, stroke = currentColor) for the app header and tab bar.
+const ICON_PATHS = {
+  practice: "M4 19.5A2.5 2.5 0 0 1 6.5 17H20M4 19.5A2.5 2.5 0 0 0 6.5 22H20V2H6.5A2.5 2.5 0 0 0 4 4.5v15ZM9 7h7M9 11h5",
+  stories: "M2 4h6a4 4 0 0 1 4 4v13a3 3 0 0 0-3-3H2V4Zm20 0h-6a4 4 0 0 0-4 4v13a3 3 0 0 1 3-3h7V4Z",
+  rules: "M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01",
+  talk: "M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5Z",
+  sun: "M12 17a5 5 0 1 0 0-10 5 5 0 0 0 0 10ZM12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42",
+  moon: "M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79Z",
+  logout: "M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9",
+  sliders: "M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6",
+};
+function Icon({ name }) {
   return (
-    <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "10px", position: "relative", minHeight: "40px" }}>
-      <div role="group" aria-label="mode" className="modeseg" style={{ display: "flex", gap: "3px", padding: "3px", background: "var(--tint)", border: "1px solid var(--line)", borderRadius: "999px" }}>
-        <button onClick={() => { onTalk(false); onFormulas(false); if (storyMode) onStoryMode(false); }} aria-pressed={!talk && !formulas && !storyMode} style={seg(!talk && !formulas && !storyMode)}><span className="ic">💥 </span>Practice</button>
-        <button onClick={() => { onTalk(false); onFormulas(false); if (!storyMode) onStoryMode(true); }} aria-pressed={!talk && !formulas && storyMode} style={seg(!talk && !formulas && storyMode)}><span className="ic">📖 </span>Stories</button>
-        <button onClick={() => { onTalk(false); onFormulas(true); }} aria-pressed={!talk && formulas} style={seg(!talk && formulas)}><span className="ic">📜 </span>Rules</button>
-        <button onClick={() => onTalk(true)} aria-pressed={talk} style={seg(talk)}><span className="ic">🗯 </span>Talkloop</button>
-      </div>
-      {user && <UserMenu user={user} onLogout={onLogout} onTalk={() => onTalk(true)} />}
-      <button onClick={() => onTheme(dark ? "light" : "dark")} aria-label={dark ? "switch to light mode" : "switch to dark mode"} title={dark ? "Day patrol" : "Night patrol"}
-        style={{ position: "absolute", right: 0, width: "36px", height: "36px", borderRadius: "999px", border: "1px solid var(--line)", background: "var(--paper-raised)", color: "var(--ink-soft)", fontSize: "15px", lineHeight: 1, cursor: "pointer", boxShadow: "var(--shadow-soft)" }}>
-        {dark ? "☀" : "🦇"}
-      </button>
-    </div>
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d={ICON_PATHS[name]} />
+    </svg>
+  );
+}
+
+function TopBar({ storyMode, onStoryMode, formulas, onFormulas, talk, onTalk, theme, onTheme, user, onLogout }) {
+  const dark = theme === "dark";
+  const page = talk ? "talk" : formulas ? "rules" : storyMode ? "stories" : "practice";
+  const go = (p) => {
+    if (p === "talk") { onTalk(true); return; }
+    onTalk(false);
+    onFormulas(p === "rules");
+    if (p !== "rules" && storyMode !== (p === "stories")) onStoryMode(p === "stories");
+  };
+  const items = [["practice", "Practice"], ["stories", "Stories"], ["rules", "Grammar"], ["talk", "Talkloop"]];
+  const navButtons = items.map(([id, label]) => (
+    <button key={id} onClick={() => go(id)} aria-current={page === id ? "page" : undefined}><Icon name={id} /><span>{label}</span></button>
+  ));
+  return (
+    <React.Fragment>
+      <header className="app-header">
+        <div className="app-header-inner">
+          <div className="brand"><span className="brand-mark">W</span><span>Wortschatz</span><span className="brand-sub">German trainer</span></div>
+          <nav className="topnav" aria-label="Sections">{navButtons}</nav>
+          <div className="header-actions">
+            <button className="icon-btn" onClick={() => onTheme(dark ? "light" : "dark")} aria-label={dark ? "Switch to light mode" : "Switch to dark mode"} title={dark ? "Light mode" : "Dark mode"}>
+              <Icon name={dark ? "sun" : "moon"} />
+            </button>
+            {user && <UserMenu user={user} onLogout={onLogout} />}
+          </div>
+        </div>
+      </header>
+      <nav className="bottomnav" aria-label="Sections">{navButtons}</nav>
+    </React.Fragment>
   );
 }
 
 function StreakHeader({ header, showCounts }) {
+  const extra = showCounts ? (header.focus === "all" ? "All words" : header.focus === "trouble" ? "Trouble words" : header.due + " due · " + header.new + " new") : null;
   return (
-    <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "6px" }}>
-      <div style={{ ...monoLabel, letterSpacing: "0.1em", color: "var(--ink-soft)", textAlign: "center" }}>
-        {header.streak > 0 ? "🔥 " + header.streak + "-day streak — unstoppable!" : "no streak yet — every hero starts somewhere 🦸"} · {header.reviewed}/{header.goal} today
-        {showCounts && (
-          <span style={{ color: "var(--ink-faint)" }}>{"  ·  " + (header.focus === "all" ? "all-words mode" : header.focus === "trouble" ? "trouble-words mode" : header.due + " due · " + header.new + " new")}</span>
-        )}
+    <div className="glass" style={{ display: "flex", flexDirection: "column", gap: "12px", padding: "16px 18px", borderRadius: "18px" }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "12px", flexWrap: "wrap", fontSize: "13px", color: "var(--ink-soft)" }}>
+        <span><strong style={{ color: "var(--ink)", fontWeight: 600 }}>{header.reviewed} / {header.goal}</strong> reviewed today</span>
+        <span style={{ display: "flex", gap: "14px", fontVariantNumeric: "tabular-nums" }}>
+          {extra && <span>{extra}</span>}
+          <span>{header.streak > 0 ? header.streak + "-day streak" : "No streak yet"}</span>
+        </span>
       </div>
-      <div style={{ width: "min(300px, 78vw)", height: "4px", background: "var(--line)", borderRadius: "999px", overflow: "hidden" }}>
-        <div style={{ width: header.pct + "%", height: "100%", background: "var(--accent)", transition: "width .3s ease" }} />
+      <div style={{ height: "6px", background: "var(--tint)", borderRadius: "999px", overflow: "hidden" }}>
+        <div style={{ width: header.pct + "%", height: "100%", background: "var(--btn-grad)", borderRadius: "999px", boxShadow: "0 0 14px var(--accent)", transition: "width .5s cubic-bezier(.2,.8,.2,1)" }} />
       </div>
     </div>
   );
 }
 
-// One comic-book line under the title, picked once per visit.
-const TEASES = [
-  "Meanwhile, in Germany…",
-  "With great vocab comes great responsibility.",
-  "Der, die, das: the eternal villains. 🦹",
-  "Separable verbs split up mid-sentence. DRAMA!",
-  "Umlauts: letters wearing tiny dot hats. 🎩",
-  "Today's mission: remember the article.",
-  "Our hero faces… THE DATIV! ⚡",
-  "To be continued… tomorrow, same streak time.",
-];
-const TEASE = TEASES[Math.floor(Math.random() * TEASES.length)];
+
+// Watches Talkloop's call screen in the frame (same origin) and marks <html> with "talk-call"
+// while a call runs. Only reads the call screen's hidden attribute: Talkloop itself is untouched.
+function watchTalkCall(frame) {
+  const root = document.documentElement;
+  try {
+    const call = frame.contentDocument && frame.contentDocument.getElementById("conversation");
+    if (!call) { root.classList.remove("talk-call"); return; }
+    const sync = () => root.classList.toggle("talk-call", !call.hidden);
+    sync();
+    new MutationObserver(sync).observe(call, { attributes: true, attributeFilter: ["hidden"] });
+  } catch (e) { root.classList.remove("talk-call"); /* frame from another origin */ }
+}
 
 const SYSTEM_THEME = window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
 function LoginScreen({ onLoggedIn }) {
@@ -3703,15 +3808,15 @@ function LoginScreen({ onLoggedIn }) {
       .then((user) => { if (location.hash === "#talkloop") location.replace("/talkloop/"); else onLoggedIn(user); })
       .catch((err) => setState({ busy: false, error: err.message }));
   };
-  const field = { fontFamily: "var(--font-mono)", fontSize: "13px", padding: "10px 12px", borderRadius: "8px", border: "1px solid var(--line)", background: "var(--paper-raised)", color: "var(--ink)", width: "100%", boxSizing: "border-box" };
+  const field = { fontFamily: "var(--font-serif)", fontSize: "16px", padding: "12px 14px", borderRadius: "10px", border: "1px solid var(--line)", background: "var(--paper-raised)", color: "var(--ink)", width: "100%", boxSizing: "border-box" };
   return (
-    <form onSubmit={submit} style={{ width: "min(340px, 92vw)", display: "flex", flexDirection: "column", gap: "12px" }}>
-      <div style={{ textAlign: "center", fontSize: "44px", color: "var(--ink)" }}><span className="comic-title">Wortschatz!</span> <span className="tease">💥</span></div>
-      <div style={{ textAlign: "center", fontSize: "16px", fontWeight: 700, color: "var(--ink-soft)", marginTop: "-4px" }}>Your daily dose of German superpowers.</div>
-      <div style={{ ...monoLabel, textAlign: "center", marginBottom: "6px" }}>secret identity required</div>
-      <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="email" autoComplete="username" required style={field} />
-      <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="password" autoComplete="current-password" required style={field} />
-      <button type="submit" disabled={state.busy} style={{ ...navBtnStyle, opacity: state.busy ? 0.6 : 1 }}>{state.busy ? "KA-CHUNK … 🔧" : "POW! let me in 💥"}</button>
+    <form onSubmit={submit} style={{ width: "min(380px, 100%)", display: "flex", flexDirection: "column", gap: "12px", padding: "32px 28px", borderRadius: "16px", border: "1px solid var(--line)", background: "var(--paper-raised)", boxShadow: "var(--shadow-card)", boxSizing: "border-box" }}>
+      <div className="brand-mark" style={{ width: "44px", height: "44px", borderRadius: "12px", fontSize: "21px", margin: "0 auto 4px" }}>W</div>
+      <div style={{ textAlign: "center", fontSize: "22px", fontWeight: 700, letterSpacing: "-.02em", color: "var(--ink)" }}>Sign in to Wortschatz</div>
+      <div style={{ textAlign: "center", fontSize: "14px", color: "var(--ink-soft)", marginTop: "-4px", marginBottom: "10px" }}>Your German vocabulary, grammar and speaking practice.</div>
+      <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="Email" autoComplete="username" required style={field} />
+      <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Password" autoComplete="current-password" required style={field} />
+      <button type="submit" disabled={state.busy} style={{ ...navBtnStyle, opacity: state.busy ? 0.6 : 1 }}>{state.busy ? "Signing in…" : "Sign in"}</button>
       {state.error && <div role="alert" style={{ fontFamily: "var(--font-mono)", fontSize: "11px", color: "var(--bad)", textAlign: "center" }}>{state.error}</div>}
     </form>
   );
@@ -3751,6 +3856,9 @@ function App() {
     api.setLoggedOutHandler(() => setUser(null));
   }, []);
   const logout = useCallback(() => { session.logout(); setUser(null); }, []);
+  // On a phone a Talkloop call takes the whole screen: html.page-talk (the Talkloop tab is open)
+  // plus html.talk-call (a call is running, see watchTalkCall) let the CSS hide the header and tab bar.
+  useEffect(() => { document.documentElement.classList.toggle("page-talk", talk); }, [talk]);
 
   const refreshSummary = useCallback(() => {
     return api.get("/api/summary?ai=" + (geminiKey ? "true" : "false"), { quiet: true }).then(setSummary).catch(api.report);
@@ -3799,7 +3907,7 @@ function App() {
   useEffect(() => {
     document.documentElement.setAttribute("data-theme", theme);
     const meta = document.querySelector('meta[name="theme-color"]');
-    if (meta) meta.setAttribute("content", theme === "dark" ? "#14182B" : "#FFF8E1");
+    if (meta) meta.setAttribute("content", theme === "dark" ? "#05060D" : "#F3F4FA");
   }, [theme]);
 
   const shellStyle = { minHeight: "100%", padding: "36px 20px 48px", fontFamily: "var(--font-serif)", display: "flex", alignItems: "center", justifyContent: "center" };
@@ -3807,10 +3915,10 @@ function App() {
     return (
       <div style={shellStyle}>
         <div style={{ maxWidth: "440px", textAlign: "center", display: "flex", flexDirection: "column", gap: "16px" }}>
-          <div style={{ fontSize: "22px", color: "var(--ink)" }}>KO! The backend got knocked out 😵</div>
+          <div style={{ fontSize: "22px", color: "var(--ink)" }}>Can’t reach the server</div>
           <div style={{ fontFamily: "var(--font-mono)", fontSize: "12px", color: "var(--bad)" }}>{status.error}</div>
           <div style={{ fontSize: "13px", color: "var(--ink-muted)" }}>Backend: <code>{API_CONFIGURED ? (API_BASE || location.origin) : "(not configured)"}</code></div>
-          <button onClick={() => setAttempt((n) => n + 1)} style={navBtnStyle}>⟲ revive it</button>
+          <button onClick={() => setAttempt((n) => n + 1)} style={navBtnStyle}>Try again</button>
         </div>
       </div>
     );
@@ -3819,7 +3927,7 @@ function App() {
     return <div style={shellStyle}><LoginScreen onLoggedIn={setUser} /></div>;
   }
   if (status === "loading" || !summary) {
-    return <div style={shellStyle}><div style={{ ...counterStyle, fontSize: "13px" }}>loading … (dramatic music) 🎵</div></div>;
+    return <div style={shellStyle}><div style={{ ...counterStyle, fontSize: "13px" }}>Loading…</div></div>;
   }
 
   const s = Object.assign({}, summary.settings, nav);
@@ -3830,11 +3938,8 @@ function App() {
     </div>
   ) : null;
   const topBar = (
-    <React.Fragment>
-      <TopBar storyMode={s.storyMode} onStoryMode={(v) => onSettings("setStoryMode", v)} formulas={formulas} onFormulas={setFormulas} talk={talk} onTalk={setTalk}
-        theme={theme} onTheme={(t) => onSettings("setTheme", t)} user={user} onLogout={logout} />
-      {notice}
-    </React.Fragment>
+    <TopBar storyMode={s.storyMode} onStoryMode={(v) => onSettings("setStoryMode", v)} formulas={formulas} onFormulas={setFormulas} talk={talk} onTalk={setTalk}
+      theme={theme} onTheme={(t) => onSettings("setTheme", t)} user={user} onLogout={logout} />
   );
 
   // Practice, Stories and Rules stay mounted once opened and are only hidden,
@@ -3844,14 +3949,16 @@ function App() {
   const show = (p) => ({ display: page === p ? "block" : "none" });
   const drillProps = { version, onChange: applyChange, geminiKey, settings: s };
   return (
-    <div style={{ minHeight: "100%", padding: "20px 20px 56px", fontFamily: "var(--font-serif)" }}>
-      <div style={{ maxWidth: page === "talk" ? "900px" : page === "rules" ? "760px" : page === "stories" ? "620px" : "560px", margin: "0 auto", display: "flex", flexDirection: "column", gap: page === "practice" ? "18px" : "22px" }}>
-        {topBar}
+    <div style={{ minHeight: "100%", fontFamily: "var(--font-serif)" }}>
+      {topBar}
+      <main className="app-main">
+      <div style={{ maxWidth: page === "talk" ? "none" : page === "rules" ? "760px" : page === "stories" ? "680px" : "600px", margin: "0 auto", display: "flex", flexDirection: "column", gap: "22px" }}>
+        {notice}
         {/* Loaded in the background right after login, so the tab is ready when it is opened. */}
-        <div style={show("talk")}>
-          {!talkReady && <div style={{ ...counterStyle, fontSize: "13px", textAlign: "center", padding: "48px 0" }}>warming up Talkloop … 🗯</div>}
-          <iframe src="/talkloop/" title="Talkloop" allow="microphone; autoplay; clipboard-write" onLoad={() => setTalkReady(true)}
-            style={{ width: "100%", height: "calc(100dvh - 110px)", minHeight: "480px", border: "1px solid var(--line)", borderRadius: "14px", background: "var(--paper-raised)", display: talkReady ? "block" : "none" }} />
+        <div style={show("talk")} className="talk-page">
+          {!talkReady && <div style={{ ...counterStyle, textAlign: "center", padding: "64px 0" }}>Loading speaking practice…</div>}
+          <iframe src="/talkloop/" title="Talkloop" className="talk-frame" allow="microphone; autoplay; clipboard-write" onLoad={(e) => { setTalkReady(true); watchTalkCall(e.currentTarget); }}
+            style={{ display: talkReady ? "block" : "none" }} />
         </div>
         {visited.current.rules && <div style={show("rules")}><div style={{ animation: "cardIn .35s ease both" }}><FormulasPage /></div></div>}
         {visited.current.stories && (
@@ -3862,17 +3969,14 @@ function App() {
           </div>
         )}
         <div style={{ display: page === "practice" ? "flex" : "none", flexDirection: "column", gap: "18px" }}>
-          <div style={{ textAlign: "center" }}>
-            <div style={{ display: "inline-block", ...monoLabel, fontSize: "9px", letterSpacing: "0.16em", border: "1px solid var(--line)", borderRadius: "999px", padding: "3px 11px", marginBottom: "14px" }}>⇣ powered by a mighty Java backend ⚡</div>
-            <div style={{ fontFamily: "var(--font-mono)", fontSize: "10px", fontWeight: 500, letterSpacing: "0.28em", color: "var(--accent)", marginBottom: "8px" }}>{summary.levelTitle}</div>
-            <div style={{ fontSize: "44px", lineHeight: 1.05 }}><span className="comic-title">Wortschatz!</span> <span className="tease">💥</span></div>
-            <div className="bubble" style={{ fontSize: "15px", color: "var(--ink)", fontWeight: 700, marginTop: "14px" }}>{TEASE}</div>
-            <div style={{ fontSize: "13px", fontStyle: "italic", color: "var(--ink-soft)", marginTop: "8px" }}>{summary.cardCount} cards — nouns, verbs, separable verbs, adjectives, connectors &amp; phrases</div>
-            <div style={{ width: "48px", height: "2px", background: "var(--accent)", opacity: 0.5, borderRadius: "2px", margin: "18px auto 0" }} />
-          </div>
-          <div style={{ textAlign: "center" }}>
-            <button onClick={() => setSettingsOpen((o) => !o)} style={{ ...monoLabel, color: "var(--ink-soft)", letterSpacing: "0.1em", background: settingsOpen ? "var(--tint)" : "transparent", border: "1px solid var(--line)", borderRadius: "999px", padding: "8px 16px", cursor: "pointer", maxWidth: "100%" }}>
-              {settingsOpen ? "▾" : "▸"} {summary.settingsLabel}
+          <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: "16px", flexWrap: "wrap" }}>
+            <div>
+              <div className="page-eyebrow">{summary.levelTitle}</div>
+              <h1 className="page-title">Practice</h1>
+              <div className="page-sub">{summary.cardCount} cards · nouns, verbs, separable verbs, adjectives, connectors and phrases</div>
+            </div>
+            <button className="settings-toggle" onClick={() => setSettingsOpen((o) => !o)} aria-expanded={settingsOpen}>
+              <Icon name="sliders" /><span>{summary.settingsLabel}</span>
             </button>
           </div>
           {settingsOpen && <SettingsPanel summary={summary} onSettings={onSettings} geminiKey={geminiKey} setGeminiKey={setGeminiKey} ghToken={ghToken} setGhToken={setGhToken} />}
@@ -3893,6 +3997,7 @@ function App() {
           </div>
         </div>
       </div>
+      </main>
     </div>
   );
 }

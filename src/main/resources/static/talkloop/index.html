@@ -3,26 +3,43 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-    <title>Talkloop 💥</title>
-    <link rel="icon" href="favicon.svg" type="image/svg+xml" />
-    <link rel="apple-touch-icon" href="favicon.svg" />
-    <meta name="theme-color" content="#e62429" />
+    <title>Talkloop · Speaking practice</title>
+    <link rel="icon" href="favicon.svg?v=2" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="apple-touch-icon.png?v=2" />
+    <meta name="theme-color" content="#F3F4FA" />
     <!-- ?v= makes phones fetch the new file after a change instead of a cached copy: bump it with each change. -->
-    <link rel="stylesheet" href="styles.css?v=32" />
-    <!-- Inside the trainer's Talkloop tab the trainer is already around it, so its "back" arrow goes. -->
-    <script>if (window.self !== window.top) document.write("<style>.home{display:none}</style>");</script>
+    <link rel="stylesheet" href="styles.css?v=38" />
+    <!-- Inside the trainer's Talkloop tab the trainer is already around it: its "back" arrow goes,
+         and the page takes the trainer's light/dark theme and follows it when it changes. -->
+    <script>
+      (function () {
+        var root = document.documentElement;
+        if (window.self === window.top) return;
+        root.classList.add("embedded");
+        try {
+          var host = window.parent.document.documentElement;
+          var sync = function () { var t = host.getAttribute("data-theme"); if (t) root.setAttribute("data-theme", t); };
+          sync();
+          new MutationObserver(sync).observe(host, { attributes: true, attributeFilter: ["data-theme"] });
+        } catch (e) { /* another origin: keep the system theme */ }
+      })();
+    </script>
+    <style>.embedded .home { display: none; }</style>
   </head>
   <body>
     <header class="topbar">
-      <h1><a href="/" class="home" title="Back to the Vocab Trainer">←</a> Talkloop! <span class="tease">💬</span></h1>
+      <div>
+        <span class="eyebrow">Talkloop</span>
+        <h1><a href="/" class="home" title="Back to the Vocab Trainer">←</a> Speaking practice</h1>
+      </div>
       <div class="stats">
         <span id="streak" title="Days in a row you practised">🔥 0</span>
-        <span id="rapport" title="How much the character likes chatting with you">♥ 0</span>
+        <span id="rapport" hidden></span>
       </div>
     </header>
 
     <section id="keygate" class="card" hidden>
-      <h2>Recruit your AI sidekick 🤖</h2>
+      <h2>Connect an AI provider</h2>
       <p id="key-intro" class="muted">
         Your AI keys are saved in your Vocab Trainer account and load when you log in.
       </p>
@@ -92,7 +109,7 @@
         <button id="change-key" type="button">Add or change keys</button>
       </div>
       <div id="recap" class="recap" hidden></div>
-      <h2>Start a conversation 🗯</h2>
+      <h2>Start a conversation</h2>
       <div class="grid">
         <label>Practise
           <select id="language">
@@ -183,14 +200,12 @@
       <div class="vocab">
         <div class="vocab-head">
           <strong>My vocabulary</strong>
-          <label class="file-btn">Import file
-            <input id="vocab-file" type="file" accept="application/json,.json" hidden />
-          </label>
+          <input id="vocab-file" type="file" accept="application/json,.json" hidden />
         </div>
         <div class="trainer-link">
           <p id="trainer-status" class="muted" aria-live="polite"></p>
         </div>
-        <div class="vocab-url-row">
+        <div class="vocab-url-row" hidden>
           <input id="vocab-url" type="url"
                  value="https://harsimar17.github.io/Deutsch-Vocab-Helper/german_vocab.json"
                  placeholder="https://…/vocab.json" />
@@ -205,15 +220,15 @@
 
       <label class="check say-again">
         <input id="say-again" type="checkbox" checked />
-        After a correction, say the corrected sentence before the conversation moves on
+        Repeat each corrected sentence before moving on
       </label>
 
       <label class="check say-again">
         <input id="live-voice" type="checkbox" />
-        🎙️ Gemini 3.8 Live — talk like a real phone call <span class="muted">(Gemini hears you itself, replies in about a second and you can interrupt; uses your Gemini 3.8 Live key; corrections show on screen. Unticked: the usual voice and recognition)</span>
+        Live voice call <span class="muted">(Gemini 3.8 Live: replies in about a second and you can interrupt)</span>
       </label>
 
-      <button id="start" class="primary">Start! 💥</button>
+      <button id="start" class="primary">Start conversation</button>
 
       <details id="chats" class="chats" hidden>
         <summary id="chats-summary">Chat history</summary>
@@ -252,7 +267,7 @@
         <div id="focus" class="focus" hidden aria-label="Vocabulary being practised"></div>
         <!-- Say it again: after a correction, the corrected sentence is said before the reply comes. -->
         <div id="drill" class="drill" hidden aria-live="polite">
-          <p class="drill-label">Say it correctly — try again, hero! 💪</p>
+          <p class="drill-label">Say the corrected sentence</p>
           <p id="drill-target" class="drill-target"></p>
           <p id="drill-feedback" class="drill-feedback"></p>
           <div class="drill-actions">
@@ -286,7 +301,7 @@
           <button type="button" id="umlaut-shift" aria-pressed="false" title="Capital letter for the next one (a sentence start is capital anyway)">⇧</button>
         </div>
         <form id="composer" class="composer">
-          <input id="text" autocomplete="off" placeholder="Your reply, hero…" />
+          <input id="text" autocomplete="off" placeholder="Type your reply…" />
           <button type="button" id="lookup-open" title="Look up a word" aria-label="Look up a word">🔍</button>
           <button class="primary" type="submit">Send</button>
         </form>
@@ -333,7 +348,7 @@
 
     <section class="card">
       <div class="card-head">
-        <h2>Your arch-nemeses 🦹 <span class="muted">(recurring mistakes)</span></h2>
+        <h2>Recurring mistakes</h2>
         <button type="button" id="reset-mistakes" hidden>Reset</button>
       </div>
       <ul id="mistakes" class="bookmarks"></ul>
@@ -341,7 +356,7 @@
     </section>
 
     <section class="card">
-      <h2>Your word arsenal 🧰 <span class="muted">(saved words)</span></h2>
+      <h2>Saved words</h2>
       <ul id="bookmarks" class="bookmarks"></ul>
     </section>
 
