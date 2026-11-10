@@ -21,6 +21,8 @@ function Recap({ recap }) {
           {line("Said ✓", recap.said)}
           {line("Practise again", recap.tried)}
           {line("Not reached", recap.missed)}
+          {recap.topic && line(`Topic words used ${recap.topic.used.length}/${recap.topic.total} ✓`, recap.topic.used.length ? recap.topic.used : ["none yet"])}
+          {recap.topic && line("Topic words for next time", recap.topic.unused)}
           <p className="muted">{recap.automatic} word{recap.automatic === 1 ? "" : "s"} automatic so far. Words come back after 1, 3, 7 and 21 days.</p>
         </>
       )}

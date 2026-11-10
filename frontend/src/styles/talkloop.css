@@ -10,8 +10,6 @@
   --accent-text: #FFFFFF;
   --accent-soft: rgba(109, 74, 255, .10);
   --grad: linear-gradient(135deg, #7C5CFF 0%, #4F7BFF 55%, #22D3EE 100%);
-  --character: rgba(255, 255, 255, .8);
-  --learner: #EEF2FF;
   --good: #10B981;
   --warn: #D97706;
   --danger: #F43F5E;
@@ -28,7 +26,7 @@
 }
 :root[data-theme="dark"] .talkloop {
     --bg: #05060D; --surface: rgba(18, 20, 38, .72); --surface-solid: #10122A; --text: #EEF0FF; --muted: #8A91B4; --accent: #9B87FF; --accent-2: #22D3EE; --accent-text: #FFFFFF;
-    --accent-soft: rgba(155, 135, 255, .14); --character: rgba(255, 255, 255, .05); --learner: #232A4A; --good: #34D399; --warn: #FBBF24; --danger: #FB7185;
+    --accent-soft: rgba(155, 135, 255, .14); --good: #34D399; --warn: #FBBF24; --danger: #FB7185;
     --border: rgba(160, 170, 255, .13); --edge: rgba(150, 130, 255, .22); --tint: rgba(155, 135, 255, .08);
     --shadow: 0 1px 0 rgba(255, 255, 255, .05) inset, 0 1px 2px rgba(0, 0, 0, .5);
     --shadow-lg: 0 0 0 1px rgba(155, 135, 255, .16), 0 30px 70px -30px rgba(124, 92, 255, .55);
@@ -319,7 +317,6 @@ body.in-call { overflow: hidden; }
 .talkloop .voice-status:empty { display: none; }
 .talkloop .vocab { border-top: 1px solid var(--border); padding-top: 12px; margin-bottom: 16px; }
 .talkloop .vocab-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
-.talkloop .file-btn { display: inline-block; cursor: pointer; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 8px 12px; font-size: 0.85rem; color: var(--text); box-shadow: var(--shadow); }
 .talkloop .trainer-link { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
 .talkloop .trainer-link p { flex: 1; margin: 0; font-size: 0.85rem; }
 .talkloop .trainer-link button { white-space: nowrap; font-size: 0.85rem; }
@@ -427,7 +424,6 @@ body.typing .talkloop .auto-send { display: none; }
 .talkloop .lookup input { flex: 1; min-width: 0; }
 .talkloop .say-this { margin: 0; padding: 10px 12px; border: 1px solid var(--accent); border-radius: 12px; background: var(--accent-soft); font-size: 1.05rem; line-height: 1.35; }
 .talkloop .say-this strong { font-weight: 600; }
-.talkloop .tease { display: none; }
 @media (prefers-reduced-motion: reduce) {
 .talkloop, .talkloop * { animation: none !important; transition: none !important; }
 }

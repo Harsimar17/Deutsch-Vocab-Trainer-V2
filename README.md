@@ -333,7 +333,7 @@ ChatGPT's own chat list, not in the page's *Chat history*.
 
 - `start_talkloop {mode, level, native_language?, scenario?, tense?, use_vocab?}` gives ChatGPT the
   partner's instructions for the whole chat, as Talkloop's page builds them for its AIs
-  (`TalkloopChatGptService`, ported from `turnSystemPrompt` in `talkloop/app.js`: change both),
+  (`TalkloopChatGptService`, ported from `turnSystemPrompt` in `frontend/src/talkloop/engine.js`: change both),
   with today's words from the speaking schedule (picked as on the page), the recurring mistakes, a
   topic or role card, and the subjects of earlier chats to leave alone; `use_vocab: false` leaves
   the words out, like unticking *Weave my vocab*.

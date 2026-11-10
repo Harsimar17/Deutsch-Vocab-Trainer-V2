@@ -116,9 +116,6 @@ async function moveBrowserKeysToAccount() {
 function getKey(service = "gemini") {
   return serverKeys[service] || memoryKeys[service] || "";
 }
-function setKey(service, k) {
-  memoryKeys[service] = k;
-}
 const hasServerKeys = () => Object.keys(serverKeys).length > 0;
 
 // Which service runs the conversation. People who only ever saved a Gemini key stay on Gemini;
@@ -557,10 +554,6 @@ async function storeVocab(json) {
   await idbSet("vocab_words", words);
   await idbSet("vocab_seen", []);
   return { count: words.length, levels: [...new Set(words.map((w) => w.level))].sort() };
-}
-
-async function importVocab(file) {
-  return storeVocab(JSON.parse(await file.text()));
 }
 
 async function importVocabFromUrl(url) {
@@ -1222,12 +1215,13 @@ function renderRecap() {
     renderSentenceRecap(null, sentences.right, sentences.again.filter((s) => !sentences.right.includes(s)));
     return;
   }
-  if (!said.length && !tried.length) {
+  const topic = topicWordsRecap();
+  if (!said.length && !tried.length && !topic) {
     ui.set({ recap: null });
     return;
   }
   const automatic = Object.values(store.get("spoken", {})).filter((s) => s.stage >= 4).length;
-  ui.set({ recap: { kind: "words", said, tried, missed, automatic } });
+  ui.set({ recap: { kind: "words", said, tried, missed, automatic, topic } });
 }
 
 function renderSentenceRecap(box, right, again) {

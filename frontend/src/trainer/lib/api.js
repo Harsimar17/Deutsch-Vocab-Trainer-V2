@@ -1,12 +1,8 @@
 import React, { useState, useCallback, useEffect, useRef, useMemo } from "react";
 
 // ---------- BACKEND API ----------
-// Served by the Spring Boot app, so everything is same-origin. Only a copy
-// opened from GitHub Pages needs PROD_API_BASE: the backend's URL.
-export const ON_GITHUB_PAGES = location.hostname.endsWith("github.io");
-export const PROD_API_BASE = "";
-export const API_BASE = ON_GITHUB_PAGES ? PROD_API_BASE : "";
-export const API_CONFIGURED = !ON_GITHUB_PAGES || !!PROD_API_BASE;
+// The page is built into the Spring Boot jar and served by it, so the API is on the same origin.
+export const API_BASE = "";
 // "Today" and the streak follow the learner's local midnight; the backend needs the zone.
 export const TIME_ZONE = (() => {
   try { return Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC"; } catch (e) { return "UTC"; }
@@ -121,7 +117,6 @@ export const api = (() => {
     }
   }
   async function send(method, path, body, extraHeaders, keepalive) {
-    if (!API_CONFIGURED) throw new Error("no backend configured (PROD_API_BASE is empty)");
     const headers = Object.assign({ "X-Time-Zone": TIME_ZONE }, extraHeaders);
     const token = session.token(); // null once expired — checked before anything is sent
     if (!token) {
