@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { useUi, ui, wordTokens, setRef } from "../ui.js";
 import { TapButton, useTap } from "../tap.jsx";
 import {
@@ -96,6 +96,41 @@ function Drill() {
         <TapButton onTap={skipDrill}>Skip</TapButton>
       </div>
     </div>
+  );
+}
+
+// The learnt words that fit this conversation: beside the call on a wide screen, a folding
+// strip above the dock on a phone. Ticked as they are said; a tap on one shows more.
+function TopicWords() {
+  const tw = useUi((s) => s.topicWords);
+  const [folded, setFolded] = useState(false);
+  const [open, setOpen] = useState(() => new Set());
+  if (!tw) return null;
+  const toggle = (de) => setOpen((o) => { const n = new Set(o); if (n.has(de)) n.delete(de); else n.add(de); return n; });
+  return (
+    <aside id="topic-words" className={folded ? "topic-words folded" : "topic-words"} aria-label="Words to use in this conversation">
+      <button type="button" className="tw-head" aria-expanded={!folded} onClick={() => setFolded(!folded)}>
+        <strong>Use these words</strong>
+        <span className="tw-count">{tw.count}</span>
+        <span className="tw-fold" aria-hidden="true">▾</span>
+      </button>
+      <p className="tw-sub">{tw.sub}</p>
+      <ul className="tw-list">
+        {tw.words.map((w) => {
+          const flash = tw.flash.includes(w.de);
+          return (
+            // a word just ticked gets a new key, so its highlight plays again
+            <li key={flash ? `${w.de}@${tw.flashAt}` : w.de} tabIndex={0} onClick={() => toggle(w.de)}
+              className={`tw-word ${w.status}` + (flash ? " flash" : "") + (open.has(w.de) ? " open" : "")}>
+              <span className="tw-mark">{w.status === "used" ? "✓" : "○"}</span>
+              <span className="tw-de" lang={tw.lang}>{w.de}</span>
+              <span className="tw-en">{w.en}</span>
+              {w.more && <span className="tw-more">{w.more}</span>}
+            </li>
+          );
+        })}
+      </ul>
+    </aside>
   );
 }
 
@@ -201,6 +236,8 @@ export function CallScreen() {
         <Transcript />
         <Coach />
       </div>
+
+      <TopicWords />
 
       <footer className="call-dock">
         <Focus />

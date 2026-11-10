@@ -40,6 +40,7 @@ let state = {
   coach: null, // { understood, correction, tip, mistakes, extra, expanded }
   suggestions: [],
   focus: null, // { label, words: [{ de, en, state, current, peek }] }
+  topicWords: null, // the "Use these words" panel: { count, sub, lang, words, flash, flashAt }
   drill: null, // { target, feedback, ok }
   sayThis: null, // { text, kind }
   heard: "",
