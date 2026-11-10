@@ -1,14 +1,24 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Talkloop">
+  <!-- Talkloop: a speech bubble with a voice waveform, on the app's violet→cyan signature gradient -->
   <defs>
     <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#3f7bea"/>
-      <stop offset="1" stop-color="#2f5fd0"/>
+      <stop offset="0" stop-color="#7C5CFF"/>
+      <stop offset=".55" stop-color="#4F7BFF"/>
+      <stop offset="1" stop-color="#22D3EE"/>
+    </linearGradient>
+    <linearGradient id="sheen" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#fff" stop-opacity=".32"/>
+      <stop offset=".5" stop-color="#fff" stop-opacity="0"/>
+    </linearGradient>
+    <linearGradient id="wave" gradientUnits="userSpaceOnUse" x1="20" y1="0" x2="48" y2="0">
+      <stop offset="0" stop-color="#7C5CFF"/>
+      <stop offset="1" stop-color="#22B8E6"/>
     </linearGradient>
   </defs>
-  <rect width="64" height="64" rx="14" fill="url(#g)"/>
-  <!-- speech bubble -->
-  <path d="M16 15h32a6 6 0 0 1 6 6v16a6 6 0 0 1-6 6H30l-10 8v-8h-4a6 6 0 0 1-6-6V21a6 6 0 0 1 6-6z" fill="#ffffff"/>
-  <!-- loop arrow inside the bubble -->
-  <path d="M25 29a8 8 0 1 1 1.6 9.8" fill="none" stroke="#2f5fd0" stroke-width="3.4" stroke-linecap="round"/>
-  <path d="M24.5 23.5l1 5.6-5.6-1z" fill="#2f5fd0"/>
+  <rect width="64" height="64" rx="15" fill="url(#g)"/>
+  <rect width="64" height="64" rx="15" fill="url(#sheen)"/>
+  <path d="M18 14h28a8 8 0 0 1 8 8v14a8 8 0 0 1-8 8H31l-10 8.5V44h-3a8 8 0 0 1-8-8V22a8 8 0 0 1 8-8z" fill="#fff"/>
+  <g stroke="url(#wave)" stroke-width="4" stroke-linecap="round">
+    <path d="M22 26v6"/><path d="M28 22v14"/><path d="M34 24v10"/><path d="M40 20v18"/><path d="M46 26v6"/>
+  </g>
 </svg>

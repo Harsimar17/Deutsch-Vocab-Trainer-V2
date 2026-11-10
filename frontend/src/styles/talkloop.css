@@ -1,0 +1,534 @@
+/* Talkloop's styles, scoped to its part of the app (.talkloop). */
+.talkloop {
+  --bg: #F3F4FA;
+  --surface: rgba(255, 255, 255, .78);
+  --surface-solid: #FFFFFF;
+  --text: #0B1020;
+  --muted: #646C88;
+  --accent: #6D4AFF;
+  --accent-2: #06B6D4;
+  --accent-text: #FFFFFF;
+  --accent-soft: rgba(109, 74, 255, .10);
+  --grad: linear-gradient(135deg, #7C5CFF 0%, #4F7BFF 55%, #22D3EE 100%);
+  --character: rgba(255, 255, 255, .8);
+  --learner: #EEF2FF;
+  --good: #10B981;
+  --warn: #D97706;
+  --danger: #F43F5E;
+  --border: rgba(15, 20, 45, .10);
+  --edge: rgba(109, 74, 255, .16);
+  --tint: rgba(109, 74, 255, .06);
+  --shadow: 0 1px 2px rgba(20, 16, 60, .06);
+  --shadow-lg: 0 0 0 1px rgba(109, 74, 255, .10), 0 24px 60px -28px rgba(76, 48, 200, .38);
+  --glow: 0 8px 28px -8px rgba(109, 74, 255, .55);
+  --pop: var(--shadow);
+  --display: 'Space Grotesk', 'Inter', -apple-system, sans-serif;
+  --aurora-1: rgba(124, 92, 255, .28); --aurora-2: rgba(6, 182, 212, .22); --aurora-3: rgba(236, 72, 153, .14); --grid: rgba(20, 24, 60, .045);
+  color-scheme: light;
+}
+:root[data-theme="dark"] .talkloop {
+    --bg: #05060D; --surface: rgba(18, 20, 38, .72); --surface-solid: #10122A; --text: #EEF0FF; --muted: #8A91B4; --accent: #9B87FF; --accent-2: #22D3EE; --accent-text: #FFFFFF;
+    --accent-soft: rgba(155, 135, 255, .14); --character: rgba(255, 255, 255, .05); --learner: #232A4A; --good: #34D399; --warn: #FBBF24; --danger: #FB7185;
+    --border: rgba(160, 170, 255, .13); --edge: rgba(150, 130, 255, .22); --tint: rgba(155, 135, 255, .08);
+    --shadow: 0 1px 0 rgba(255, 255, 255, .05) inset, 0 1px 2px rgba(0, 0, 0, .5);
+    --shadow-lg: 0 0 0 1px rgba(155, 135, 255, .16), 0 30px 70px -30px rgba(124, 92, 255, .55);
+    --glow: 0 10px 34px -8px rgba(124, 92, 255, .7);
+    --aurora-1: rgba(124, 92, 255, .55); --aurora-2: rgba(34, 211, 238, .32); --aurora-3: rgba(236, 72, 153, .26); --grid: rgba(160, 170, 255, .045);
+    color-scheme: dark;
+}
+.talkloop, .talkloop * { box-sizing: border-box; }
+.talkloop [hidden] { display: none !important; }
+.talkloop {
+  margin: 0 auto;
+  max-width: 760px;
+  padding: 28px 20px 48px;
+
+  color: var(--text);
+  font: 16px/1.55 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+.talkloop a { color: var(--accent); }
+.talkloop h1 { font-size: 1.75rem; line-height: 1.2; font-weight: 700; letter-spacing: -.025em; margin: 0; }
+.talkloop h2 { font-size: 1.05rem; font-weight: 600; letter-spacing: -.01em; margin: 0 0 14px; }
+.talkloop h2 .muted { font-weight: 400; font-size: .85rem; }
+.talkloop .topbar { display: flex; justify-content: space-between; align-items: flex-end; gap: 12px; margin-bottom: 22px; }
+.talkloop .eyebrow { display: block; font-size: 12px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--accent); margin-bottom: 6px; }
+.talkloop .stats { display: flex; gap: 8px; font-size: .85rem; font-weight: 500; }
+.talkloop .stats span { padding: 5px 11px; border-radius: 999px; background: var(--surface); border: 1px solid var(--border); box-shadow: var(--shadow); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.talkloop .home { color: var(--muted); text-decoration: none; margin-right: 4px; }
+.talkloop .home:hover { color: var(--accent); }
+.talkloop .card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 20px;
+  margin-bottom: 16px;
+  box-shadow: var(--shadow);
+}
+.talkloop .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; margin-bottom: 16px; }
+.talkloop label { display: flex; flex-direction: column; gap: 6px; font-size: 0.85rem; font-weight: 500; color: var(--muted); min-width: 0; }
+.talkloop label[hidden] { display: none; }
+.talkloop .grid select { width: 100%; min-width: 0; text-overflow: ellipsis; }
+.talkloop .grid label:has(#scenario), .talkloop .grid label:has(#tense) { grid-column: 1 / -1; }
+.talkloop select, .talkloop input {
+  font: inherit;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 8px 12px;
+  font-size: 16px; /* 16px keeps iOS from zooming into the field */
+}
+.talkloop select:focus, .talkloop input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.talkloop button { font: inherit; font-size: .95rem; font-weight: 500; cursor: pointer; border-radius: 10px; border: 1px solid var(--border); background: var(--surface); color: var(--text); padding: 10px 16px; min-height: 44px; box-shadow: var(--shadow); -webkit-tap-highlight-color: transparent; transition: background-color .15s, border-color .15s, transform .1s, filter .15s; }
+.talkloop button:not(:disabled):active { transform: scale(.98); }
+@media (hover: hover) {
+.talkloop button:not(:disabled):hover { border-color: color-mix(in srgb, var(--text) 18%, var(--border)); }
+.talkloop button.primary:not(:disabled):hover { filter: brightness(1.06); }
+}
+.talkloop button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.talkloop button.primary { background: var(--accent); color: var(--accent-text); border-color: transparent; font-weight: 600; }
+.talkloop #start { width: 100%; min-height: 50px; font-size: 1rem; margin-top: 4px; }
+.talkloop button:disabled { opacity: 0.5; cursor: progress; }
+.talkloop select, .talkloop input { min-height: 44px; }
+.talkloop #transcript { list-style: none; padding: 0; margin: 0 0 16px; display: flex; flex-direction: column; gap: 10px; }
+.talkloop .msg { padding: 10px 14px; border-radius: 18px; max-width: 85%; line-height: 1.5; }
+.talkloop .msg.character { background: var(--surface); border: 1px solid var(--border); box-shadow: var(--shadow); align-self: flex-start; border-bottom-left-radius: 6px; }
+.talkloop .msg.learner { background: var(--accent); color: var(--accent-text); align-self: flex-end; border-bottom-right-radius: 6px; }
+.talkloop .msg.learner .who, .talkloop .msg.learner .translation, .talkloop .msg.learner .voice-note { color: color-mix(in srgb, var(--accent-text) 75%, transparent); }
+.talkloop .msg.learner .tools button { background: transparent; color: inherit; border-color: color-mix(in srgb, var(--accent-text) 40%, transparent); box-shadow: none; }
+.talkloop .msg .who { font-size: 0.75rem; color: var(--muted); display: block; }
+.talkloop .msg .translation { font-size: 0.85rem; color: var(--muted); margin-top: 4px; }
+.talkloop .msg .tools { display: flex; gap: 8px; margin-top: 6px; }
+.talkloop .msg .tools button { padding: 2px 10px; font-size: 0.8rem; min-height: 30px; border-radius: 8px; box-shadow: none; }
+.talkloop .msg .voice-note { font-size: 0.75rem; color: var(--muted); margin-top: 4px; }
+.talkloop .word { cursor: pointer; border-radius: 4px; }
+.talkloop .word:hover { text-decoration: underline; }
+.talkloop .word.speaking { background: var(--accent); color: var(--accent-text); }
+.talkloop .coach { border-left: 3px solid var(--good); }
+.talkloop .coach.has-correction { border-left-color: var(--warn); }
+.talkloop .coach p { margin: 4px 0; }
+.talkloop .chips { display: flex; gap: 8px; overflow-x: auto; scrollbar-width: none; }
+.talkloop .chips:empty { display: none; }
+.talkloop .chips::-webkit-scrollbar { display: none; }
+.talkloop .chips button { box-shadow: none; border-radius: 999px; font-size: 0.9rem; white-space: nowrap; flex: none; min-height: 38px; padding: 6px 14px; }
+.talkloop .live { color: var(--muted); font-style: italic; }
+.talkloop .live:empty { display: none; }
+.talkloop .heard { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; }
+.talkloop .heard[hidden] { display: none; }
+.talkloop .heard .live { flex: 1 1 12rem; min-width: 0; }
+.talkloop .heard-actions { display: flex; gap: 6px; flex: none; margin-left: auto; }
+.talkloop .heard-actions button { min-height: 34px; padding: 4px 10px; font-size: 0.85rem; }
+.talkloop .composer { display: flex; gap: 8px; }
+.talkloop .umlauts { display: flex; gap: 6px; margin-bottom: 6px; }
+.talkloop .umlauts button { min-width: 40px; min-height: 34px; padding: 2px 10px; font-size: 1.05rem; line-height: 1; }
+.talkloop .umlauts button[aria-pressed="true"] { background: var(--accent); color: var(--accent-text); border-color: transparent; }
+.talkloop .composer input { flex: 1; min-width: 0; }
+.talkloop .status { color: var(--muted); font-size: 0.85rem; margin: 0; }
+.talkloop .status:empty { display: none; }
+body.in-call { overflow: hidden; }
+.talkloop .call {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: var(--vvh, 100dvh); /* follows the on-screen keyboard on phones */
+  /* Shift down by the visual viewport's scroll offset so iOS doesn't strand the
+     dock at the top above the keyboard (see the visualViewport handler in app.js). */
+  transform: translateY(var(--vvtop, 0px));
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+}
+.talkloop .call[hidden] { display: none; }
+.talkloop .call > * { width: 100%; max-width: 720px; margin: 0 auto; }
+.talkloop .call-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: max(12px, env(safe-area-inset-top)) 16px 12px;
+  border-bottom: 1px solid var(--border);
+  background: color-mix(in srgb, var(--surface) 88%, transparent);
+  -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px);
+}
+.talkloop .avatar {
+  flex: none;
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-weight: 700;
+  font-size: 1.3rem;
+  background: var(--accent);
+  color: var(--accent-text);
+  transition: box-shadow 0.2s;
+}
+.talkloop .call[data-state="speaking"] .avatar { animation: talk 1.2s ease-in-out infinite; }
+@keyframes talk {
+  0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 45%, transparent); }
+  50% { box-shadow: 0 0 0 8px color-mix(in srgb, var(--accent) 0%, transparent); }
+}
+.talkloop .caller { flex: 1; min-width: 0; }
+.talkloop .caller-name { font-weight: 700; font-size: 1.1rem; line-height: 1.2; }
+.talkloop .caller-sub { font-size: 0.8rem; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.talkloop .caller-topic { margin-top: 2px; font-size: 0.85rem; font-weight: 600; line-height: 1.25; overflow-wrap: anywhere; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; overflow: hidden; }
+.talkloop .caller-topic[hidden] { display: none; }
+.talkloop #call-timer { font-variant-numeric: tabular-nums; }
+.talkloop .call-state {
+  flex: none;
+  font-size: 0.8rem;
+  color: var(--muted);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 2px 10px;
+}
+.talkloop .call[data-state="listening"] .call-state { color: var(--warn); border-color: currentColor; }
+.talkloop .call[data-state="speaking"] .call-state { color: var(--accent); border-color: currentColor; }
+.talkloop .call-scroll { background: var(--bg); flex: 1; min-height: 0; overflow-y: auto; padding: 16px; overscroll-behavior: contain; }
+.talkloop .call-scroll #transcript { margin-bottom: 12px; }
+.talkloop .call-scroll .coach { margin-bottom: 0; }
+.talkloop .call-dock {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 16px max(12px, env(safe-area-inset-bottom));
+  border-top: 1px solid var(--border);
+  background: var(--surface);
+}
+.talkloop .call-dock .focus { margin: 0; flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
+.talkloop .call-dock .focus-word { white-space: nowrap; }
+.talkloop .call-controls { display: flex; justify-content: center; gap: 40px; padding-top: 4px; }
+.talkloop .topic-words {
+  padding: 8px 16px;
+  border-top: 1px solid var(--border);
+  background: var(--surface);
+  font-size: 0.85rem;
+}
+.talkloop .topic-words[hidden] { display: none; }
+.talkloop .tw-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+.talkloop .tw-count { color: var(--good); font-weight: 700; font-variant-numeric: tabular-nums; }
+.talkloop .tw-fold { margin-left: auto; color: var(--muted); transition: transform 0.2s; }
+.talkloop .topic-words.folded .tw-fold { transform: rotate(-90deg); }
+.talkloop .topic-words.folded .tw-sub, .talkloop .topic-words.folded .tw-list { display: none; }
+.talkloop .tw-sub { margin: 4px 0 6px; color: var(--muted); font-size: 0.8rem; }
+.talkloop .tw-list { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 6px; max-height: 96px; overflow-y: auto; }
+.talkloop .tw-word {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px;
+  padding: 3px 10px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--bg);
+  cursor: pointer;
+}
+.talkloop .tw-mark { color: var(--muted); width: 1em; text-align: center; }
+.talkloop .tw-de { font-weight: 600; }
+.talkloop .tw-en { color: var(--muted); font-size: 0.78rem; }
+.talkloop .tw-more { display: none; flex-basis: 100%; color: var(--muted); font-size: 0.78rem; }
+.talkloop .tw-word.open .tw-more { display: block; }
+.talkloop .tw-word.used { border-color: var(--good); }
+.talkloop .tw-word.used .tw-mark, .talkloop .tw-word.used .tw-de { color: var(--good); }
+.talkloop .tw-word.used .tw-de { text-decoration: line-through; text-decoration-thickness: 1px; }
+.talkloop .tw-word.flash { animation: tw-flash 1.2s ease-out; }
+@keyframes tw-flash {
+  0% { background: color-mix(in srgb, var(--good) 45%, var(--bg)); transform: scale(1.06); }
+  100% { background: var(--bg); transform: scale(1); }
+}
+@media (min-width: 1100px) {
+.talkloop .call > .topic-words {
+    position: absolute;
+    top: 96px;
+    right: 16px;
+    width: 280px;
+    max-width: none;
+    max-height: calc(100% - 260px);
+    overflow-y: auto;
+    padding: 12px 14px;
+    border: 2px solid var(--edge);
+    border-radius: 12px;
+    box-shadow: var(--pop);
+  }
+.talkloop .call:has(> .topic-words:not([hidden])) > :not(.topic-words) { margin-left: max(16px, calc((100% - 312px - 720px) / 2)); }
+.talkloop .topic-words .tw-list { flex-direction: column; flex-wrap: nowrap; max-height: none; overflow: visible; }
+.talkloop .topic-words .tw-word { border-radius: 10px; }
+.talkloop .topic-words .tw-en { margin-left: auto; }
+}
+.talkloop .round {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 0;
+  border: 0;
+  background: none;
+  min-height: 0;
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+.talkloop .round { box-shadow: none; }
+.talkloop .round svg {
+  box-shadow: var(--shadow);
+  width: 60px;
+  height: 60px;
+  padding: 16px;
+  border-radius: 50%;
+  fill: currentColor;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  color: var(--text);
+  transition: background 0.15s, transform 0.1s;
+}
+.talkloop .round:active svg { transform: scale(0.94); }
+.talkloop .mic[aria-pressed="true"] svg { background: var(--warn); border-color: transparent; color: #fff; }
+.talkloop .end svg { background: var(--danger); border-color: transparent; color: #fff; }
+.talkloop .pause .icon-play, .talkloop .pause[aria-pressed="true"] .icon-pause { display: none; }
+.talkloop .pause[aria-pressed="true"] .icon-play { display: inline; }
+.talkloop .pause[aria-pressed="true"] svg { background: var(--text); border-color: transparent; color: var(--bg); }
+.talkloop .round:disabled { opacity: 0.4; }
+.talkloop .call[data-state="paused"] .call-state { color: var(--text); border-color: currentColor; }
+.talkloop .call[data-state="paused"] .call-scroll { opacity: 0.6; }
+.talkloop .explorer { position: fixed; right: 16px; bottom: 16px; width: min(380px, calc(100% - 32px)); box-shadow: var(--shadow-lg); z-index: 3; }
+.talkloop .close { position: absolute; top: 10px; right: 10px; width: 32px; min-height: 32px; padding: 0; border-radius: 8px; box-shadow: none; font-size: 1.1rem; line-height: 1; }
+.talkloop .bookmarks { margin: 0; padding: 0; list-style: none; }
+.talkloop .bookmarks li { padding: 10px 0; border-top: 1px solid var(--border); font-size: .95rem; }
+.talkloop .bookmarks li:first-child { border-top: 0; padding-top: 0; }
+.talkloop .bookmarks .muted { color: var(--muted); }
+.talkloop .muted { color: var(--muted); }
+.talkloop .muted a { color: var(--accent); }
+.talkloop .keyline { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; font-size: 0.85rem; }
+.talkloop .keyline .ai-choice { display: flex; align-items: center; gap: 8px; margin: 0; font-weight: 600; }
+.talkloop .keyline .ai-choice select { width: auto; margin: 0; }
+.talkloop .keyline #key-summary { flex: 1 1 100%; order: 3; }
+.talkloop .voice-status { margin: -4px 0 12px; font-size: 0.85rem; }
+.talkloop .voice-status:empty { display: none; }
+.talkloop .vocab { border-top: 1px solid var(--border); padding-top: 12px; margin-bottom: 16px; }
+.talkloop .vocab-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+.talkloop .file-btn { display: inline-block; cursor: pointer; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 8px 12px; font-size: 0.85rem; color: var(--text); box-shadow: var(--shadow); }
+.talkloop .trainer-link { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.talkloop .trainer-link p { flex: 1; margin: 0; font-size: 0.85rem; }
+.talkloop .trainer-link button { white-space: nowrap; font-size: 0.85rem; }
+.talkloop .vocab-url-row { display: flex; gap: 8px; margin-bottom: 8px; }
+.talkloop .vocab-url-row input { flex: 1; min-width: 0; font-size: 0.85rem; }
+.talkloop .vocab-url-row button { white-space: nowrap; font-size: 0.9rem; }
+.talkloop .check { display: inline-flex; flex-direction: row; align-items: center; gap: 6px; font-size: 0.9rem; color: var(--text); }
+.talkloop .check { display: block; position: relative; padding-left: 28px; font-weight: 400; line-height: 1.45; }
+.talkloop .check input { position: absolute; left: 0; top: 1px; min-height: auto; width: 18px; height: 18px; margin: 0; accent-color: var(--accent); }
+.talkloop .drill { border: 1px solid var(--warn); border-radius: 12px; padding: 10px 12px; background: color-mix(in srgb, var(--warn) 8%, var(--surface)); }
+.talkloop .drill[hidden] { display: none; }
+.talkloop .drill p { margin: 0; }
+.talkloop .drill-label { font-size: 0.8rem; color: var(--muted); }
+.talkloop .drill .drill-target { font-size: 1.1rem; font-weight: 600; margin: 2px 0 6px; }
+.talkloop .drill .drill-feedback { font-size: 0.85rem; color: var(--warn); margin-bottom: 6px; }
+.talkloop .drill-feedback:empty { display: none; }
+.talkloop .drill .drill-feedback.ok { color: var(--good); }
+.talkloop .drill-actions { display: flex; gap: 8px; }
+.talkloop .drill-actions button { min-height: 38px; padding: 6px 12px; font-size: 0.9rem; }
+.talkloop .call[data-state="drill"] .call-state { color: var(--warn); border-color: currentColor; }
+.talkloop .card-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.talkloop .card-head button { min-height: 32px; padding: 2px 10px; font-size: 0.85rem; }
+.talkloop .mistake-focus { display: inline-block; white-space: nowrap; font-size: 0.75rem; color: var(--warn); border: 1px solid currentColor; border-radius: 999px; padding: 0 8px; }
+.talkloop .mistake-example { font-size: 0.85rem; overflow-wrap: anywhere; }
+.talkloop .say-again { margin-bottom: 12px; }
+.talkloop .mistakes-sync { font-size: 0.8rem; margin: 8px 0 0; }
+.talkloop .focus { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-bottom: 10px; font-size: 0.85rem; }
+.talkloop .focus-label { color: var(--muted); }
+.talkloop .focus-word { background: var(--tint); border-radius: 999px; padding: 2px 10px; }
+.talkloop button.focus-word { border: 1px solid transparent; color: inherit; font: inherit; cursor: pointer; }
+.talkloop .focus-word.said { border-color: var(--good); color: var(--good); }
+.talkloop .focus-word.tried { border-color: var(--warn); color: var(--warn); }
+.talkloop .focus-word.current { background: var(--accent); color: var(--accent-text); border-color: var(--accent); font-weight: 600; }
+.talkloop .chats { margin-top: 16px; }
+.talkloop .chats summary { cursor: pointer; font-weight: 600; }
+.talkloop .chatgpt .chats { margin-top: 0; }
+.talkloop .chat-list { list-style: none; margin: 8px 0 0; padding: 0; }
+.talkloop .chat-item { display: flex; gap: 8px; margin-bottom: 6px; }
+.talkloop .chat-open { flex: 1; min-width: 0; text-align: left; font-size: 0.9rem; overflow-wrap: anywhere; }
+.talkloop .chat-del { flex: none; min-width: 40px; }
+.talkloop .recap { margin-bottom: 16px; padding: 12px 14px; border-radius: 12px; background: var(--accent-soft); }
+.talkloop .recap h3 { margin: 0 0 6px; font-size: 1rem; }
+.talkloop .recap p { margin: 4px 0; overflow-wrap: anywhere; }
+@media (max-width: 560px) {
+.talkloop { padding: 20px 16px 40px; }
+.talkloop h1 { font-size: 1.5rem; }
+.talkloop .topbar { flex-wrap: wrap; gap: 6px; }
+.talkloop .card { padding: 16px; border-radius: 14px; }
+.talkloop .grid { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 10px; }
+.talkloop .msg { max-width: 92%; }
+.talkloop .call-scroll { padding: 12px; }
+.talkloop .call-dock { padding-left: 12px; padding-right: 12px; }
+body.typing .talkloop .call-controls, body.typing .talkloop .call-dock .focus { display: none; }
+body.typing .talkloop .call-dock { gap: 6px; }
+body.typing .talkloop .call-head { padding-top: max(6px, env(safe-area-inset-top)); padding-bottom: 6px; }
+body.typing .talkloop .avatar { width: 32px; height: 32px; font-size: 0.95rem; }
+body.typing .talkloop .caller-name { font-size: 0.95rem; }
+body.typing .talkloop .caller-topic { -webkit-line-clamp: 1; font-size: 0.8rem; }
+body.typing .talkloop .call-scroll { padding-top: 8px; padding-bottom: 8px; }
+.talkloop .coach { padding: 8px 12px; font-size: 0.85rem; cursor: pointer; }
+.talkloop .coach:not(.expanded) p:not(:first-child) { display: none; }
+.talkloop .coach:not(.expanded) p:first-child {
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    overflow: hidden;
+  }
+.talkloop .coach:not(.expanded):has(p + p)::after { content: "Tap for more"; display: block; font-size: 0.75rem; color: var(--muted); }
+body.typing .talkloop .chips button { min-height: 34px; padding: 4px 12px; font-size: 0.85rem; }
+.talkloop .call-head { gap: 10px; padding: max(8px, env(safe-area-inset-top)) 12px 8px; }
+.talkloop .avatar { width: 38px; height: 38px; font-size: 1.05rem; }
+.talkloop .caller-name { font-size: 1rem; }
+.talkloop .caller-topic { -webkit-line-clamp: 1; font-size: 0.8rem; cursor: pointer; }
+.talkloop .caller-topic.expanded { -webkit-line-clamp: 4; }
+.talkloop .call-state { padding: 1px 8px; font-size: 0.75rem; }
+.talkloop .msg { padding: 8px 12px; }
+.talkloop .msg .tools { margin-top: 4px; gap: 6px; }
+.talkloop .msg .tools button { min-height: 28px; padding: 1px 9px; font-size: 0.75rem; }
+.talkloop .call-dock { gap: 6px; padding-top: 6px; padding-bottom: max(8px, env(safe-area-inset-bottom)); }
+.talkloop .call-controls { gap: 28px; padding-top: 0; }
+.talkloop .round { gap: 0; }
+.talkloop .round-label { display: none; }
+.talkloop .round svg { width: 50px; height: 50px; padding: 13px; }
+.talkloop .chips button { min-height: 34px; padding: 4px 12px; font-size: 0.85rem; }
+.talkloop .drill { padding: 8px 10px; }
+.talkloop .drill .drill-target { font-size: 1rem; margin: 0 0 4px; }
+.talkloop .drill-actions button { min-height: 34px; padding: 4px 10px; font-size: 0.85rem; }
+.talkloop .auto-send { font-size: 0.85rem; margin: 0; }
+.talkloop .auto-send .muted { display: none; }
+.talkloop .umlauts { display: none; margin-bottom: 0; }
+body.typing .talkloop .umlauts { display: flex; }
+body.typing .talkloop .auto-send { display: none; }
+.talkloop .umlauts button { min-height: 32px; }
+.talkloop .explorer {
+    left: 0; right: 0; bottom: auto; width: 100%;
+    top: calc(var(--vvtop, 0px) + var(--vvh, 100dvh));
+    transform: translateY(-100%);
+    border-radius: 14px 14px 0 0;
+    max-height: calc(var(--vvh, 100dvh) * 0.7); overflow-y: auto;
+  }
+}
+.talkloop #keygate label { margin-bottom: 12px; }
+.talkloop .auto-send { align-self: flex-start; }
+.talkloop .lookup { display: flex; gap: 8px; margin: 4px 32px 10px 0; }
+.talkloop .lookup input { flex: 1; min-width: 0; }
+.talkloop .say-this { margin: 0; padding: 10px 12px; border: 1px solid var(--accent); border-radius: 12px; background: var(--accent-soft); font-size: 1.05rem; line-height: 1.35; }
+.talkloop .say-this strong { font-weight: 600; }
+.talkloop .tease { display: none; }
+@media (prefers-reduced-motion: reduce) {
+.talkloop, .talkloop * { animation: none !important; transition: none !important; }
+}
+.talkloop .msg.divider { align-self: center; background: none; border: 0; box-shadow: none; font-size: 0.85em; padding: 4px 0; text-align: center; color: var(--muted); }
+.talkloop .msg.divider::after { content: none; }
+.talkloop .office-scene { flex: none; padding: 0 16px; }
+.talkloop .office-scene[hidden] { display: none; }
+.talkloop .os-3d { position: relative; aspect-ratio: 16 / 9; max-height: 340px; margin: 0 auto; overflow: hidden; border-radius: 14px; border: 1px solid var(--border); background: #dfe6ec; }
+@media (max-height: 760px) {
+.talkloop .os-3d { max-height: 230px; }
+}
+.talkloop .os-3d canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+.talkloop .os-photo-waves {
+  position: absolute; right: 10px; bottom: 10px; z-index: 1; font: 700 12px system-ui, sans-serif; color: #fff;
+  background: rgba(0, 0, 0, 0.6); padding: 4px 10px; border-radius: 999px; opacity: 0; transition: opacity 0.2s;
+}
+.talkloop .office-scene.you-talking .os-photo-waves { opacity: 1; }
+.talkloop {}
+@keyframes aurora {
+  0% { transform: translate3d(0, 0, 0) rotate(0deg); }
+  50% { transform: translate3d(3vmax, -2vmax, 0) rotate(6deg); }
+  100% { transform: translate3d(-3vmax, 2vmax, 0) rotate(-4deg); }
+}
+.talkloop h1, .talkloop h2, .talkloop .caller-name { font-family: var(--display); letter-spacing: -.025em; }
+.talkloop h1 { font-size: 2.3rem; line-height: 1.05; background: linear-gradient(120deg, var(--text) 30%, var(--accent) 75%, var(--accent-2) 100%);
+  -webkit-background-clip: text; background-clip: text; color: transparent; }
+.talkloop .eyebrow { display: inline-flex; align-items: center; gap: 8px; letter-spacing: .14em; font-size: 11px; }
+.talkloop .eyebrow::before { content: ""; width: 6px; height: 6px; border-radius: 99px; background: var(--accent-2); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent-2) 25%, transparent), 0 0 12px var(--accent-2); }
+.talkloop .stats span { background: var(--surface); border-color: var(--edge); -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px); }
+.talkloop .card { background: var(--surface); border-color: var(--edge); border-radius: 20px; box-shadow: var(--shadow-lg);
+  -webkit-backdrop-filter: saturate(160%) blur(18px); backdrop-filter: saturate(160%) blur(18px); }
+.talkloop .explorer { background: color-mix(in srgb, var(--surface-solid) 92%, transparent); }
+.talkloop select, .talkloop input { background: color-mix(in srgb, var(--surface-solid) 70%, transparent); border-radius: 12px; }
+.talkloop select:focus, .talkloop input:focus { box-shadow: 0 0 0 3px var(--accent-soft), 0 0 18px -4px var(--accent); }
+.talkloop button { background: var(--surface); border-color: var(--border); border-radius: 12px; }
+.talkloop button.primary { background: var(--grad); color: #fff; border-color: transparent; box-shadow: var(--glow); }
+@media (hover: hover) {
+.talkloop button:not(:disabled):hover { border-color: var(--edge); }
+}
+.talkloop #start { min-height: 54px; border-radius: 16px; font-family: var(--display); font-size: 1.05rem; letter-spacing: .01em; }
+.talkloop .umlauts button[aria-pressed="true"] { background: var(--grad); color: #fff; }
+.talkloop .call {
+  background:
+    radial-gradient(60vmax 40vmax at 10% 0%, var(--aurora-1), transparent 60%),
+    radial-gradient(50vmax 40vmax at 100% 20%, var(--aurora-2), transparent 60%),
+    var(--bg);
+}
+.talkloop .call-head, .talkloop .call-dock, .talkloop .topic-words { background: color-mix(in srgb, var(--surface-solid) 55%, transparent); border-color: var(--edge);
+  -webkit-backdrop-filter: saturate(180%) blur(22px); backdrop-filter: saturate(180%) blur(22px); }
+.talkloop .call-scroll { background: transparent; }
+.talkloop .avatar { position: relative; background: var(--grad); color: #fff; font-family: var(--display); box-shadow: var(--glow); }
+.talkloop .avatar::after { content: ""; position: absolute; inset: -4px; border-radius: 50%; border: 1.5px solid color-mix(in srgb, var(--accent-2) 60%, transparent); opacity: .5; }
+.talkloop .call[data-state="speaking"] .avatar { animation: orb 1.4s ease-in-out infinite; }
+.talkloop .call[data-state="speaking"] .avatar::after { animation: ring 1.4s ease-out infinite; }
+@keyframes orb { 0%, 100% { box-shadow: 0 0 0 0 rgba(124, 92, 255, .55), var(--glow); } 50% { box-shadow: 0 0 26px 6px rgba(124, 92, 255, .45), var(--glow); } }
+@keyframes ring { from { transform: scale(1); opacity: .8; } to { transform: scale(1.45); opacity: 0; } }
+.talkloop .call-state { display: inline-flex; align-items: center; gap: 6px; background: var(--tint); border-color: var(--edge); font-weight: 600; letter-spacing: .02em; }
+.talkloop .call-state::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: currentColor; box-shadow: 0 0 10px currentColor; }
+.talkloop .call[data-state="listening"] .call-state { color: var(--accent-2); }
+.talkloop .call[data-state="speaking"] .call-state { color: var(--accent); }
+.talkloop .call[data-state="listening"] .call-state::before, .talkloop .call[data-state="speaking"] .call-state::before { animation: blink 1s ease-in-out infinite; }
+@keyframes blink { 50% { opacity: .35; } }
+.talkloop .msg.character { background: color-mix(in srgb, var(--surface-solid) 70%, transparent); border-color: var(--edge);
+  -webkit-backdrop-filter: blur(16px); backdrop-filter: blur(16px); }
+.talkloop .msg.learner { background: var(--grad); color: #fff; box-shadow: var(--glow); }
+.talkloop .msg.learner .who, .talkloop .msg.learner .translation, .talkloop .msg.learner .voice-note { color: rgba(255, 255, 255, .78); }
+.talkloop .msg.learner .tools button { border-color: rgba(255, 255, 255, .4); }
+.talkloop #transcript > li { animation: msgIn .35s cubic-bezier(.2, .9, .3, 1.1) both; }
+@keyframes msgIn { from { opacity: 0; transform: translateY(8px) scale(.98); } to { opacity: 1; transform: none; } }
+.talkloop .word.speaking { background: var(--grad); color: #fff; border-radius: 4px; box-shadow: 0 0 12px -2px var(--accent); }
+.talkloop .coach { background: color-mix(in srgb, var(--surface-solid) 70%, transparent); }
+.talkloop .chips button { background: var(--tint); border-color: var(--edge); }
+.talkloop .round svg { background: color-mix(in srgb, var(--surface-solid) 60%, transparent); border-color: var(--edge); box-shadow: var(--shadow-lg);
+  -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px); }
+.talkloop .mic svg { background: var(--grad); border-color: transparent; color: #fff; box-shadow: var(--glow); }
+.talkloop .mic[aria-pressed="true"] svg { background: linear-gradient(135deg, #22D3EE, #7C5CFF); color: #fff; animation: sonar 1.6s ease-out infinite; }
+@keyframes sonar {
+  0% { box-shadow: 0 0 0 0 rgba(34, 211, 238, .55), 0 0 0 0 rgba(124, 92, 255, .4), var(--glow); }
+  100% { box-shadow: 0 0 0 16px rgba(34, 211, 238, 0), 0 0 0 30px rgba(124, 92, 255, 0), var(--glow); }
+}
+.talkloop .end svg { background: linear-gradient(135deg, #FB7185, #E11D48); border-color: transparent; color: #fff; box-shadow: 0 10px 30px -8px rgba(225, 29, 72, .7); }
+.talkloop .pause[aria-pressed="true"] svg { background: var(--text); color: var(--bg); }
+.talkloop .focus-word.current { background: var(--grad); color: #fff; border-color: transparent; box-shadow: var(--glow); }
+.talkloop .tw-word { background: var(--tint); border-color: var(--edge); }
+.talkloop .say-this { background: var(--accent-soft); border-color: var(--edge); box-shadow: 0 0 24px -10px var(--accent); }
+.talkloop .drill { -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px); }
+@media (max-width: 560px) {
+.talkloop h1 { font-size: 1.9rem; }
+}
+@media (prefers-reduced-motion: reduce) {
+.talkloop #transcript > li, .talkloop .avatar, .talkloop .avatar::after, .talkloop .mic[aria-pressed="true"] svg, .talkloop .call-state::before { animation: none !important; }
+}
+
+/* ---- inside the app ---- */
+/* The page sits in the app's content column, which already has its padding. */
+.talkloop { padding: 0; margin: 0 auto; max-width: none; }
+/* On a wide screen a call sits under the app's header (62px); on a phone it is the whole
+   screen, and the header and tab bar step aside (body.in-call, see trainer.css). */
+@media (min-width: 761px) {
+  .talkloop .call { top: calc(62px + env(safe-area-inset-top)); height: calc(var(--vvh, 100dvh) - 62px - env(safe-area-inset-top)); z-index: 20; }
+}
+@media (max-width: 760px) {
+  .talkloop .call { z-index: 40; }
+}

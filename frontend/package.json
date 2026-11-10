@@ -1,0 +1,25 @@
+{
+  "name": "wortschatz-frontend",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Wortschatz (vocab trainer) and Talkloop (speaking practice) as one React app. `npm run build` writes it into the Spring Boot jar's static folder (target/classes/static).",
+  "scripts": {
+    "dev": "node scripts/run-vite.mjs dev",
+    "build": "node scripts/run-vite.mjs build"
+  },
+  "dependencies": {
+    "react": "18.3.1",
+    "react-dom": "18.3.1",
+    "three": "0.170.0"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "4.3.4",
+    "vite": "5.4.11"
+  },
+  "overrides": {
+    "rollup": "npm:@rollup/wasm-node@4.27.4",
+    "esbuild": "npm:esbuild-wasm@0.21.5"
+  },
+  "comment": "rollup and esbuild run as WebAssembly: Windows Application Control blocks their native binaries, and the wasm builds work the same everywhere (Windows, Docker, CI)."
+}

@@ -1,7 +1,10 @@
 // Talkloop client: speech in, AI character turn out, spoken back with word highlighting.
-import { hasPiperVoice, piperLoaded, piperReady, loadPiperVoice, piperSpeak, MOODS } from "./piper.js?v=5"; // bump with piper.js changes so no browser pairs this file with an old copy
+import { hasPiperVoice, piperLoaded, piperReady, loadPiperVoice, piperSpeak, MOODS } from "@static/talkloop/piper.js";
+import { ui, addMessage, updateMessage, clearTranscript, WordTrack, NO_WORDS, refs } from "./ui.js";
+import { LANGUAGES, SCENE_OPTIONS, PROVIDERS } from "./options.js";
 
-const $ = (id) => document.getElementById(id);
+// The locale of the language picked on the setup screen.
+const selectedLocale = () => LANGUAGES.find((l) => l.value === ui.get().form.language)?.locale;
 
 const state = {
   settings: null,
@@ -56,8 +59,7 @@ function bumpStreak() {
 }
 
 function renderStats() {
-  $("streak").textContent = `🔥 ${store.get("streak", { count: 0 }).count}`;
-  $("rapport").textContent = `♥ ${state.rapport}`;
+  ui.merge("stats", { streak: store.get("streak", { count: 0 }).count, rapport: state.rapport });
 }
 
 // ---------- AI services (called directly from the browser with the user's own keys) ----------
@@ -613,9 +615,13 @@ function trainerSession() {
 }
 
 // The trainer's login screen, which comes back here once logged in.
+// Talkloop is part of the Vocab Trainer app: without a login it shows the app's login screen,
+// which brings the learner back here (see setLoggedOutHandler).
+let onLoggedOut = () => location.replace("/#talkloop");
+export function setLoggedOutHandler(fn) { onLoggedOut = fn; }
 function goToLogin() {
   try { localStorage.removeItem(TRAINER_SESSION_KEY); } catch { /* storage blocked */ }
-  location.replace("/#talkloop");
+  onLoggedOut();
 }
 
 async function linkFromTrainerSession() {
@@ -951,43 +957,33 @@ function liveQueueTopicWords() {
 }
 
 // The panel beside the call. `flash` lists words just ticked, for a short highlight.
+// The panel beside the call (components/CallScreen.jsx, TopicWords). `flash` lists words just
+// ticked, for a short highlight.
 function renderTopicWords(flash = []) {
-  const box = $("topic-words");
-  if (!box) return;
   const tw = state.settings?.topicWords;
   const subjectless = !tw && (state.settings?.vocab?.enabled || Boolean(trainerLink())) && MODES[state.settings?.request?.mode]?.subjects;
-  if (!tw && !subjectless) { box.hidden = true; return; }
-  box.hidden = false;
+  if (!tw && !subjectless) { ui.set({ topicWords: null }); return; }
   const words = tw?.words ?? [];
   const used = words.filter((w) => w.status === "used").length;
-  $("tw-count").textContent = words.length ? `${used} / ${words.length}` : "";
-  $("tw-sub").textContent = !tw
-    ? "Words appear once a subject comes up."
-    : !words.length
-      ? tw.source === "ai" ? "None of your words fit this one: just talk!" : "Looking for your words that fit…"
-      : tw.source === "ai" ? "Your learnt words that fit. Use them where they come naturally." : "Quick match: refining…";
-  const list = $("tw-list");
-  list.replaceChildren(...words.map((w) => {
-    const li = document.createElement("li");
-    li.className = `tw-word ${w.status}` + (flash.includes(w.de) ? " flash" : "");
-    const mark = document.createElement("span");
-    mark.className = "tw-mark";
-    mark.textContent = w.status === "used" ? "✓" : "○";
-    const de = document.createElement("span");
-    de.className = "tw-de";
-    de.textContent = w.de;
-    de.lang = state.settings?.locale ?? "de-DE";
-    const en = document.createElement("span");
-    en.className = "tw-en";
-    en.textContent = w.en;
-    const more = document.createElement("span");
-    more.className = "tw-more";
-    more.textContent = [w.angle && `💬 ${w.angle}`, w.example && `„${w.example}“`].filter(Boolean).join("  ");
-    li.append(mark, de, en, ...(more.textContent ? [more] : []));
-    li.tabIndex = 0;
-    li.addEventListener("click", () => li.classList.toggle("open"));
-    return li;
-  }));
+  ui.set({
+    topicWords: {
+      count: words.length ? `${used} / ${words.length}` : "",
+      sub: !tw
+        ? "Words appear once a subject comes up."
+        : !words.length
+          ? tw.source === "ai" ? "None of your words fit this one: just talk!" : "Looking for your words that fit…"
+          : tw.source === "ai" ? "Your learnt words that fit. Use them where they come naturally." : "Quick match: refining…",
+      lang: state.settings?.locale ?? "de-DE",
+      words: words.map((w) => ({
+        de: w.de,
+        en: w.en,
+        status: w.status,
+        more: [w.angle && `💬 ${w.angle}`, w.example && `„${w.example}“`].filter(Boolean).join("  "),
+      })),
+      flash,
+      flashAt: flash.length ? Date.now() : ui.get().topicWords?.flashAt ?? 0,
+    },
+  });
 }
 
 // After a call: which panel words were used, and the unused ones get a head start next time.
@@ -1216,7 +1212,6 @@ function peekTodayWord(de) {
 
 // After a call: what was said, tried and not reached, under "Start a conversation".
 function renderRecap() {
-  const box = $("recap");
   const status = todayWords?.status ?? {};
   const said = Object.entries(status).filter(([, s]) => s.correct && !s.peeked).map(([de]) => de);
   const tried = Object.entries(status).filter(([de]) => !said.includes(de)).map(([de]) => de);
@@ -1224,51 +1219,20 @@ function renderRecap() {
   // A Dolmetscher call: its sentences instead (one said wrong, then right, counts as right).
   const sentences = state.settings?.sayStats;
   if (sentences && (sentences.right.length || sentences.again.length)) {
-    renderSentenceRecap(box, sentences.right, sentences.again.filter((s) => !sentences.right.includes(s)));
+    renderSentenceRecap(null, sentences.right, sentences.again.filter((s) => !sentences.right.includes(s)));
     return;
   }
-  const topic = topicWordsRecap();
-  if (!said.length && !tried.length && !topic) {
-    box.hidden = true;
+  if (!said.length && !tried.length) {
+    ui.set({ recap: null });
     return;
   }
   const automatic = Object.values(store.get("spoken", {})).filter((s) => s.stage >= 4).length;
-  const line = (label, words) => {
-    if (!words.length) return null;
-    const p = document.createElement("p");
-    const b = document.createElement("strong");
-    b.textContent = `${label}: `;
-    p.append(b, words.join(", "));
-    return p;
-  };
-  const head = document.createElement("h3");
-  head.textContent = "Last call";
-  const total = document.createElement("p");
-  total.className = "muted";
-  total.textContent = `${automatic} word${automatic === 1 ? "" : "s"} automatic so far. Words come back after 1, 3, 7 and 21 days.`;
-  const topicLines = topic
-    ? [line(`Topic words used ${topic.used.length}/${topic.total} ✓`, topic.used.length ? topic.used : ["none yet"]), line("Topic words for next time", topic.unused)]
-    : [];
-  box.replaceChildren(head, ...[line("Said ✓", said), line("Practise again", tried), line("Not reached", missed), ...topicLines].filter(Boolean), total);
-  box.hidden = false;
+  ui.set({ recap: { kind: "words", said, tried, missed, automatic } });
 }
 
 function renderSentenceRecap(box, right, again) {
   const learnt = Object.values(store.get("sentences", {})).filter((s) => s.stage >= 4).length;
-  const head = document.createElement("h3");
-  head.textContent = "Last call";
-  const line = (label, list) => {
-    const p = document.createElement("p");
-    const b = document.createElement("strong");
-    b.textContent = `${label} (${list.length}): `;
-    p.append(b, list.join(" · "));
-    return p;
-  };
-  const total = document.createElement("p");
-  total.className = "muted";
-  total.textContent = `${learnt} sentence${learnt === 1 ? "" : "s"} learnt so far. Sentences come back after 1, 3, 7 and 21 days; the ones to practise come back tomorrow.`;
-  box.replaceChildren(head, ...[right.length && line("Said ✓", right), again.length && line("Practise again", again)].filter(Boolean), total);
-  box.hidden = false;
+  ui.set({ recap: { kind: "sentences", right, again, learnt } });
 }
 
 const scheduleSyncs = {}; // the sync in flight per schedule, if any
@@ -2090,7 +2054,7 @@ const DEBUG = new URLSearchParams(location.search).has("debug");
 const debugStart = Date.now();
 function debugLog(text) {
   if (!DEBUG) return;
-  let box = $("debug-log");
+  let box = document.getElementById("debug-log");
   if (!box) {
     box = document.createElement("pre");
     box.id = "debug-log";
@@ -2105,8 +2069,7 @@ function debugLog(text) {
 
 // What the mic has heard so far, with Edit and Delete while it can still be changed.
 function showHeard(text) {
-  $("live").textContent = text;
-  $("heard").hidden = !text;
+  ui.set({ heard: text });
 }
 
 function startListening() {
@@ -2185,8 +2148,8 @@ function afterListening(spoken) {
   } else if (spoken && !state.autoSend) {
     // Manual send: collect what was said in the text box and keep listening for more.
     // It goes out when the Send button is tapped.
-    const input = $("text");
-    input.value = `${input.value.trim()} ${spoken}`.trim();
+    const input = refs.text;
+    if (input) input.value = `${input.value.trim()} ${spoken}`.trim();
     setStatus("Tap Send when you're done.");
     maybeResumeListening();
   } else if (spoken) {
@@ -2273,8 +2236,7 @@ function stopListening() {
 }
 
 function setMic(on) {
-  $("mic").setAttribute("aria-pressed", String(on));
-  $("mic").querySelector(".round-label").textContent = on ? "Listening" : "Talk";
+  ui.merge("mic", { on, label: on ? "Listening" : "Talk" });
   updateCallState();
 }
 
@@ -2406,10 +2368,11 @@ function rememberTts(text, audio) {
 // it into memory), showing progress on the setup screen and in the call.
 const piperLoads = new Map(); // locale -> Promise
 function setVoiceStatus(text) {
-  $("voice-status").textContent = text;
-  const inCall = !$("conversation").hidden;
-  const mine = $("status").textContent.startsWith("Voice:");
-  if (inCall && !state.busy && !state.paused && (mine || !$("status").textContent)) setStatus(text);
+  ui.set({ voiceStatus: text });
+  const inCall = ui.get().view.call;
+  const status = ui.get().status;
+  const mine = status.startsWith("Voice:");
+  if (inCall && !state.busy && !state.paused && (mine || !status)) setStatus(text);
   else if (!text && mine) setStatus("");
 }
 function preloadPiper(locale) {
@@ -2422,9 +2385,9 @@ function preloadPiper(locale) {
       setVoiceStatus(`Voice: downloading (one time) ${mb(got)}${total ? ` / ${mb(total)}` : ""} MB…`);
     }).then(
       (voice) => {
-        if ($("language").selectedOptions[0]?.dataset.locale === locale || state.settings?.locale === locale) {
+        if (selectedLocale() === locale || state.settings?.locale === locale) {
           setVoiceStatus("");
-          $("voice-status").textContent = "✓ Voice ready";
+          ui.set({ voiceStatus: "✓ Voice ready" });
         }
         return voice;
       },
@@ -2441,10 +2404,10 @@ function preloadPiper(locale) {
 
 // Load the voice for the language picked on the setup screen, before the call starts.
 function preloadSelectedVoice() {
-  const locale = $("language").selectedOptions[0]?.dataset.locale;
+  const locale = selectedLocale();
   if (!locale) return;
   if (!hasPiperVoice(locale)) {
-    $("voice-status").textContent = "";
+    ui.set({ voiceStatus: "" });
     return;
   }
   preloadPiper(locale).catch((error) => console.warn("Piper voice failed to load:", error));
@@ -2455,6 +2418,7 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 // Voice order: Piper (open-source, runs on the device, unlimited) → Gemini (small
 // daily free quota) → the browser's built-in voice.
 async function speak(text, wordSpans, onDone, mood = "neutral") {
+  if (!wordSpans || Array.isArray(wordSpans)) wordSpans = NO_WORDS; // [] used to mean "no words to highlight"
   stopSpeaking();
   const token = speakToken;
   const locale = state.settings.locale;
@@ -2544,8 +2508,7 @@ async function speak(text, wordSpans, onDone, mood = "neutral") {
 function startHighlight(wordSpans, elapsedFn, duration) {
   if (!wordSpans.length) return null;
   return setInterval(() => {
-    const i = Math.min(wordSpans.length - 1, Math.floor((elapsedFn() / duration) * wordSpans.length));
-    wordSpans.forEach((span, idx) => span.classList.toggle("speaking", idx === i));
+    wordSpans.highlight(Math.min(wordSpans.length - 1, Math.floor((elapsedFn() / duration) * wordSpans.length)));
   }, 80);
 }
 
@@ -2580,7 +2543,7 @@ async function playCloudAudio(pcm, sampleRate, wordSpans, onDone, onFail) {
 
   const clear = () => {
     if (currentHighlight) { clearInterval(currentHighlight); currentHighlight = null; }
-    wordSpans.forEach((span) => span.classList.remove("speaking"));
+    wordSpans.clear();
   };
   const src = ctx.createBufferSource();
   src.buffer = buffer;
@@ -2607,11 +2570,10 @@ function playCloudAudioWav(pcm, sampleRate, wordSpans, onDone, onFail) {
   currentAudio = audio;
   audio.ontimeupdate = () => {
     if (!audio.duration || !wordSpans.length) return;
-    const i = Math.min(wordSpans.length - 1, Math.floor((audio.currentTime / audio.duration) * wordSpans.length));
-    wordSpans.forEach((span, idx) => span.classList.toggle("speaking", idx === i));
+    wordSpans.highlight(Math.min(wordSpans.length - 1, Math.floor((audio.currentTime / audio.duration) * wordSpans.length)));
   };
   const clear = () => {
-    wordSpans.forEach((span) => span.classList.remove("speaking"));
+    wordSpans.clear();
     URL.revokeObjectURL(url);
   };
   audio.onended = () => { clear(); onDone(); };
@@ -2635,13 +2597,10 @@ async function browserSpeak(text, rate, wordSpans, onDone) {
   utterance.pitch = 1;
   utterance.onboundary = (event) => {
     if (event.name && event.name !== "word") return;
-    wordSpans.forEach((span) => span.classList.toggle(
-      "speaking",
-      event.charIndex >= Number(span.dataset.start) && event.charIndex < Number(span.dataset.end),
-    ));
+    wordSpans.highlightAt(event.charIndex);
   };
   const clear = () => {
-    wordSpans.forEach((span) => span.classList.remove("speaking"));
+    wordSpans.clear();
     if (typeof onDone === "function") onDone();
   };
   utterance.onend = clear;
@@ -2653,7 +2612,7 @@ function stopSpeaking() {
   speakToken++;
   setSpeaking(false);
   if (currentHighlight) { clearInterval(currentHighlight); currentHighlight = null; }
-  document.querySelectorAll(".word.speaking").forEach((span) => span.classList.remove("speaking"));
+  ui.set((s) => ({ transcript: s.transcript.map((m) => (m.speaking === -1 ? m : { ...m, speaking: -1 })) }));
   if (currentSource) {
     try { currentSource.onended = null; currentSource.stop(); } catch { /* already stopped */ }
     currentSource = null;
@@ -2667,26 +2626,6 @@ function stopSpeaking() {
 }
 
 // ---------- transcript rendering ----------
-function wordify(container, text, sentence) {
-  const spans = [];
-  // Split into word and non-word runs while keeping character offsets for TTS boundaries.
-  for (const match of text.matchAll(/[\p{L}\p{M}'’-]+|[^\p{L}\p{M}'’-]+/gu)) {
-    const chunk = match[0];
-    if (/\p{L}/u.test(chunk)) {
-      const span = document.createElement("span");
-      span.className = "word";
-      span.textContent = chunk;
-      span.dataset.start = String(match.index);
-      span.dataset.end = String(match.index + chunk.length);
-      onTap(span, () => openExplorer(chunk, sentence), { selectable: true });
-      container.append(span);
-      spans.push(span);
-    } else {
-      container.append(document.createTextNode(chunk));
-    }
-  }
-  return spans;
-}
 
 // ---------- surviving a reload ----------
 // A phone browser may reload the page mid-call (to free memory, or after the screen was
@@ -2865,7 +2804,7 @@ async function resumeCall(snap, { note, refreshWords = false } = {}) {
     chatId = snap.chatId ?? snap.id ?? null;
     chatStarted = snap.started ?? snap.at;
     state.autoSend = true; // each chat starts on auto-send (the switch in the call changes it for that chat only)
-    $("auto-send").checked = true;
+    ui.set({ autoSend: true });
     todayWords = snap.today ?? null;
     callLog = [];
     const { vocab } = state.settings;
@@ -2878,10 +2817,9 @@ async function resumeCall(snap, { note, refreshWords = false } = {}) {
     if (refreshWords && learnt && localDay(snap.at) !== localDay()) {
       pickTodayWords(learnt.filter((w) => vocab.levels.includes(w.level)));
     }
-    $("setup").hidden = true;
-    $("keygate").hidden = true;
+    ui.merge("view", { setup: false, keygate: false });
     enterCall();
-    if (todayWords?.situation) $("call-mode").textContent = `Sentence drill · ${todayWords.situation}`;
+    if (todayWords?.situation) ui.merge("call", { mode: `Sentence drill · ${todayWords.situation}` });
     for (const entry of snap.log) {
       if ("you" in entry) addLearnerMessage(entry.you);
       else addCharacterMessage(entry, { silent: true });
@@ -2931,38 +2869,9 @@ function deleteChat(id) {
 }
 
 // The list on the setup screen, newest first.
+// The list on the setup screen (components/Chats.jsx reads topicChats()).
 function renderChats() {
-  const chats = topicChats();
-  $("chats").hidden = chats.length === 0;
-  $("chats-summary").textContent = `Chat history (${chats.length})`;
-  const list = $("chat-list");
-  list.replaceChildren();
-  for (const chat of chats) {
-    const li = document.createElement("li");
-    li.className = "chat-item";
-    const open = document.createElement("button");
-    open.type = "button";
-    open.className = "chat-open";
-    const title = document.createElement("strong");
-    title.textContent = chat.topic;
-    const meta = document.createElement("span");
-    meta.className = "muted";
-    const said = chat.log.filter((e) => "you" in e).length;
-    const when = new Date(chat.at).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
-    meta.textContent = `${said} message${said === 1 ? "" : "s"} from you · ${when}`;
-    open.append(title, document.createElement("br"), meta);
-    open.addEventListener("click", () => openChat(chat.id));
-    const del = document.createElement("button");
-    del.type = "button";
-    del.className = "chat-del";
-    del.setAttribute("aria-label", "Delete this chat");
-    del.textContent = "×";
-    del.addEventListener("click", () => {
-      if (confirm("Delete this chat?")) deleteChat(chat.id);
-    });
-    li.append(open, del);
-    list.append(li);
-  }
+  ui.bump("chatsVersion");
 }
 
 // A reply's translation, for one that came without (a Gemini Live call speaks, it writes none).
@@ -2977,53 +2886,22 @@ async function translateReply(text) {
   return typeof raw?.translation === "string" ? raw.translation : "";
 }
 
+const messageEntries = new Map(); // message id -> its callLog entry (Translate keeps the translation with the call)
 function addCharacterMessage(turn, { silent = false } = {}) {
   const entry = { reply: turn.reply, reply_translation: turn.reply_translation, mood: turn.mood };
   callLog.push(entry);
   saveCall();
-  const li = document.createElement("li");
-  li.className = "msg character";
-  const who = document.createElement("span");
-  who.className = "who";
-  who.textContent = state.settings.characterName;
-  const line = document.createElement("div");
-  const spans = wordify(line, turn.reply, turn.reply);
-
-  const translation = document.createElement("div");
-  translation.className = "translation";
-  translation.textContent = turn.reply_translation;
-  translation.hidden = true;
-
-  const tools = document.createElement("div");
-  tools.className = "tools";
-  const replay = document.createElement("button");
-  replay.textContent = "▶ Replay";
-  // onTap so these work mid-typing without dropping the keyboard.
-  onTap(replay, () => speak(turn.reply, spans, null, turn.mood));
-  const translate = document.createElement("button");
-  translate.textContent = "Translate";
-  onTap(translate, async () => {
-    if (!translation.hidden || translation.textContent) {
-      translation.hidden = !translation.hidden;
-      return;
-    }
-    // Translated on the first tap, then kept with the call.
-    translate.disabled = true;
-    translate.textContent = "Translating…";
-    try {
-      translation.textContent = entry.reply_translation = await translateReply(turn.reply);
-      translation.hidden = !translation.textContent;
-      saveCall();
-    } catch (error) {
-      debugLog(`translate: ${error.message}`);
-    }
-    translate.disabled = false;
-    translate.textContent = "Translate";
+  const id = addMessage({
+    kind: "character",
+    who: state.settings.characterName,
+    text: turn.reply,
+    translation: turn.reply_translation ?? "",
+    showTranslation: false,
+    translating: false,
+    mood: turn.mood,
   });
-  tools.append(replay, translate);
-
-  li.append(who, line, translation, tools);
-  $("transcript").append(li);
+  messageEntries.set(id, entry);
+  const spans = new WordTrack(id, turn.reply);
   scrollCallToBottom();
   if (silent) return; // restored after a reload: shown, not spoken again
   // A reply that arrives while the call is paused is spoken on resume.
@@ -3035,6 +2913,34 @@ function addCharacterMessage(turn, { silent = false } = {}) {
   speak(turn.reply, spans, () => maybeResumeListening(), turn.mood);
 }
 
+// ▶ Replay under a reply.
+function replayMessage(id) {
+  const m = ui.get().transcript.find((x) => x.id === id);
+  if (m) speak(m.text, new WordTrack(id, m.text), null, m.mood);
+}
+
+// Translate under a reply: translated on the first tap and kept with the call; later taps
+// show or hide it.
+async function translateMessage(id) {
+  const m = ui.get().transcript.find((x) => x.id === id);
+  if (!m || m.translating) return;
+  if (m.showTranslation || m.translation) {
+    updateMessage(id, { showTranslation: !m.showTranslation });
+    return;
+  }
+  updateMessage(id, { translating: true });
+  try {
+    const translation = await translateReply(m.text);
+    const entry = messageEntries.get(id);
+    if (entry) entry.reply_translation = translation;
+    updateMessage(id, { translation, showTranslation: Boolean(translation) });
+    saveCall();
+  } catch (error) {
+    debugLog(`translate: ${error.message}`);
+  }
+  updateMessage(id, { translating: false });
+}
+
 function maybeResumeListening() {
   if (state.handsFree && !state.finished && !state.paused && !recognizer) {
     startListening();
@@ -3044,42 +2950,16 @@ function maybeResumeListening() {
 function addLearnerMessage(text) {
   callLog.push({ you: text });
   saveCall();
-  const li = document.createElement("li");
-  li.className = "msg learner";
-  const who = document.createElement("span");
-  who.className = "who";
-  who.textContent = "You";
-  li.append(who, document.createTextNode(text));
-  $("transcript").append(li);
+  addMessage({ kind: "learner", who: "You", text });
   scrollCallToBottom();
 }
 
 function renderCoach(coach) {
-  const box = $("coach");
-  box.replaceChildren();
-  box.classList.remove("expanded");
   if (!coach.correction && !coach.tip && coach.understood) {
-    box.hidden = true;
+    ui.set({ coach: null });
     return;
   }
-  box.hidden = false;
-  box.classList.toggle("has-correction", Boolean(coach.correction));
-  if (!coach.understood) {
-    const p = document.createElement("p");
-    p.textContent = "That didn't quite land. Try one of the suggestions below.";
-    box.append(p);
-  }
-  if (coach.correction) {
-    const p = document.createElement("p");
-    p.innerHTML = "<strong>More natural:</strong> ";
-    p.append(document.createTextNode(coach.correction));
-    box.append(p);
-  }
-  if (coach.tip) {
-    const p = document.createElement("p");
-    p.textContent = coach.tip;
-    box.append(p);
-  }
+  ui.set({ coach: { understood: coach.understood, correction: coach.correction ?? "", tip: coach.tip ?? "", notes: [], expanded: false } });
 }
 
 // Run handler on a tap without taking focus from the text box. A button would otherwise
@@ -3089,28 +2969,12 @@ function renderCoach(coach) {
 // row or the transcript) and a long press is text selection, so neither counts as a tap.
 // click covers mouse and keyboard activation, unless the button submits the form, whose
 // submit handler covers those instead. selectable keeps text selectable with the mouse.
-function onTap(el, handler, { click = true, selectable = false } = {}) {
-  let start = null;
-  if (!selectable) el.addEventListener("mousedown", (event) => event.preventDefault());
-  el.addEventListener("touchstart", (event) => {
-    const t = event.touches[0];
-    start = { x: t.clientX, y: t.clientY, at: Date.now() };
-  }, { passive: true });
-  el.addEventListener("touchend", (event) => {
-    const t = event.changedTouches[0];
-    const tap = start && Math.hypot(t.clientX - start.x, t.clientY - start.y) <= 10 && Date.now() - start.at < 500;
-    start = null;
-    if (!tap) return;
-    event.preventDefault();
-    handler();
-  });
-  if (click) el.addEventListener("click", handler);
-}
 
 // Put a suggestion into the text box, ready to edit or send, with the caret at the end.
 // The keyboard is only kept up if it already was: a suggestion never pops it open.
 function useSuggestion(text) {
-  const input = $("text");
+  const input = refs.text;
+  if (!input) return;
   input.value = text;
   if (!document.body.classList.contains("typing")) return;
   input.focus();
@@ -3118,95 +2982,75 @@ function useSuggestion(text) {
 }
 
 function renderSuggestions(suggestions) {
-  const box = $("suggestions");
-  box.replaceChildren();
-  for (const text of suggestions) {
-    const chip = document.createElement("button");
-    chip.type = "button";
-    chip.textContent = text;
-    onTap(chip, () => useSuggestion(text));
-    box.append(chip);
-  }
+  ui.set({ suggestions: [...(suggestions ?? [])] });
 }
 
 function renderFocusWords(words) {
-  const box = $("focus");
-  if (!box) return;
   if (todayWords) {
-    renderTodayWords(box);
+    renderTodayWords();
     return;
   }
   if (!words || !words.length) {
-    box.hidden = true;
-    box.replaceChildren();
+    ui.set({ focus: null });
     return;
   }
-  box.hidden = false;
-  box.replaceChildren();
-  const label = document.createElement("span");
-  label.className = "focus-label";
-  label.textContent = state.settings?.vocab?.learnt ? "Your words: " : "Practising: ";
-  box.append(label);
-  for (const w of words) {
-    const chip = document.createElement("span");
-    chip.className = "focus-word";
-    chip.textContent = w.de;
-    chip.title = w.en;
-    box.append(chip);
-  }
+  ui.set({
+    focus: {
+      label: state.settings?.vocab?.learnt ? "Your words: " : "Practising: ",
+      today: false,
+      words: words.map((w) => ({ key: w.de, text: w.de, title: w.en, cls: "" })),
+    },
+  });
 }
 
 // Today's words as their English cue: the learner recalls the German. A tap shows it
 // (and counts as a miss); a word used shows ✓ (right) or ! (try again).
-function renderTodayWords(box) {
+function renderTodayWords() {
   const { active, status } = todayWords;
-  box.hidden = !active.length;
-  const label = document.createElement("span");
-  label.className = "focus-label";
-  label.textContent = "Say: ";
-  box.replaceChildren(label);
+  if (!active.length) {
+    ui.set({ focus: null });
+    return;
+  }
   // The word being asked for comes first, highlighted, and shows only its cue (even if said
   // before), so it is recalled again rather than read off the chip.
   const current = todayWords.current;
-  for (const w of [...active].sort((a, b) => (b.de === current) - (a.de === current))) {
+  const words = [...active].sort((a, b) => (b.de === current) - (a.de === current)).map((w) => {
     const s = status[w.de];
     const isCurrent = w.de === current;
-    const chip = document.createElement("button");
-    chip.type = "button";
-    chip.className = "focus-word today" + (s?.correct ? " said" : s?.wrong ? " tried" : "") + (isCurrent ? " current" : "");
     const mark = s?.correct ? "✓ " : s?.wrong ? "! " : "";
-    chip.textContent = mark + (s?.peeked || (s?.correct && !isCurrent) ? `${w.en} = ${w.de}` : w.en || w.de);
-    chip.title = s?.peeked ? w.de : "Tap to see the German";
-    onTap(chip, () => {
-      peekTodayWord(w.de);
-      renderTodayWords(box);
-    });
-    box.append(chip);
-  }
+    return {
+      key: w.de,
+      text: mark + (s?.peeked || (s?.correct && !isCurrent) ? `${w.en} = ${w.de}` : w.en || w.de),
+      title: s?.peeked ? w.de : "Tap to see the German",
+      cls: (s?.correct ? " said" : s?.wrong ? " tried" : "") + (isCurrent ? " current" : ""),
+    };
+  });
+  ui.set({ focus: { label: "Say: ", today: true, words } });
+}
+
+// A tap on one of today's words shows its German (and counts as a miss).
+function peekWord(de) {
+  if (!todayWords) return;
+  peekTodayWord(de);
+  renderTodayWords();
 }
 
 // Small note under a message saying the browser voice played, and why (empty clears it).
 let lastVoiceNote = ""; // the reason last shown under a reply; it is only shown again when it changes
 function noteVoice(wordSpans, text) {
-  const li = wordSpans[0]?.closest("li");
-  if (!li) return;
-  let note = li.querySelector(".voice-note");
+  const id = wordSpans?.id;
+  if (id == null) return;
   if (!text) {
-    note?.remove();
+    updateMessage(id, { voiceNote: "" });
     return;
   }
   if (text === lastVoiceNote) return; // the same reason again: no need under every reply
   lastVoiceNote = text;
-  if (!note) {
-    note = document.createElement("div");
-    note.className = "voice-note";
-    li.append(note);
-  }
-  note.textContent = text;
+  updateMessage(id, { voiceNote: text });
 }
 
 function setStatus(text) {
-  $("status").textContent = text;
+  ui.set({ status: text ?? "" });
 }
 
 function setBusy(busy) {
@@ -3215,8 +3059,7 @@ function setBusy(busy) {
   // mid-reply. The text box stays enabled (and focused) so the keyboard — and the compact
   // typing layout — don't collapse, and the learner can start composing their next turn.
   // It's only locked once the scene is finished or the call is on hold.
-  for (const el of $("composer").querySelectorAll("button")) el.disabled = busy || state.finished || state.paused;
-  $("text").disabled = state.finished || state.paused;
+  ui.set({ composer: { buttonsDisabled: busy || state.finished || state.paused, textDisabled: state.finished || state.paused } });
   updateCallState();
 }
 
@@ -3225,10 +3068,11 @@ function setBusy(busy) {
 // keyboard up there's room for only a few lines, and the question being answered should
 // read from its first line rather than be pushed off the top by the coach below it.
 function scrollCallToBottom() {
-  const box = $("call-scroll");
   requestAnimationFrame(() => {
+    const box = refs.callScroll;
+    if (!box) return;
     let top = box.scrollHeight - box.clientHeight;
-    const reply = [...$("transcript").querySelectorAll(".msg.character")].at(-1);
+    const reply = [...box.querySelectorAll(".msg.character")].at(-1);
     if (reply) {
       top = Math.min(top, reply.getBoundingClientRect().top - box.getBoundingClientRect().top + box.scrollTop - 8);
     }
@@ -3253,13 +3097,15 @@ function updateCallState() {
   else if (live) {
     key = !live.ready ? "thinking" : live.speaking ? "speaking" : live.muted ? "idle" : "listening";
     text = !live.ready ? "Connecting…" : live.speaking ? "Speaking…" : live.muted ? "Muted" : "Live — just talk";
+    if (live.ready && !live.speaking && !live.muted && state.drill) { key = "drill"; text = "Say it again"; }
   }
+  else if (isOffice()) { key = "idle"; text = "Working… 💻"; }
   else if (state.busy) { key = "thinking"; text = "Thinking…"; }
   else if (state.speaking) { key = "speaking"; text = "Speaking…"; }
   else if (recognizer) { key = "listening"; text = "Listening…"; }
   else if (state.drill) { key = "drill"; text = "Say it again"; }
-  $("conversation").dataset.state = key;
-  $("call-state").textContent = text;
+  ui.merge("call", { state: key, stateText: text });
+  officeSceneUpdate();
 }
 
 // Call timer; time spent paused doesn't count.
@@ -3271,7 +3117,7 @@ function tickCallTimer() {
   const s = Math.floor(ms / 1000);
   const hh = Math.floor(s / 3600);
   const mmss = `${String(Math.floor(s / 60) % 60).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`;
-  $("call-timer").textContent = hh ? `${hh}:${mmss}` : mmss;
+  ui.merge("call", { timer: hh ? `${hh}:${mmss}` : mmss });
 }
 function runCallTimer() {
   if (callTimer) return;
@@ -3334,23 +3180,16 @@ function setPaused(paused, { byVoice = false } = {}) {
       else maybeResumeListening();
     });
   }
-  const btn = $("pause");
-  btn.setAttribute("aria-pressed", String(paused));
-  btn.title = paused ? "Resume the call" : "Pause the call";
-  btn.querySelector(".round-label").textContent = paused ? "Resume" : "Pause";
-  $("mic").disabled = paused;
+  ui.merge("pause", { on: paused });
+  ui.merge("mic", { disabled: paused });
   setBusy(state.busy);
 }
 
 function enterCall() {
   const { request, characterName } = state.settings;
   const mode = MODES[request.mode] ?? MODES.scene;
-  $("call-avatar").textContent = characterName.split(" ").at(-1).charAt(0); // "Dr. Weber" -> W
-  $("call-name").textContent = characterName;
   const tense = TENSES[request.tense];
-  $("call-mode").textContent = (mode.usesScene
-    ? `${$("scenario").selectedOptions[0].textContent.split(" — ")[0]} · ${request.language}`
-    : `${mode.label.split(" — ")[0]} · ${request.language}`) + (tense ? ` · ${tense.short}` : "");
+  const sceneLabel = (SCENE_OPTIONS.flatMap((g) => g.options).find((o) => o.value === request.scenario)?.label ?? "").split(" — ")[0];
   // The topic being discussed, under the name (also after a reload: it is part of the saved call).
   // A role card is shown the same way, in full from the start (the learner needs all of it).
   const topic = state.settings.topic ?? "";
@@ -3358,28 +3197,31 @@ function enterCall() {
   // A connector drill on one connector shows it with its rule (one line on a phone; a tap shows all).
   const one = mode.joiner && state.settings.connectors?.length === 1 ? state.settings.connectors[0] : null;
   const connector = one ? `„${one.name}“ (${one.en}) — ${one.rule}` : "";
-  $("call-topic").textContent = topic ? `Topic: ${topic}` : card ? `You are: ${card}` : connector;
-  $("call-topic").hidden = !topic && !card && !connector;
-  $("call-topic").classList.toggle("expanded", Boolean(card)); // on a phone it is one line; a tap shows all of it
+  ui.merge("call", {
+    avatar: characterName.split(" ").at(-1).charAt(0), // "Dr. Weber" -> W
+    name: characterName,
+    mode: (mode.usesScene ? `${sceneLabel} · ${request.language}` : `${mode.label.split(" — ")[0]} · ${request.language}`) + (tense ? ` · ${tense.short}` : ""),
+    topic: topic ? `Topic: ${topic}` : card ? `You are: ${card}` : connector,
+    topicOpen: Boolean(card), // on a phone it is one line; a tap shows all of it
+  });
   renderSayThis();
+  officeSceneShow(Boolean(mode.office));
   lastVoiceNote = "";
   document.body.classList.add("in-call");
-  $("conversation").hidden = false;
+  ui.merge("view", { call: true });
   startCallTimer();
   updateCallState();
 }
 
-$("call-topic").addEventListener("click", () => $("call-topic").classList.toggle("expanded"));
-$("tw-head").addEventListener("click", () => {
-  const folded = $("topic-words").classList.toggle("folded");
-  $("tw-head").setAttribute("aria-expanded", String(!folded));
-});
+
+
 
 function leaveCall() {
+  officeSceneShow(false);
   clearInterval(callTimer);
   callTimer = null;
   document.body.classList.remove("in-call");
-  $("conversation").hidden = true;
+  ui.merge("view", { call: false });
 }
 
 // Keep the call screen pinned to the visible area when the phone keyboard opens.
@@ -3480,8 +3322,12 @@ function liveSystemPrompt(settings, recap = []) {
     ...(m.themes && settings.subjects?.length ? [`Start with ${themeByName(settings.subjects[0])?.ask ?? settings.subjects[0]}.`] : []),
     ...(settings.roleCard ? [`The learner's role card (they play this person): ${settings.roleCard}.`] : []),
     "The learner may pause to think: wait for them.",
+    "A message in brackets starting \"(Coach, not the learner:\" comes from the learning app: do what it says, in your own voice and in character, and never mention a coach or an app.",
     // A drill says its corrections out loud; a conversation only recasts, like a native speaker would.
-    ...(drill ? [] : ["If they make a mistake, repeat the right form naturally in your answer, like a friendly native speaker would, without a grammar lesson: the app shows written corrections itself."]),
+    ...(settings.sayAgain
+      // Say it again: Gemini runs it in its one reply, so a correction never costs a second answer.
+      ? ["If their sentence has a real grammar or word-choice mistake (not pronunciation), don't answer it yet: say the correct sentence and briefly ask them to say it once more. When they repeat it, judge it yourself: if it's right (ignore small pronunciation slips), praise it in two or three words and answer it as you normally would; if not, say what's still wrong in a few words, say the correct sentence again and let them try once more. After two misses, just carry on."]
+      : drill ? [] : ["If they make a mistake, repeat the right form naturally in your answer, like a friendly native speaker would, without a grammar lesson: the app shows written corrections itself."]),
   ];
   const t = TENSES[tense];
   if (t) lines.push(`Tense practice: ${t.form}. Use it yourself and ask things whose natural answer needs it (about ${t.ask}).`);
@@ -3589,6 +3435,7 @@ function liveGate(chunk) {
     live.activeAt = Date.now(); // the learner is talking (the Büro doesn't wait for Gemini's transcript)
     if (!live.talking) {
       live.talking = true;
+      officeSceneUpdate();
       live.preroll.forEach(send);
       live.preroll = [];
     }
@@ -3598,12 +3445,33 @@ function liveGate(chunk) {
     send(chunk);
     if (++live.quiet >= LIVE_HANGOVER) {
       live.talking = false;
+      officeSceneUpdate();
       liveSend({ realtimeInput: { audioStreamEnd: true } });
     }
   } else {
     live.preroll.push(chunk);
     if (live.preroll.length > LIVE_PREROLL) live.preroll.shift();
   }
+}
+
+// Gemini's voice goes out through an analyser: how loud it is right now moves the Büro
+// colleague's mouth.
+let liveOut = null; // { ctx, node, analyser, buf }
+function liveOutput(ctx) {
+  if (liveOut?.ctx !== ctx) {
+    const analyser = ctx.createAnalyser();
+    analyser.fftSize = 512;
+    analyser.connect(ctx.destination);
+    liveOut = { ctx, node: analyser, analyser, buf: new Float32Array(analyser.fftSize) };
+  }
+  return liveOut.node;
+}
+function liveVoiceLevel() {
+  if (!liveOut) return 0;
+  liveOut.analyser.getFloatTimeDomainData(liveOut.buf);
+  let sum = 0;
+  for (const v of liveOut.buf) sum += v * v;
+  return Math.min(1, Math.sqrt(sum / liveOut.buf.length) * 4);
 }
 
 // Gemini's voice, played gap-free as its chunks arrive.
@@ -3616,7 +3484,7 @@ function livePlay(b64, mimeType) {
   for (let i = 0; i < pcm.length; i++) data[i] = pcm[i] / 0x8000;
   const src = ctx.createBufferSource();
   src.buffer = buffer;
-  src.connect(ctx.destination);
+  src.connect(liveOutput(ctx));
   const at = Math.max(ctx.currentTime + 0.04, live.playHead);
   src.start(at);
   live.playHead = at + buffer.duration;
@@ -3647,35 +3515,55 @@ function liveFlushLearner() {
   addLearnerMessage(said);
   state.history.push({ role: "user", content: said });
   markTopicWords(said);
-  liveCoach(said, live.lastReply ?? "");
+  if (state.drill?.live) liveDrillAttempt(said);
+  else liveCoach(said, live.lastReply ?? "");
+}
+
+// Say it again in a live call: Gemini asks for the corrected sentence in its own voice, and the
+// learner's next sentence (as Gemini heard it, or typed) is checked against it, not coached.
+function startLiveDrill(said, correction) {
+  state.drill = { target: correction.trim(), said, turn: null, live: true };
+  ui.set({ drill: { target: state.drill.target, lang: state.settings.locale, feedback: "", ok: false } });
+  // No note to Gemini: its system prompt already has it ask for the repeat in the same reply.
+  scrollCallToBottom();
+}
+
 // A note to Gemini from the app (not the learner): it cuts off what it was saying.
 function liveNote(text) {
   liveFlushReply();
   liveStopVoice();
   liveSend({ clientContent: { turns: [{ role: "user", parts: [{ text: `(Coach, not the learner: ${text})` }] }], turnComplete: true } });
 }
+
+// Gemini heard the attempt and answers it itself; the app only decides when to put the panel
+// away: once the attempt matches, or once the learner has clearly moved on to something else.
+function liveDrillAttempt(attempt) {
+  const d = state.drill;
+  if (isSkipCommand(attempt)) { skipDrill(); return; }
+  d.tries = (d.tries ?? 0) + 1;
+  const { ok } = drillMatch(attempt, d.target, d.said);
+  if (ok) {
+    setDrillFeedback(`✓ “${attempt}”`, true);
+    setTimeout(() => { if (state.drill === d) endDrill(); }, 1000);
+  } else if (d.tries >= 3 || similarity(drillWords(attempt), drillWords(d.target)) < 0.5) {
+    endDrill();
+  }
 }
 
 // The partner's words so far, in a bubble that grows while it speaks; saved once its turn is done.
 function liveShowReply() {
-  if (!live.replyLi) {
-    live.replyLi = document.createElement("li");
-    live.replyLi.className = "msg character";
-    const who = document.createElement("span");
-    who.className = "who";
-    who.textContent = state.settings.characterName;
-    live.replyLi.append(who, document.createElement("div"));
-    $("transcript").append(live.replyLi);
+  if (!live.replyId) {
+    live.replyId = addMessage({ kind: "character", who: state.settings.characterName, text: "", plain: true });
   }
-  live.replyLi.lastChild.textContent = live.reply;
+  updateMessage(live.replyId, { text: live.reply });
   scrollCallToBottom();
 }
 
 function liveFlushReply() {
   const reply = live?.reply.trim();
-  live?.replyLi?.remove();
+  if (live?.replyId) ui.set((s) => ({ transcript: s.transcript.filter((m) => m.id !== live.replyId) }));
   if (!live) return;
-  live.replyLi = null;
+  live.replyId = null;
   live.reply = "";
   if (!reply) return;
   live.lastReply = reply;
@@ -3717,8 +3605,7 @@ function liveMessage(msg) {
   if (!c) return;
   if (c.inputTranscription?.text || c.outputTranscription?.text || c.modelTurn) live.activeAt = Date.now();
   if (c.inputTranscription?.text) {
-    live.heard += c.inputTranscription.text;
-    setStatus(`🎤 ${live.heard.trim()}`);
+    live.heard += c.inputTranscription.text; // not shown above the text box; it goes to the chat when the turn ends
   }
   const parts = c.modelTurn?.parts ?? [];
   if (c.outputTranscription?.text || parts.length) liveFlushLearner(); // the learner's turn is over
@@ -3772,6 +3659,7 @@ async function liveCoach(said, partner) {
       const types = turn.coach.mistakes.filter((x) => MISTAKE_TYPES[x]);
       recordMistakes(language, types.length ? [...new Set(types)] : ["other"], said, turn.coach.correction);
       renderMistakes();
+      if (state.settings.sayAgain && !state.drill && drillable(turn.coach.correction, said)) startLiveDrill(said, turn.coach.correction);
     }
   } catch (error) {
     debugLog(`live coach: ${error.message}`);
@@ -3796,7 +3684,7 @@ async function startLive() {
   // handle is cleared when a colleague comes over, and earlier visits are in its memory.
   const handle = callLog.length ? liveHandle() : null;
   const recap = handle ? [] : callLog.slice(office ? state.settings.visitLogStart ?? 0 : 0).slice(-LIVE_RECAP).map((e) => ("you" in e ? `Learner: ${e.you}` : `You: ${e.reply}`));
-  live = { ws: null, stream: null, tap: null, ready: false, muted: false, heard: "", reply: "", replyLi: null, lastReply: "", sources: new Set(), playHead: 0, speaking: false, recap, resumed: Boolean(handle), goingAway: false, micBuf: new Int16Array(LIVE_CHUNK), micLen: 0, micPos: 0, ending: false, floor: null, talking: false, quiet: 0, preroll: [], micSent: 0, micTotal: 0 };
+  live = { ws: null, stream: null, tap: null, ready: false, muted: false, heard: "", reply: "", replyId: null, lastReply: "", sources: new Set(), playHead: 0, speaking: false, recap, resumed: Boolean(handle), goingAway: false, micBuf: new Int16Array(LIVE_CHUNK), micLen: 0, micPos: 0, ending: false, floor: null, talking: false, quiet: 0, preroll: [], micSent: 0, micTotal: 0 };
   setMic(true);
   setStatus(handle ? "Reconnecting the live call…" : "Connecting the live call…");
   try {
@@ -3885,6 +3773,7 @@ function stopLive() {
   const l = live;
   l.ending = true;
   if (l.micTotal) debugLog(`live call: sent ${(l.micSent / 10).toFixed(1)} s of ${(l.micTotal / 10).toFixed(1)} s of mic audio`);
+  if (state.drill?.live) endDrill();
   liveFlushLearner();
   liveFlushReply();
   liveStopVoice();
@@ -3899,8 +3788,7 @@ function stopLive() {
 function setLiveMuted(muted) {
   if (!live) return;
   live.muted = muted;
-  $("mic").setAttribute("aria-pressed", String(!muted));
-  $("mic").querySelector(".round-label").textContent = muted ? "Muted" : "Live";
+  ui.merge("mic", { on: !muted, label: muted ? "Muted" : "Live" });
   setStatus(muted ? "Mic muted: tap 🎤 to talk again." : "");
   updateCallState();
 }
@@ -3912,7 +3800,8 @@ function liveSendText(text) {
   state.history.push({ role: "user", content: text });
   liveStopVoice();
   liveSend({ clientContent: { turns: [{ role: "user", parts: [{ text }] }], turnComplete: true } });
-  liveCoach(text, live.lastReply);
+  if (state.drill?.live) liveDrillAttempt(text);
+  else liveCoach(text, live.lastReply);
 }
 
 // ---------- Büro: colleagues drop by while the learner works ----------
@@ -3923,12 +3812,12 @@ function liveSendText(text) {
 // As in a real German office: most colleagues say du, the boss and the older colleague from
 // accounting say Sie, and the learner has to answer in the same form.
 const OFFICE_COLLEAGUES = [
-  { name: "Lena", voice: "Kore", address: "du", role: "Product Ownerin in deinem Team", style: "organised and direct, talks quickly, thinks in sprints, deadlines and Jira tickets" },
-  { name: "Jonas", voice: "Puck", role: "Backend-Entwickler in deinem Team", address: "du", style: "relaxed and dry, a bit ironic, grumbles about legacy code and the coffee machine" },
-  { name: "Frau Becker", voice: "Leda", role: "Teamleiterin (your boss)", address: "Sie", style: "polite, factual and firm; gets to the point at once; expects clear answers and dates" },
-  { name: "Murat", voice: "Orus", role: "Kollege vom IT-Support", address: "du", style: "helpful and chatty, Ruhrpott humour, always in a hurry to the next ticket" },
-  { name: "Sophie", voice: "Aoede", role: "Werkstudentin in deinem Team", address: "du", style: "friendly and curious, a bit unsure, asks many questions" },
-  { name: "Herr Krüger", voice: "Charon", role: "Kollege aus der Buchhaltung, kurz vor der Rente", address: "Sie", style: "formal, correct and a bit pedantic about rules, forms and deadlines, but kind" },
+  { name: "Lena", look: { skin: "#f1c7a5", hair: "#9c4a22", hairStyle: "long", shirt: "#1f5f5b", trousers: "#1d1d22", prop: "notebook", lanyard: "#222", height: 0.97, shoulders: 0.9, hipWidth: 1.05 }, voice: "Kore", address: "du", role: "Product Ownerin in deinem Team", style: "organised and direct, talks quickly, thinks in sprints, deadlines and Jira tickets" },
+  { name: "Jonas", look: { skin: "#e8b991", hair: "#3a2618", hairStyle: "curly", shirt: "#5f6368", trousers: "#2d3a52", glasses: "#151515", prop: "mug", height: 1.02 }, voice: "Puck", role: "Backend-Entwickler in deinem Team", address: "du", style: "relaxed and dry, a bit ironic, grumbles about legacy code and the coffee machine" },
+  { name: "Frau Becker", look: { skin: "#f0c8a8", hair: "#d8c08a", hairStyle: "bun", shirt: "#1f2a44", jacket: "#141c30", trousers: "#1f2a44", prop: "tablet", height: 0.98, shoulders: 0.92, hipWidth: 1.05 }, voice: "Leda", role: "Teamleiterin (your boss)", address: "Sie", style: "polite, factual and firm; gets to the point at once; expects clear answers and dates" },
+  { name: "Murat", look: { skin: "#c68e62", hair: "#15100c", hairStyle: "short", beard: true, shirt: "#1f7a74", sleeves: "short", lanyard: "#222", trousers: "#2b2b30", prop: "laptop", height: 1.0, shoulders: 1.05 }, voice: "Orus", role: "Kollege vom IT-Support", address: "du", style: "helpful and chatty, Ruhrpott humour, always in a hurry to the next ticket" },
+  { name: "Sophie", look: { skin: "#f6d3b8", hair: "#e0bf73", hairStyle: "long", shirt: "#e2725b", trousers: "#4a6fa5", prop: "papers", height: 0.95, shoulders: 0.88, hipWidth: 1.05 }, voice: "Aoede", role: "Werkstudentin in deinem Team", address: "du", style: "friendly and curious, a bit unsure, asks many questions" },
+  { name: "Herr Krüger", look: { skin: "#ecc3a0", hair: "#c4c4c4", hairStyle: "receding", glasses: "#8a8a8a", shirt: "#8a8d91", tie: "#2c3e75", trousers: "#4a4e5a", prop: "folder", height: 1.0 }, voice: "Charon", role: "Kollege aus der Buchhaltung, kurz vor der Rente", address: "Sie", style: "formal, correct and a bit pedantic about rules, forms and deadlines, but kind" },
 ];
 // Things that really bring a German colleague to your desk. Some fit only a time of day
 // (when: [from, to] in hours) and are skipped outside it.
@@ -4074,23 +3963,19 @@ function officeVisit() {
   officeVisitAt = Date.now();
   officeLeaving = false;
   officeWrapSent = false;
-  $("call-avatar").textContent = colleague.name.split(" ").at(-1).charAt(0);
-  $("call-name").textContent = colleague.name;
-  $("call-topic").textContent = colleague.role;
-  $("call-topic").hidden = false;
-  const divider = document.createElement("li");
-  divider.className = "msg divider muted";
-  divider.textContent = `— ${colleague.name} ${back ? "comes back" : "comes over"} (${new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}) —`;
-  $("transcript").append(divider);
+  ui.merge("call", { avatar: colleague.name.split(" ").at(-1).charAt(0), name: colleague.name, topic: colleague.role });
+  addMessage({ kind: "divider", text: `— ${colleague.name} ${back ? "comes back" : "comes over"} (${new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}) —` });
   scrollCallToBottom();
   officeChime();
+  const visit = officeVisitAt;
+  const arrived = officeSceneEnter(colleague);
   if (document.hidden && "Notification" in window && Notification.permission === "granted") {
     try {
       const n = new Notification(`${colleague.name} kommt ${back ? "nochmal " : ""}vorbei`, { body: colleague.address === "Sie" ? "Haben Sie kurz Zeit?" : "Hast du kurz Zeit?", tag: "talkloop-office" });
       n.onclick = () => { window.focus(); n.close(); };
     } catch { /* notifications unavailable */ }
   }
-  startLive();
+  arrived.then(() => { if (officeVisitAt === visit && !live) startLive(); });
 }
 
 // The colleague goes back to their desk: let them finish their sentence, then hang up.
@@ -4112,15 +3997,11 @@ function officeAfterVisit({ comeBack = false, why = "" } = {}) {
   clearLiveHandle();
   officeVisitAt = 0;
   officeLeaving = false;
-  const divider = document.createElement("li");
-  divider.className = "msg divider muted";
   const note = back ? "will come back later" : why === "no answer" ? `no answer for ${OFFICE_SILENCE_MS / 1000} s` : why;
-  divider.textContent = `— ${name} goes back to their desk${note ? ` (${note})` : ""} —`;
-  $("transcript").append(divider);
+  addMessage({ kind: "divider", text: `— ${name} goes back to their desk${note ? ` (${note})` : ""} —` });
   scrollCallToBottom();
-  $("call-name").textContent = "Büro";
-  $("call-avatar").textContent = "🏢";
-  $("call-topic").hidden = true;
+  officeSceneLeave();
+  ui.merge("call", { name: "Büro", avatar: "🏢", topic: "" });
   if (!isOffice()) return;
   if (back) {
     const { returning, ...colleague } = state.settings.colleague;
@@ -4158,6 +4039,49 @@ function officeSystemPrompt(settings, recap = []) {
   lines.push(...liveVocabLines(settings, MODES.office));
   if (recap.length) lines.push(`Your conversation was cut off and has just reconnected. The end of it so far:\n${recap.join("\n")}\nCarry on from there in one short line, without greeting again.`);
   return lines.join("\n");
+}
+
+// ---------- Büro: the office in 3D ----------
+// Above the conversation, a small real-time 3D office seen through your eyes (office3d.js):
+// your laptop while you work; a colleague walks in and down the aisle, your view turns to them,
+// they talk (their mouth follows the voice you hear) and walk off again. Three.js is loaded only
+// for the Büro, from the CDN; if it can't load, there is simply no scene.
+let office3d = null; // the scene, once made
+let office3dLoading = null;
+
+async function officeSceneShow(on) {
+  ui.merge("office", { show: on });
+  if (!on || office3d) return;
+  office3dLoading ??= import("./office3d.js")
+    .then(({ createOffice3D }) => {
+      office3d = createOffice3D(refs.os3d, {
+        speaking: () => Boolean(live?.speaking && officeVisitAt),
+        level: liveVoiceLevel,
+        youTalking: () => Boolean(live?.talking),
+      });
+    })
+    .catch((error) => {
+      debugLog(`office 3D: ${error.message}`);
+      ui.merge("office", { show: false });
+    });
+  await office3dLoading;
+}
+
+// A colleague walks over; resolves once they stand at your desk (at most ~12 s; at once without a scene).
+function officeSceneEnter(c) {
+  if (!office3d || !ui.get().office.show) return Promise.resolve();
+  return Promise.race([office3d.enter(c.look ?? {}), sleep(12_000)]);
+}
+
+function officeSceneLeave() {
+  office3d?.leave();
+}
+
+// "I hear you" while the app hears the learner (the 3D scene reads the rest itself, every frame).
+function officeSceneUpdate() {
+  if (!ui.get().office.show) return;
+  const talking = Boolean(live?.talking);
+  if (ui.get().office.talking !== talking) ui.merge("office", { talking });
 }
 
 const OFFICE_TOOLS = [{
@@ -4276,7 +4200,7 @@ async function sendTurn(message) {
     // are), so the story stays coherent; the header shows it.
     if (todayWords && MODES[state.settings.request.mode]?.drill && turn.situation?.trim()) {
       todayWords.situation = turn.situation.trim().slice(0, 80);
-      $("call-mode").textContent = `Sentence drill · ${todayWords.situation}`;
+      ui.merge("call", { mode: `Sentence drill · ${todayWords.situation}` });
     }
     if (!state.paused) setStatus("");
     // After a correction the reply waits until the learner has said the fix.
@@ -4295,14 +4219,13 @@ async function sendTurn(message) {
 function renderSayThis() {
   const mode = MODES[state.settings?.request.mode];
   const text = mode?.interpreter ? state.settings.sayThis ?? "" : mode?.joiner ? state.settings.joinThis ?? "" : "";
-  const label = document.createElement("span");
-  label.className = "muted";
+  if (!text) {
+    ui.set({ sayThis: null });
+    return;
+  }
   const kind = { review: "Review · ", again: "Once more · " }[state.settings?.sayKind] ?? "";
-  label.textContent = mode?.joiner ? "Say it as one sentence · " : `${kind}Say it in ${state.settings?.request.language ?? "German"}: `;
-  const sentence = document.createElement("strong");
-  sentence.textContent = text;
-  $("say-this").replaceChildren(label, sentence);
-  $("say-this").hidden = !text;
+  const label = mode?.joiner ? "Say it as one sentence · " : `${kind}Say it in ${state.settings?.request.language ?? "German"}: `;
+  ui.set({ sayThis: { label, text } });
 }
 
 // The character's reply, its suggestions and focus words, and the end of a finished scene.
@@ -4371,10 +4294,7 @@ function drillMatch(attempt, target, said) {
 function startDrill(turn, said) {
   state.drill = { target: turn.coach.correction.trim(), said, turn };
   renderSuggestions([]);
-  $("drill-target").textContent = state.drill.target;
-  $("drill-target").lang = state.settings.locale;
-  setDrillFeedback("");
-  $("drill").hidden = false;
+  ui.set({ drill: { target: state.drill.target, lang: state.settings.locale, feedback: "", ok: false } });
   updateCallState();
   scrollCallToBottom();
   // Hear it first; hands-free then listens for the attempt.
@@ -4382,8 +4302,7 @@ function startDrill(turn, said) {
 }
 
 function setDrillFeedback(text, ok = false) {
-  $("drill-feedback").textContent = text;
-  $("drill-feedback").classList.toggle("ok", ok);
+  if (ui.get().drill) ui.merge("drill", { feedback: text, ok });
 }
 
 // Returns whether the attempt passed.
@@ -4403,11 +4322,19 @@ function endDrill() {
   const d = state.drill;
   if (!d) return;
   state.drill = null;
-  $("drill").hidden = true;
+  ui.set({ drill: null });
   if (recognizer) { dropNextResult = true; recognizer.abort(); }
   stopSpeaking();
   updateCallState();
+  if (d.live) return; // a live call carries on by itself
   presentReply(d.turn);
+}
+
+// Skipped by the button or by voice: in a live call, Gemini is told to carry on.
+function skipDrill() {
+  const wasLive = state.drill?.live;
+  endDrill();
+  if (wasLive && live?.ready) liveNote("The learner skipped saying it again: carry on with the conversation.");
 }
 
 function isSkipCommand(text) {
@@ -4416,9 +4343,10 @@ function isSkipCommand(text) {
 }
 
 // ---------- word explorer & bookmarks ----------
+// The word explorer (components/Explorer.jsx): a tapped word, or the 🔍 look-up.
+let explorerToken = 0;
 function openExplorer(word, sentence) {
-  $("explorer").hidden = false;
-  showWordInfo($("explorer-body"), word, () => wordInfo({
+  showWordInfo(word, () => wordInfo({
     word,
     sentence,
     language: state.settings.request.language,
@@ -4428,28 +4356,20 @@ function openExplorer(word, sentence) {
 
 // Any word, without leaving the call: one the learner wants to say but doesn't know (in their
 // own language), or one they heard (in the language practised).
+// Any word, without leaving the call: one the learner wants to say but doesn't know (in their
+// own language), or one they heard (in the language practised).
 function openLookup() {
   const { language, nativeLanguage } = state.settings.request;
-  $("explorer").hidden = false;
-  const form = document.createElement("form");
-  form.className = "lookup";
-  const input = document.createElement("input");
-  input.autocomplete = "off";
-  input.enterKeyHint = "search";
-  input.placeholder = `A word in ${nativeLanguage} or ${language}`;
-  const go = document.createElement("button");
-  go.type = "submit";
-  go.className = "primary";
-  go.textContent = "Look up";
-  form.append(input, go);
-  const result = document.createElement("div");
-  form.addEventListener("submit", (event) => {
-    event.preventDefault();
-    const query = input.value.trim();
-    if (query) showWordInfo(result, query, () => lookupWord(query));
-  });
-  $("explorer-body").replaceChildren(form, result);
-  input.focus();
+  explorerToken++;
+  ui.set({ explorer: { lookup: true, placeholder: `A word in ${nativeLanguage} or ${language}`, status: "idle" } });
+}
+function submitLookup(query) {
+  const q = (query ?? "").trim();
+  if (q) showWordInfo(q, () => lookupWord(q), { lookup: true });
+}
+function closeExplorer() {
+  explorerToken++;
+  ui.set({ explorer: null });
 }
 
 function lookupWord(query) {
@@ -4462,76 +4382,48 @@ function lookupWord(query) {
 }
 
 // Looks a word up and shows it in `body`: translation, how to say it, an example, Listen and Save.
-async function showWordInfo(body, word, lookup) {
-  body.textContent = `Looking up “${word}”…`;
+// Looks a word up and shows it: translation, how to say it, an example, Listen and Save.
+async function showWordInfo(word, lookup, { lookup: isLookup = false } = {}) {
+  const token = ++explorerToken;
+  const base = isLookup ? { ...ui.get().explorer, lookup: true } : { lookup: false };
+  ui.set({ explorer: { ...base, word, status: "loading", info: null, error: "", saved: false } });
   try {
     const info = await lookup();
-    body.replaceChildren();
-    const title = document.createElement("h2");
-    title.textContent = `${info.word} — ${info.translation}`;
-    const meta = document.createElement("p");
-    meta.textContent = `${info.part_of_speech} · say it: ${info.pronunciation}`;
-    const example = document.createElement("p");
-    example.textContent = `${info.example} (${info.example_translation})`;
-    const actions = document.createElement("div");
-    actions.className = "tools";
-    const listen = document.createElement("button");
-    listen.textContent = "▶ Listen";
-    onTap(listen, () => speak(info.word, []));
-    const save = document.createElement("button");
-    save.textContent = "★ Save word";
-    onTap(save, () => {
-      if (save.disabled) return; // touch events can still reach a disabled button
-      saveBookmark(info);
-      save.textContent = "Saved";
-      save.disabled = true;
-    });
-    actions.append(listen, save);
-    body.append(title, meta, example, actions);
+    if (token === explorerToken) ui.set({ explorer: { ...base, word, status: "done", info, saved: false } });
   } catch (error) {
-    body.textContent = error.message;
+    if (token === explorerToken) ui.set({ explorer: { ...base, word, status: "error", error: error.message } });
   }
+}
+function listenWord(word) {
+  speak(word, NO_WORDS);
+}
+function saveExplorerWord() {
+  const e = ui.get().explorer;
+  if (!e?.info || e.saved) return;
+  saveBookmark(e.info);
+  ui.set({ explorer: { ...e, saved: true } });
 }
 
 // The mistake tracker for the language picked on the setup screen.
+// The mistake tracker for the language picked on the setup screen (components/Mistakes.jsx).
 function renderMistakes() {
-  const language = $("language").value;
+  const language = ui.get().form.language;
   const ranked = rankedMistakes(language);
-  const practised = new Set(recurringMistakes(language).map((t) => t.type));
-  const list = $("mistakes");
-  list.replaceChildren();
-  $("reset-mistakes").hidden = !ranked.length;
-  $("mistakes-sync").textContent = trainerLink()
-    ? "Kept in your Vocab Trainer too, so it follows you to your other devices."
-    : "Kept on this device until Talkloop is linked to your Vocab Trainer.";
-  if (!ranked.length) {
-    const li = document.createElement("li");
-    li.className = "muted";
-    li.textContent = `Corrections are sorted here by kind of mistake. The ones you make again and again get practised on purpose in your ${language} conversations.`;
-    list.append(li);
-    return;
-  }
-  const clip = (t) => (t.length > 90 ? `${t.slice(0, 87)}…` : t);
-  for (const t of ranked) {
-    const li = document.createElement("li");
-    const name = MISTAKE_TYPES[t.type];
-    li.append(`${name[0].toUpperCase()}${name.slice(1)} — ${t.count}×`);
-    if (practised.has(t.type)) {
-      const tag = document.createElement("span");
-      tag.className = "mistake-focus";
-      tag.textContent = "being practised";
-      li.append(" ", tag);
-    }
-    const example = document.createElement("div");
-    example.className = "muted mistake-example";
-    example.textContent = `“${clip(t.example.said)}” → “${clip(t.example.fix)}”`;
-    li.append(example);
-    list.append(li);
-  }
+  const practised = recurringMistakes(language).map((t) => t.type);
+  ui.set({
+    mistakes: {
+      language,
+      synced: Boolean(trainerLink()),
+      items: ranked.map((t) => {
+        const name = MISTAKE_TYPES[t.type];
+        return { type: t.type, name: `${name[0].toUpperCase()}${name.slice(1)}`, count: t.count, practised: practised.includes(t.type), said: t.example.said, fix: t.example.fix };
+      }),
+    },
+  });
 }
 
-$("reset-mistakes").addEventListener("click", () => {
-  const language = $("language").value;
+function resetMistakes() {
+  const language = ui.get().form.language;
   if (!confirm(`Forget your recorded ${language} mistakes?`)) return;
   const log = store.get("mistakes", {});
   delete log[language];
@@ -4540,7 +4432,7 @@ $("reset-mistakes").addEventListener("click", () => {
   store.set("mistake_resets", { ...store.get("mistake_resets", {}), [language]: Date.now() });
   renderMistakes();
   syncMistakes();
-});
+}
 
 function saveBookmark(info) {
   const bookmarks = store.get("bookmarks", []);
@@ -4552,72 +4444,49 @@ function saveBookmark(info) {
 }
 
 function renderBookmarks() {
-  const list = $("bookmarks");
-  list.replaceChildren();
-  const bookmarks = store.get("bookmarks", []);
-  if (bookmarks.length === 0) {
-    const li = document.createElement("li");
-    li.className = "muted";
-    li.textContent = "Tap any word the character says to look it up and save it.";
-    list.append(li);
-    return;
-  }
-  for (const b of bookmarks) {
-    const li = document.createElement("li");
-    li.textContent = `${b.word} — ${b.translation} `;
-    const lang = document.createElement("span");
-    lang.className = "muted";
-    lang.textContent = `(${b.language})`;
-    li.append(lang);
-    list.append(li);
-  }
+  ui.set({ bookmarks: store.get("bookmarks", []) });
 }
 
 // ---------- wiring ----------
+// The screens are React components (components/*.jsx). They render from `ui` and call the
+// actions exported at the end of this file; nothing here reaches into the page except the
+// typing box (refs.text), whose text and caret stay the browser's.
 
-const KEY_INPUTS = { openai: "openai-key", mistral: "mistral-key", groq: "groq-key", groq2: "groq2-key", groq3: "groq3-key", cfAccount: "cf-account", cfToken: "cf-token", gemini: "api-key", gemini2: "gemini2-key", geminiLive: "gemini-live-key" };
-
-// Show only the key fields the chosen AI needs; saved keys show as a placeholder.
-function showKeyFields() {
-  const provider = $("provider").value;
-  for (const el of document.querySelectorAll("#keygate [data-provider]")) {
-    el.hidden = !el.dataset.provider.split(" ").includes(provider);
-  }
-  $("gemini-optional").hidden = provider === "gemini";
-  // Groq backs up OpenAI, and Mistral backs up Groq: those keys are optional.
-  $("groq-optional").hidden = provider === "groq";
-  $("cf-optional").hidden = provider === "cloudflare";
-  for (const [service, id] of Object.entries(KEY_INPUTS)) {
-    $(id).placeholder = getKey(service) ? "Saved — leave blank to keep" : $(id).dataset.placeholder;
-  }
-  // Keys saved in the account need no field (unless the learner wants to change them),
-  // and the AIs that have their key are marked.
-  if (!editingSavedKeys) {
-    for (const [service, id] of Object.entries(KEY_INPUTS)) {
-      if (serverKeys[service]) $(id).closest("label").hidden = true;
-    }
-  }
-  for (const option of $("provider").options) {
-    option.dataset.name ??= option.textContent;
-    option.textContent = option.dataset.name + (providerReady(option.value) ? " ✓" : "");
-  }
-  const ready = providerReady(provider);
-  $("save-key").textContent = ready ? "Connect" : "Save to my account";
-  $("edit-saved-keys").hidden = !hasServerKeys() || editingSavedKeys;
-  $("key-intro").textContent = hasServerKeys()
-    ? "Your AI keys are saved in your Vocab Trainer account and load when you log in. Pick the AI to talk to (✓ = key saved)."
-    : "Paste your AI key once: it is saved in your Vocab Trainer account (not in this browser) and loads every time you log in.";
-}
+// The key fields of the key screen, by service (components/KeyGate.jsx draws them).
+const KEY_SERVICES_SHOWN = {
+  openai: ["openai"], mistral: ["groq"], groq: ["groq", "openai"], groq2: ["groq"], groq3: ["groq"],
+  cfAccount: ["groq", "cloudflare"], cfToken: ["groq", "cloudflare"], gemini: null, gemini2: null, geminiLive: null,
+};
 let editingSavedKeys = false;
-$("edit-saved-keys").addEventListener("click", () => {
+
+// What the key screen shows for the chosen AI: its fields (saved keys show as a placeholder,
+// and need no field unless the learner wants to change them) and the AIs that have their key.
+function keyGateInfo(provider) {
+  const show = {};
+  for (const [service, providers] of Object.entries(KEY_SERVICES_SHOWN)) {
+    show[service] = (!providers || providers.includes(provider)) && (editingSavedKeys || !serverKeys[service]);
+  }
+  // Cloudflare's ID and token share one field: a saved one hides both, as before.
+  if (!editingSavedKeys && (serverKeys.cfAccount || serverKeys.cfToken)) show.cfAccount = show.cfToken = false;
+  return {
+    show,
+    saved: Object.fromEntries(Object.keys(KEY_SERVICES_SHOWN).map((s) => [s, Boolean(getKey(s))])),
+    ready: Object.fromEntries(PROVIDERS.map((p) => [p.value, providerReady(p.value)])),
+    optional: { gemini: provider !== "gemini", groq: provider !== "groq", cf: provider !== "cloudflare" },
+    saveLabel: providerReady(provider) ? "Connect" : "Save to my account",
+    showEditSaved: hasServerKeys() && !editingSavedKeys,
+    intro: hasServerKeys()
+      ? "Your AI keys are saved in your Vocab Trainer account and load when you log in. Pick the AI to talk to (✓ = key saved)."
+      : "Paste your AI key once: it is saved in your Vocab Trainer account (not in this browser) and loads every time you log in.",
+  };
+}
+function showKeyFields() {
+  ui.bump("keysVersion");
+}
+function editSavedKeys() {
   editingSavedKeys = true;
   showKeyFields();
-});
-for (const id of Object.values(KEY_INPUTS)) $(id).dataset.placeholder = $(id).placeholder;
-$("provider").addEventListener("change", showKeyFields);
-// The LanguageTool switch is saved as soon as it changes (on unless switched off).
-$("grammar-check").checked = grammarCheckOn();
-$("grammar-check").addEventListener("change", () => store.set("grammar_check", $("grammar-check").checked));
+}
 
 function keySummary() {
   if (getProvider() === "gemini") return getKey("gemini2") ? "✓ Using Google Gemini, with a second Gemini key as backup." : "✓ Using Google Gemini.";
@@ -4628,74 +4497,77 @@ function keySummary() {
     const backups = [groqBackups && (groqBackups === 1 ? "a second Groq key" : `${groqBackups} more Groq keys`), getKey("cfAccount") && getKey("cfToken") && "Cloudflare", getKey("mistral") && "Mistral"].filter(Boolean);
     return backups.length ? `✓ Using Groq, with ${backups.join(" and ")} as backup.` : "✓ Using Groq.";
   }
+  return "";
 }
 
 // Show the key box or the setup, depending on whether the chosen AI has a key saved.
 function refreshKeyGate() {
   const haveKey = providerReady();
-  $("keygate").hidden = haveKey;
-  $("setup").hidden = !haveKey;
-  $("key-saved").hidden = !haveKey;
-  $("key-summary").textContent = keySummary();
-  $("provider").value = getProvider();
-  // Every AI that has its key, to pick from right on the start screen.
-  const choice = $("ai-choice");
-  choice.replaceChildren(...[...$("provider").options].filter((o) => providerReady(o.value)).map((o) => new Option(o.dataset.name ?? o.textContent.replace(/ ✓$/, ""), o.value)));
-  choice.value = getProvider();
+  ui.merge("view", { keygate: !haveKey, setup: haveKey, keySaved: haveKey });
+  ui.set({
+    keySummary: keySummary(),
+    provider: getProvider(),
+    // Every AI that has its key, to pick from right on the start screen.
+    aiChoices: PROVIDERS.filter((p) => providerReady(p.value)),
+    aiChoice: getProvider(),
+  });
   showKeyFields();
 }
-$("ai-choice").addEventListener("change", () => {
-  setProvider($("ai-choice").value);
+function chooseAi(value) {
+  setProvider(value);
   refreshKeyGate();
-});
+}
 
-$("save-key").addEventListener("click", async () => {
-  const provider = $("provider").value;
-  const typed = Object.fromEntries(Object.entries(KEY_INPUTS).map(([service, id]) => [service, $(id).value.trim()]));
+// `typed`: service -> what was typed in its field.
+async function saveKeys(provider, typed, openaiModel = "") {
   const missing = provider === "cloudflare"
     ? !(typed.cfAccount || getKey("cfAccount")) || !(typed.cfToken || getKey("cfToken"))
     : !typed[provider] && !getKey(provider);
   if (missing) {
-    $("key-status").textContent = provider === "cloudflare"
+    ui.set({ keyStatus: provider === "cloudflare"
       ? "Paste your Cloudflare account ID and API token first."
-      : `Paste your ${{ openai: "OpenAI", groq: "Groq", gemini: "Gemini" }[provider]} API key first.`;
-    return;
+      : `Paste your ${{ openai: "OpenAI", groq: "Groq", gemini: "Gemini" }[provider]} API key first.` });
+    return false;
   }
-  const toSave = Object.fromEntries(Object.entries(typed).filter(([, value]) => value));
+  const toSave = Object.fromEntries(Object.entries(typed).map(([s, v]) => [s, (v ?? "").trim()]).filter(([, value]) => value));
   if (Object.keys(toSave).length) {
-    $("key-status").textContent = "Saving to your account…";
+    ui.set({ keyStatus: "Saving to your account…" });
     try {
       await saveKeysToAccount(toSave);
     } catch (error) {
-      $("key-status").textContent = error.message;
-      return;
+      ui.set({ keyStatus: error.message });
+      return false;
     }
   }
-  for (const id of Object.values(KEY_INPUTS)) $(id).value = "";
   editingSavedKeys = false;
-  const model = $("openai-model").value.trim();
+  const model = openaiModel.trim();
   if (provider === "openai" && model) store.set("openai_model", model);
   setProvider(provider);
-  $("key-status").textContent = "";
+  ui.set({ keyStatus: "" });
   refreshKeyGate();
-});
+  return true;
+}
 
-$("change-key").addEventListener("click", () => {
-  $("keygate").hidden = false;
-  $("setup").hidden = true;
+function changeKey() {
+  ui.merge("view", { keygate: true, setup: false });
   showKeyFields();
-});
+}
 
-$("start").addEventListener("click", async () => {
-  const languageSelect = $("language");
-  const scenario = $("scenario").value;
-  const mode = $("mode").value;
+// A message under the setup screen's vocabulary, brought into view when it matters.
+function showVocabStatus(text, { scroll = false } = {}) {
+  ui.set({ vocabStatus: text, ...(scroll ? { vocabStatusAt: Date.now() } : {}) });
+}
+
+async function startConversation() {
+  const form = ui.get().form;
+  const scenario = form.scenario;
+  const mode = form.mode;
   const usesScene = (MODES[mode] ?? MODES.scene).usesScene;
   // The connector drill is about word order only: no words of the learner's to bring in.
-  const useVocab = $("use-vocab").checked && !$("use-vocab").disabled && !MODES[mode]?.joiner;
+  const useVocab = form.useVocab && !ui.get().useVocab.disabled && !MODES[mode]?.joiner;
   // Vocab of the chosen level and the ones below it (the list only goes up to B1).
   const VOCAB_LEVELS = ["A1", "A2", "B1"];
-  const upTo = VOCAB_LEVELS.indexOf($("level").value);
+  const upTo = VOCAB_LEVELS.indexOf(form.level);
   const levels = upTo === -1 ? VOCAB_LEVELS : VOCAB_LEVELS.slice(0, upTo + 1);
 
   let vocab = { enabled: false };
@@ -4714,46 +4586,43 @@ $("start").addEventListener("click", async () => {
     todayWords = null;
   }
   if ((liveVoiceOn() || MODES[mode]?.office) && !MODES[mode]?.drill && !liveKey()) {
-    $("vocab-status").textContent = MODES[mode]?.office ? "Büro uses Gemini Live: tap “Change” at the top and add your Gemini (Live) key." : "Gemini 3.8 Live needs its key: tap “Change” at the top and add the Gemini 3.8 Live key, or untick Gemini 3.8 Live.";
-    $("vocab-status").scrollIntoView({ block: "center", behavior: "smooth" });
+    showVocabStatus(MODES[mode]?.office ? "Büro uses Gemini Live: tap “Change” at the top and add your Gemini (Live) key." : "Gemini 3.8 Live needs its key: tap “Change” at the top and add the Gemini 3.8 Live key, or untick Gemini 3.8 Live.", { scroll: true });
     return;
   }
   // The connector drill needs the trainer's connectors (loaded with the page, so normally no wait).
   let connectors = null;
   if (MODES[mode]?.joiner) {
     try {
-      connectors = connectorPool(await loadConnectors(), $("connector").value, $("level").value);
+      connectors = connectorPool(await loadConnectors(), form.connector, form.level);
     } catch (error) {
-      $("vocab-status").textContent = error.message;
-      $("vocab-status").scrollIntoView({ block: "center", behavior: "smooth" });
+      showVocabStatus(error.message, { scroll: true });
       return;
     }
   }
   if (MODES[mode]?.drill && !todayWords?.active.length) {
-    $("vocab-status").textContent = useVocab
+    showVocabStatus(useVocab
       ? "The sentence drill has no words to practise yet: learn some in the Vocab Trainer, or come back when some are due."
-      : "The sentence drill practises your vocabulary: tick “Weave my vocab into the conversation” first.";
-    $("vocab-status").scrollIntoView({ block: "center", behavior: "smooth" });
+      : "The sentence drill practises your vocabulary: tick “Weave my vocab into the conversation” first.", { scroll: true });
     return;
   }
 
   state.settings = {
-    locale: languageSelect.selectedOptions[0].dataset.locale,
-    level: $("level").value,
+    locale: LANGUAGES.find((l) => l.value === form.language)?.locale ?? "de-DE",
+    level: form.level,
     characterName: MODES[mode]?.office ? "Büro" : usesScene ? (SCENARIOS[scenario] ?? SCENARIOS.cafe).character : PARTNER.character,
     vocab,
-    sayAgain: $("say-again").checked,
+    sayAgain: form.sayAgain,
     // Gemini Live: a real-time voice call (see startLive). Not for the sentence drill, which
     // needs the word chips and schedule of a normal call.
     live: (liveVoiceOn() || Boolean(MODES[mode]?.office)) && !MODES[mode]?.drill,
-    officeGap: $("office-gap").value,
+    officeGap: form.officeGap,
     request: {
-      language: languageSelect.value,
-      nativeLanguage: $("native").value,
-      level: $("level").value,
+      language: form.language,
+      nativeLanguage: form.native,
+      level: form.level,
       scenario,
       mode,
-      tense: $("tense").value,
+      tense: form.tense,
     },
   };
   // "Discuss a topic": the topic is chosen now, so the header can show it and the opening
@@ -4780,11 +4649,11 @@ $("start").addEventListener("click", async () => {
   else renderTopicWords();
   bumpStreak();
   renderStats();
-  $("setup").hidden = true;
+  ui.merge("view", { setup: false });
   // Start hands-free, so the mic opens once the opening line is spoken — no tap needed.
   state.handsFree = Boolean(Recognition);
   state.autoSend = true; // each chat starts on auto-send; the toggle in the call changes it for that chat only
-  $("auto-send").checked = true;
+  ui.set({ autoSend: true });
   callLog = [];
   clearLiveHandle(); // a new call: Gemini's copy of the last one doesn't belong to it
   enterCall();
@@ -4795,7 +4664,7 @@ $("start").addEventListener("click", async () => {
   if (MODES[mode]?.office) {
     // Nobody is here yet: the first colleague drops by in a minute or two, then every so often.
     state.handsFree = false;
-    $("call-avatar").textContent = "🏢";
+    ui.merge("call", { avatar: "🏢" });
     getAudioCtx()?.resume(); // unlocked by this tap, so a later visit can play without one
     if ("Notification" in window && Notification.permission === "default") Notification.requestPermission().catch(() => {});
     officeScheduleNext({ soon: true });
@@ -4805,51 +4674,25 @@ $("start").addEventListener("click", async () => {
   } else {
     sendTurn("");
   }
-});
-
-// Import a vocab JSON file into the browser (IndexedDB).
-$("vocab-file").addEventListener("change", async (event) => {
-  const file = event.target.files?.[0];
-  if (!file) return;
-  $("vocab-status").textContent = "Importing…";
-  try {
-    const { count, levels } = await importVocab(file);
-    $("vocab-status").textContent = `✓ ${count} words imported (${levels.join(", ")}).`;
-    refreshVocabUI(count);
-  } catch (error) {
-    $("vocab-status").textContent = `Import failed: ${error.message}`;
-  }
-  event.target.value = "";
-});
+}
 
 // Load a vocab JSON from a URL.
 async function loadVocabUrl(url, { silent } = {}) {
   if (!url) return;
-  if (!silent) $("vocab-status").textContent = "Loading from web…";
+  if (!silent) showVocabStatus("Loading from web…");
   try {
     const { count, levels } = await importVocabFromUrl(url);
-    $("vocab-status").textContent = `✓ ${count} words loaded (${levels.join(", ")}).`;
+    showVocabStatus(`✓ ${count} words loaded (${levels.join(", ")}).`);
     refreshVocabUI(count);
   } catch (error) {
-    if (!silent) $("vocab-status").textContent = `Load failed: ${error.message}`;
+    if (!silent) showVocabStatus(`Load failed: ${error.message}`);
   }
 }
-
-$("load-url").addEventListener("click", () => loadVocabUrl($("vocab-url").value.trim()));
-$("chatgpt-copy").addEventListener("click", async () => {
-  const input = $("chatgpt-url");
-  try {
-    await navigator.clipboard.writeText(input.value);
-    $("chatgpt-copy").textContent = "Copied ✓";
-  } catch {
-    input.select(); // clipboard blocked: selected, to copy by hand
-  }
-});
 
 // Fetch the learnt words now and keep them, so they are ready when a conversation starts.
 async function refreshLearntWords() {
   if (!trainerLink()) return renderTrainerLink(null);
-  $("trainer-status").textContent = "🔗 Linked to your Vocab Trainer · fetching your learnt words…";
+  ui.set({ trainerStatus: "🔗 Linked to your Vocab Trainer · fetching your learnt words…" });
   try {
     const words = await fetchLearntWords();
     await idbSet("learnt_words", words);
@@ -4873,69 +4716,55 @@ function renderTrainerLink(count, problem = "") {
     ? "Connecting to your Vocab Trainer… (it can take up to a minute to wake up)"
     : `🔗 Linked to your Vocab Trainer · your partner uses all A1 and A2 words plus ${
         count ? `the ${count} B1 words you have learnt there` : "your learnt B1 words (none yet)"}.`;
-  $("trainer-status").textContent = problem ? `${problem} ${linked ? text : ""}`.trim() : text;
+  ui.set({ trainerStatus: problem ? `${problem} ${linked ? text : ""}`.trim() : text });
 }
 
 // ChatGPT's connection to Talkloop: the trainer's /mcp/ with this link, and the time zone for "today".
 function renderChatGptLink() {
   const link = trainerLink();
-  $("chatgpt").hidden = !link;
+  ui.merge("view", { chatgpt: Boolean(link) });
   if (!link) return;
   const zone = Intl.DateTimeFormat().resolvedOptions().timeZone;
-  $("chatgpt-url").value = `${link.api}/mcp/${link.token}${zone ? `?tz=${encodeURIComponent(zone)}` : ""}`;
+  ui.set({ chatgptUrl: `${link.api}/mcp/${link.token}${zone ? `?tz=${encodeURIComponent(zone)}` : ""}` });
 }
 
 function refreshVocabUI(count) {
-  const useVocab = $("use-vocab");
   const have = count > 0;
-  useVocab.disabled = !have;
-  if (have && !$("vocab-status").textContent) {
-    $("vocab-status").textContent = `✓ ${count} words ready.`;
-  }
+  ui.set({ useVocab: { ...ui.get().useVocab, disabled: !have } });
+  if (have && !ui.get().vocabStatus) showVocabStatus(`✓ ${count} words ready.`);
 }
 
-// The scene only matters in scene role-play, the connector in the connector drill; grey them out otherwise.
-function showModeChoices() {
-  const m = MODES[$("mode").value] ?? MODES.scene;
-  for (const [id, on] of [["scenario", m.usesScene], ["connector", Boolean(m.joiner)], ["office-gap", Boolean(m.office)]]) {
-    $(id).disabled = !on;
-    $(id).closest("label").style.opacity = on ? "1" : "0.5";
+// A change on the setup screen. The connector, the Büro's pace, "say it again", Gemini Live
+// and the grammar check are remembered in this browser.
+function setForm(patch) {
+  const before = ui.get().form;
+  ui.merge("form", patch);
+  if ("connector" in patch) store.set("connector", patch.connector);
+  if ("officeGap" in patch) store.set("office_gap", patch.officeGap);
+  if ("sayAgain" in patch) store.set("say_again", patch.sayAgain);
+  if ("liveVoice" in patch) store.set("live_voice", patch.liveVoice);
+  if ("grammarCheck" in patch) store.set("grammar_check", patch.grammarCheck);
+  if ("language" in patch && patch.language !== before.language) {
+    preloadSelectedVoice();
+    renderMistakes();
   }
 }
-$("mode").addEventListener("change", showModeChoices);
-showModeChoices();
-
-// The connector list, by level, as in the trainer's Connectors tab; the choice is remembered.
-loadConnectors().then((list) => {
-  for (const level of ["A1", "A2", "B1"]) {
-    const group = document.createElement("optgroup");
-    group.label = level;
-    for (const c of list.filter((x) => x.level === level)) group.append(new Option(`${c.name} — ${c.en}`, c.key));
-    $("connector").append(group);
-  }
-  $("connector").value = store.get("connector", "mix");
-  if (!$("connector").value) $("connector").value = "mix";
-}).catch(() => { /* tried again at Start, which says what went wrong */ });
-$("connector").addEventListener("change", () => store.set("connector", $("connector").value));
-$("office-gap").value = store.get("office_gap", "normal");
-$("office-gap").addEventListener("change", () => store.set("office_gap", $("office-gap").value));
-
-$("language").addEventListener("change", preloadSelectedVoice);
-$("language").addEventListener("change", renderMistakes);
-$("say-again").checked = store.get("say_again", true);
-$("live-voice").checked = liveVoiceOn();
-$("live-voice").addEventListener("change", () => store.set("live_voice", $("live-voice").checked));
-$("say-again").addEventListener("change", () => store.set("say_again", $("say-again").checked));
 
 function submitComposer() {
   // A reply is still loading (or the call is finished/on hold): keep what's typed.
   if (state.busy || state.finished || state.paused) return;
+  const input = refs.text;
+  if (!input) return;
   // Manual send: words still being heard count too; the mic stops so they are not sent twice.
-  const unsent = !state.autoSend && recognizer ? $("live").textContent.trim() : "";
-  const text = `${$("text").value.trim()} ${unsent}`.trim();
+  const unsent = !state.autoSend && recognizer ? ui.get().heard.trim() : "";
+  const text = `${input.value.trim()} ${unsent}`.trim();
   if (!text) return;
-  $("text").value = "";
+  input.value = "";
   if (unsent) { dropNextResult = true; recognizer.abort(); showHeard(""); }
+  if (state.drill?.live && live?.ready) {
+    liveSendText(text); // typed: Gemini judges it like a spoken try
+    return;
+  }
   if (state.drill) {
     checkDrill(text); // typing the corrected sentence also counts
     return;
@@ -4946,18 +4775,20 @@ function submitComposer() {
   }
   if (state.settings?.live) {
     if (live?.ready) liveSendText(text);
-    else { $("text").value = text; setStatus("The live call isn't connected: tap 🎤 first."); }
+    else { input.value = text; setStatus("The live call isn't connected: tap 🎤 first."); }
     return;
   }
   stopSpeaking();
   sendTurn(text);
 }
 
-// Submitting via Enter or the native button click (desktop).
-$("composer").addEventListener("submit", (event) => {
-  event.preventDefault();
+// The Send button on a phone: sent without dropping the keyboard, so the next turn can be typed
+// straight away (see tap.js). Mouse clicks and Enter go through the form's submit.
+function sendTap() {
+  const keepKeyboard = document.body.classList.contains("typing");
   submitComposer();
-});
+  if (keepKeyboard) refs.text?.focus();
+}
 
 // On phones the on-screen keyboard covers half the screen, so while the text box is
 // focused mark the body "typing": the CSS then folds away the big round call controls
@@ -4966,26 +4797,17 @@ $("composer").addEventListener("submit", (event) => {
 // for a moment, so a brief blur during a tap can't reflow the dock and move the Send
 // button out from under the finger.
 let typingTimer = null;
-$("text").addEventListener("focus", () => {
+function textFocus() {
   clearTimeout(typingTimer);
   document.body.classList.add("typing");
   scrollCallToBottom();
-});
-$("text").addEventListener("blur", () => {
+}
+function textBlur() {
   clearTimeout(typingTimer);
   typingTimer = setTimeout(() => {
-    if (document.activeElement !== $("text")) document.body.classList.remove("typing");
+    if (document.activeElement !== refs.text) document.body.classList.remove("typing");
   }, 300);
-});
-
-// Send without dropping the keyboard (see onTap), so you can type the next turn straight
-// away. If the browser blurred the box anyway, focusing it again inside the tap keeps
-// the keyboard up. Mouse clicks and Enter go through the form's submit handler.
-onTap($("composer").querySelector("button[type='submit']"), () => {
-  const keepKeyboard = document.body.classList.contains("typing");
-  submitComposer();
-  if (keepKeyboard) $("text").focus();
-}, { click: false });
+}
 
 // ---------- umlaut keys ----------
 // For a keyboard without umlauts, three ways to type them in the reply box: the keys above it,
@@ -4998,17 +4820,13 @@ let umlautShift = false; // the next key from the row is a capital
 let lastUmlaut = null; // { at, original } while the caret is right after a converted letter
 
 function renderUmlautKeys() {
-  for (const key of document.querySelectorAll("#umlauts [data-char]")) {
-    const ch = key.dataset.char;
-    key.textContent = umlautShift && ch !== "ß" ? ch.toUpperCase() : ch;
-  }
-  $("umlaut-shift").setAttribute("aria-pressed", String(umlautShift));
+  ui.set({ umlautShift });
 }
 
 // Puts a letter into the reply box at the caret, as a capital after a shift or at a sentence start.
 function insertUmlaut(ch, { capital = false } = {}) {
-  const input = $("text");
-  if (input.disabled) return;
+  const input = refs.text;
+  if (!input || input.disabled) return;
   const start = input.selectionStart ?? input.value.length;
   const end = input.selectionEnd ?? start;
   const atSentenceStart = /(^|[.!?]\s+)$/.test(input.value.slice(0, start));
@@ -5019,113 +4837,117 @@ function insertUmlaut(ch, { capital = false } = {}) {
   renderUmlautKeys();
   input.dispatchEvent(new Event("input", { bubbles: true }));
 }
-
-for (const key of document.querySelectorAll("#umlauts [data-char]")) onTap(key, () => insertUmlaut(key.dataset.char));
-onTap($("umlaut-shift"), () => {
+function toggleUmlautShift() {
   umlautShift = !umlautShift;
   renderUmlautKeys();
-});
+}
 
-$("text").addEventListener("input", (event) => {
+function onTextInput(event) {
   lastUmlaut = null;
-  if (event.isComposing) return;
-  const input = $("text");
+  if (event.nativeEvent?.isComposing ?? event.isComposing) return;
+  const input = refs.text;
   const caret = input.selectionStart;
   if (caret !== input.selectionEnd || caret < 2) return;
   const typed = input.value.slice(caret - 2, caret);
   if (!/^[\"“”„][aousAOU]$/.test(typed)) return;
   input.setRangeText(UMLAUT_OF[typed[1]], caret - 2, caret, "end");
   lastUmlaut = { at: caret - 1, original: typed };
-});
-$("text").addEventListener("beforeinput", (event) => {
-  const input = $("text");
-  if (event.inputType !== "deleteContentBackward" || !lastUmlaut) return;
+}
+function onTextBeforeInput(event) {
+  const input = refs.text;
+  const inputType = event.nativeEvent?.inputType ?? event.inputType;
+  if (inputType !== "deleteContentBackward" || !lastUmlaut) return;
   if (input.selectionStart !== input.selectionEnd || input.selectionStart !== lastUmlaut.at) return;
   event.preventDefault(); // undo the conversion instead of deleting the letter
   input.setRangeText(lastUmlaut.original, lastUmlaut.at - 1, lastUmlaut.at, "end");
   lastUmlaut = null;
-});
-$("text").addEventListener("keydown", (event) => {
+}
+function onTextKeyDown(event) {
   const ch = UMLAUT_KEY_CODES[event.code];
   // Not with Ctrl: AltGr is Ctrl+Alt, and keyboards that have AltGr letters type their own.
   if (!ch || !event.altKey || event.ctrlKey || event.metaKey) return;
   event.preventDefault();
   insertUmlaut(ch, { capital: event.shiftKey });
-});
+}
 
-$("auto-send").addEventListener("change", () => {
-  state.autoSend = $("auto-send").checked;
+function setAutoSend(on) {
+  state.autoSend = on;
+  ui.set({ autoSend: on });
   setStatus(state.autoSend ? "Auto-send on: I'll send when you pause." : "Auto-send off: tap Send when you're done.");
   // Turning auto-send back on sends what was collected while it was off.
-  if (state.autoSend && $("text").value.trim() && !recognizer) submitComposer();
-});
+  if (state.autoSend && refs.text?.value.trim() && !recognizer) submitComposer();
+}
 
-$("mic").addEventListener("click", () => {
+function micClick() {
   if (state.settings?.live) {
     if (!live) startLive(); // after a reload or a dropped connection
     else setLiveMuted(!live.muted);
     return;
   }
-  if (state.handsFree || $("mic").getAttribute("aria-pressed") === "true") {
+  if (state.handsFree || ui.get().mic.on) {
     stopListening();
   } else {
     state.handsFree = true; // hands-free loop: talk, auto-send on pause, resume after each reply
     startListening();
   }
-});
+}
 
-$("pause").addEventListener("click", () => setPaused(!state.paused));
+function togglePause() {
+  setPaused(!state.paused);
+}
 
 // While typing on a phone the coach shows only its first two lines (CSS); tap it for the rest.
-onTap($("coach"), () => {
-  $("coach").classList.toggle("expanded");
-  $("coach").scrollIntoView({ block: "nearest", behavior: "smooth" });
-}, { selectable: true });
+function toggleCoach() {
+  const coach = ui.get().coach;
+  if (coach) ui.set({ coach: { ...coach, expanded: !coach.expanded } });
+}
 
 // Say-it-again panel: speak the correction (or type it), hear it again, or move on.
-onTap($("drill-say"), () => {
+function drillSay() {
   if (!state.drill || recognizer) return;
-  $("text").blur(); // speaking, not typing: let the keyboard go
+  if (state.drill.live) { // Gemini is already listening: just make sure the mic is on
+    if (live?.muted) setLiveMuted(false);
+    return;
+  }
+  refs.text?.blur(); // speaking, not typing: let the keyboard go
   setDrillFeedback("");
   startListening();
-});
-onTap($("drill-hear"), () => {
+}
+function drillHear() {
   if (!state.drill) return;
+  if (state.drill.live) {
+    if (live?.ready) liveNote(`Say «${state.drill.target}» once more, slowly, and nothing else.`);
+    return;
+  }
   if (recognizer) { dropNextResult = true; recognizer.abort(); }
-  speak(state.drill.target, [], () => maybeResumeListening());
-});
-onTap($("drill-skip"), () => endDrill());
+  speak(state.drill.target, NO_WORDS, () => maybeResumeListening());
+}
 
 // Before what was heard is sent (it goes after the pause): fix it in the text box, or drop it
 // and say it again.
-onTap($("heard-edit"), () => {
+function heardEdit() {
   if (!recognizer) return;
-  const text = $("live").textContent;
+  const text = ui.get().heard;
   dropNextResult = true; // the text box has it now: stop the mic without sending
   recognizer.abort();
   showHeard("");
   // Focused inside the tap, so the phone keyboard opens.
-  const input = $("text");
+  const input = refs.text;
+  if (!input) return;
   input.value = text;
   input.focus();
   try { input.setSelectionRange(text.length, text.length); } catch { /* unsupported */ }
   setStatus("Fix it, then tap Send.");
-});
-onTap($("heard-delete"), () => {
+}
+function heardDelete() {
   if (!recognizer) return;
   redoNextResult = true;
   recognizer.abort();
   showHeard("");
-});
-
-onTap($("lookup-open"), () => openLookup());
-
-onTap($("explorer-close"), () => {
-  $("explorer").hidden = true;
-});
+}
 
 // Quit the current conversation and return to the start screen.
-$("end").addEventListener("click", () => {
+function endCall() {
   officeStop();
   stopLive();
   clearLiveHandle();
@@ -5134,85 +4956,120 @@ $("end").addEventListener("click", () => {
   stopSpeaking();
   state.history = [];
   state.drill = null;
-  $("drill").hidden = true;
+  ui.set({ drill: null });
   state.rapport = 0;
   state.finished = false;
   state.handsFree = false;
   pendingReply = null;
   resumeHandsFree = false;
   setPaused(false);
-  $("transcript").replaceChildren();
-  $("coach").hidden = true;
-  $("suggestions").replaceChildren();
+  clearTranscript();
+  ui.set({ coach: null });
+  renderSuggestions([]);
   showHeard("");
-  $("text").value = "";
+  if (refs.text) refs.text.value = "";
   setStatus("");
   renderStats();
   renderRecap();
   todayWords = null;
   callLog = [];
   chatId = null; // the chat stays saved in the list
-  $("say-this").hidden = true;
+  ui.set({ sayThis: null });
   store.set(CALL_KEY, null); // ended on purpose: nothing to resume
   renderFocusWords([]);
-  $("topic-words").hidden = true;
+  ui.set({ topicWords: null });
   setBusy(false);
   leaveCall();
-  $("setup").hidden = false;
+  ui.merge("view", { setup: true });
   renderChats();
   syncMistakes(); // the call is over: send its mistakes
   syncSpoken();
   syncSentences();
   flushChatUploads(); // and the chat, without waiting
-});
+}
 
 // Voices load asynchronously in Chrome.
 if ("speechSynthesis" in window) speechSynthesis.onvoiceschanged = () => {};
 
-// With ?debug: which build this phone runs (a cached old one would explain old behaviour).
-debugLog(`Talkloop v69 · speech recognition ${Recognition ? "yes" : "no"}`);
-if (!trainerSession()) goToLogin();
-// Link to the Vocab Trainer right away: the AI keys come with the link, and a call from
-// before a reload can only come back once they are here.
-const linked = trainerSession() ? linkFromTrainerSession().catch(() => {}) : Promise.resolve();
-$("key-status").textContent = trainerSession() ? "Loading your saved AI keys…" : "";
-refreshKeyGate();
-renderStats();
-renderBookmarks();
-renderMistakes();
-renderChats();
-linked.then(() => {
-  $("key-status").textContent = "";
-  if ($("conversation").hidden) refreshKeyGate();
-  return restoreCall();
-}).catch((error) => console.warn("Couldn't restore the call:", error));
-// Get the voice ready while the learner picks their settings, so the first reply doesn't wait.
-preloadSelectedVoice();
-// Show the vocab kept from last time and fetch the latest in the background.
-// Then link to the Vocab Trainer with its login and fetch the learnt words.
-takeTrainerLinkFromUrl();
-vocabMeta()
-  .then((m) => {
-    refreshVocabUI(m.count);
-    loadVocabUrl(DEFAULT_VOCAB_URL, { silent: true });
-  })
-  .catch(() => {})
-  .finally(async () => {
-    await linked;
-    refreshLearntWords();
-    syncMistakes();
-    syncSpoken();
-    syncSentences();
-    syncChats().catch(() => {});
+// Starts Talkloop once, when the app first shows it (right after login, in the background).
+let started = false;
+function initTalkloop() {
+  if (started) return;
+  started = true;
+  ui.set({
+    form: {
+      ...ui.get().form,
+      connector: store.get("connector", "mix"),
+      officeGap: store.get("office_gap", "normal"),
+      sayAgain: store.get("say_again", true),
+      liveVoice: liveVoiceOn(),
+      grammarCheck: grammarCheckOn(),
+    },
   });
-// Leaving the page (closing the tab, switching apps) sends what this device recorded.
-document.addEventListener("visibilitychange", () => {
-  if (document.visibilityState === "hidden") {
-    syncMistakes({ keepalive: true });
-    syncSpoken({ keepalive: true });
-    syncSentences({ keepalive: true });
-    flushChatUploads({ keepalive: true });
-  } else if (liveReconnectPending && !state.paused && state.settings?.live && !live && !$("conversation").hidden) {
-    startLive(); // the live call dropped while the app was in the background
-  }
-});
+  // With ?debug: which build this phone runs (a cached old one would explain old behaviour).
+  debugLog(`Talkloop (React) · speech recognition ${Recognition ? "yes" : "no"}`);
+  if (!trainerSession()) goToLogin();
+  // Link to the Vocab Trainer right away: the AI keys come with the link, and a call from
+  // before a reload can only come back once they are here.
+  const linked = trainerSession() ? linkFromTrainerSession().catch(() => {}) : Promise.resolve();
+  ui.set({ keyStatus: trainerSession() ? "Loading your saved AI keys…" : "" });
+  refreshKeyGate();
+  renderStats();
+  renderBookmarks();
+  renderMistakes();
+  renderChats();
+  linked.then(() => {
+    ui.set({ keyStatus: "" });
+    if (!ui.get().view.call) refreshKeyGate();
+    return restoreCall();
+  }).catch((error) => console.warn("Couldn't restore the call:", error));
+  // The connector list, by level, as in the trainer's Connectors tab; the choice is remembered.
+  loadConnectors().then((list) => {
+    const groups = ["A1", "A2", "B1"].map((level) => ({
+      label: level,
+      options: list.filter((x) => x.level === level).map((c) => ({ value: c.key, label: `${c.name} — ${c.en}` })),
+    }));
+    ui.set({ connectors: groups });
+    const saved = ui.get().form.connector;
+    if (saved !== "mix" && !list.some((c) => c.key === saved)) ui.merge("form", { connector: "mix" });
+  }).catch(() => { /* tried again at Start, which says what went wrong */ });
+  // Get the voice ready while the learner picks their settings, so the first reply doesn't wait.
+  preloadSelectedVoice();
+  // Show the vocab kept from last time and fetch the latest in the background.
+  // Then link to the Vocab Trainer with its login and fetch the learnt words.
+  takeTrainerLinkFromUrl();
+  vocabMeta()
+    .then((m) => {
+      refreshVocabUI(m.count);
+      loadVocabUrl(DEFAULT_VOCAB_URL, { silent: true });
+    })
+    .catch(() => {})
+    .finally(async () => {
+      await linked;
+      refreshLearntWords();
+      syncMistakes();
+      syncSpoken();
+      syncSentences();
+      syncChats().catch(() => {});
+    });
+  // Leaving the page (closing the tab, switching apps) sends what this device recorded.
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "hidden") {
+      syncMistakes({ keepalive: true });
+      syncSpoken({ keepalive: true });
+      syncSentences({ keepalive: true });
+      flushChatUploads({ keepalive: true });
+    } else if (liveReconnectPending && !state.paused && state.settings?.live && !live && ui.get().view.call) {
+      startLive(); // the live call dropped while the app was in the background
+    }
+  });
+}
+
+export {
+  initTalkloop, keyGateInfo, editSavedKeys, saveKeys, changeKey, chooseAi, setForm, startConversation,
+  openChat, deleteChat, topicChats, resetMistakes, peekWord, replayMessage, translateMessage, openExplorer,
+  openLookup, submitLookup, closeExplorer, listenWord, saveExplorerWord, useSuggestion, submitComposer, sendTap,
+  textFocus, textBlur, insertUmlaut, toggleUmlautShift, onTextInput, onTextBeforeInput, onTextKeyDown,
+  setAutoSend, micClick, togglePause, toggleCoach, drillSay, drillHear, skipDrill, heardEdit, heardDelete, endCall,
+  MODES, TENSES, PROVIDERS,
+};

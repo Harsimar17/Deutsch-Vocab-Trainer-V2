@@ -118,7 +118,7 @@ Every day for 20 minutes helps more than two hours once a week.
 
 A German vocabulary trainer (A1–B1) with spaced repetition, quizzes, B1
 reading stories and end-of-phase tests — run entirely by a Spring Boot app. **All logic lives
-here**; the page (`src/main/resources/static/index.html`, served at `/`) only
+here**; the page (a React app in `frontend/`, built into the jar and served at `/`) only
 renders what the API returns and sends the learner's actions back.
 
 Every learner has their own account and their own progress: users are created
@@ -216,8 +216,10 @@ so losing a round only means starting a new one.
 
 Talkloop, the voice-conversation partner (formerly its own site,
 [Harsimar17/talkloop](https://github.com/Harsimar17/talkloop)), is part of this
-app: its files are in `src/main/resources/static/talkloop/` and it is served at
-`/talkloop/`. It still runs in the browser and talks to Mistral / Gemini / Groq
+app: it is a page of the React app (`frontend/src/talkloop/`: `engine.js` runs the
+conversation, `components/` draw it), opened from the Talkloop tab; `/talkloop/` still
+leads there. Its voice (`talkloop/piper.js`) and the ChatGPT screen (`talkloop/chatgpt.html`)
+stay in `src/main/resources/static/talkloop/`, served as they are. It still runs in the browser and talks to Mistral / Gemini / Groq
 with the learner's own keys (kept in that browser only, never sent here). Groq
 (`openai/gpt-oss-120b`, about a second per reply) is the fastest; Mistral and Groq back
 each other up when one is busy. Cloudflare Workers AI (the same model, several seconds per reply) is a
@@ -422,6 +424,24 @@ Needs Java 21+:
 ```
 
 Open http://localhost:8080. Tests: `./mvnw test`.
+
+### The page (React)
+
+The whole UI — the trainer and Talkloop — is one React app in `frontend/` (Vite). Maven
+builds it: during `package` / `spring-boot:run`, `frontend-maven-plugin` downloads Node
+into `target/node`, runs `npm ci` and `npm run build`, and Vite writes `index.html` and
+`assets/` into `target/classes/static`, so the jar serves them as before. Nothing else
+needs installing.
+
+While working on the page, run the backend and Vite's dev server side by side
+(instant reload; `/api` and the static data go to the backend on 8080):
+
+```bash
+cd frontend && npm install && npm run dev
+```
+
+Open http://localhost:5173. Rollup and esbuild run as WebAssembly (see `overrides` in
+`frontend/package.json`), because Windows Application Control blocks their native files.
 
 ### Against the Firestore emulator (no real data touched)
 
