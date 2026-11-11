@@ -1,6 +1,46 @@
 import React, { useState, useCallback, useEffect, useRef, useMemo } from "react";
 import { Quiz } from "./practice/drills.jsx";
 import { Icon } from "./App.jsx";
+import { GlowTile, Reveal } from "../bits/fx.jsx";
+
+// What each exercise is, for the bento grid on wide screens.
+const MODE_INFO = {
+  study: { icon: "🧠", text: "Spaced repetition: recall, then grade yourself" },
+  write: { icon: "✍️", text: "Type the German from the English" },
+  build: { icon: "🧩", text: "Sentence patterns, piece by piece" },
+  connectors: { icon: "🔗", text: "Join sentences with weil, obwohl, dass…" },
+  flash: { icon: "🃏", text: "Flip through the cards" },
+  quiz: { icon: "🎯", text: "Pick the right meaning" },
+  articles: { icon: "📰", text: "der, die or das?" },
+  sep: { icon: "✂️", text: "Which prefix goes where?" },
+  cloze: { icon: "🕳️", text: "Fill the gap in a real sentence" },
+  mistakes: { icon: "🔁", text: "The words you missed" },
+  add: { icon: "➕", text: "Add a word to your list" },
+};
+
+// The exercises as a grid of glowing tiles (wide screens; phones keep the tab strip).
+export function ModeBento({ mode, setMode, mistakeCount }) {
+  return (
+    <div className="bento" role="tablist" aria-label="Exercises">
+      {TABS.map((t, i) => {
+        const info = MODE_INFO[t.id] ?? {};
+        const on = mode === t.id;
+        const label = t.id === "mistakes" && mistakeCount ? `${t.label} · ${mistakeCount}` : t.label.replace(/^\+ /, "");
+        return (
+          <Reveal key={t.id} delay={i * 0.03} distance={14} className={"bento-cell" + (t.id === "study" ? " bento-wide" : "")}>
+            <GlowTile active={on} className={"bento-tile" + (on ? " on" : "")}>
+              <button type="button" role="tab" aria-selected={on} onClick={() => setMode(t.id)} className="bento-button">
+                <span className="bento-icon" aria-hidden="true">{info.icon}</span>
+                <span className="bento-label">{label}</span>
+                <span className="bento-text">{info.text}</span>
+              </button>
+            </GlowTile>
+          </Reveal>
+        );
+      })}
+    </div>
+  );
+}
 
 // ---------- FRAME ----------
 export const TABS = [

@@ -530,3 +530,13 @@ body.typing .talkloop .auto-send { display: none; }
 }
 /* The word explorer (a tapped word, or 🔍) opens over the call, so it must sit above it. */
 .talkloop .explorer { z-index: 50; }
+
+/* ---- React Bits effects ---- */
+.talkloop .talk-sub { margin-top: 6px; min-height: 1.5em; font-size: .95rem; color: var(--muted); }
+/* The caller's avatar is an orb that swirls while they speak. */
+.talkloop .avatar.avatar-orb { background: none; box-shadow: var(--glow); overflow: hidden; padding: 0; }
+.talkloop .avatar.avatar-orb::after { z-index: 2; }
+.talkloop .fx-orb { position: relative; width: 100%; height: 100%; border-radius: 50%; overflow: hidden; display: grid; place-items: center; }
+.talkloop .fx-orb-canvas { position: absolute; inset: -20%; }
+.talkloop .fx-orb-label { position: relative; z-index: 1; color: #fff; text-shadow: 0 1px 6px rgba(0, 0, 0, .55); }
+.talkloop .eyebrow { display: flex; width: fit-content; }

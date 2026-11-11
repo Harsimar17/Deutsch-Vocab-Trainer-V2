@@ -1,4 +1,5 @@
 import React, { useEffect, useRef } from "react";
+import { StarButton, Pull, Blur } from "../../bits/fx.jsx";
 import { useUi } from "../ui.js";
 import { setForm, startConversation, changeKey, chooseAi, openChat, deleteChat, topicChats, MODES } from "../engine.js";
 import { LANGUAGES, NATIVE_LANGUAGES, LEVELS, MODE_OPTIONS, OFFICE_GAPS, TENSE_OPTIONS, SCENE_OPTIONS } from "../options.js";
@@ -9,7 +10,7 @@ function Recap({ recap }) {
   const line = (label, list, sep = ", ") => list.length ? <p><strong>{label}: </strong>{list.join(sep)}</p> : null;
   return (
     <div id="recap" className="recap">
-      <h3>Last call</h3>
+      <h3><Blur text="Last call" /></h3>
       {recap.kind === "sentences" ? (
         <>
           {recap.right.length > 0 && <p><strong>Said ✓ ({recap.right.length}): </strong>{recap.right.join(" · ")}</p>}
@@ -100,7 +101,7 @@ export function Setup() {
         </div>
       )}
       <Recap recap={recap} />
-      <h2>Start a conversation</h2>
+      <h2><Blur text="Start a conversation" /></h2>
       <div className="grid">
         <label>Practise
           {select("language", LANGUAGES.map((l) => <option key={l.value} value={l.value}>{l.label}</option>))}
@@ -163,7 +164,7 @@ export function Setup() {
         Live voice call <span className="muted">(Gemini 3.8 Live: replies in about a second and you can interrupt)</span>
       </label>
 
-      <button id="start" type="button" className="primary" onClick={startConversation}>Start conversation</button>
+      <Pull><StarButton id="start" type="button" className="primary" onClick={startConversation}>Start conversation</StarButton></Pull>
       <Chats />
     </section>
   );

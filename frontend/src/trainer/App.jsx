@@ -7,9 +7,10 @@ import { PatternStudy } from "./practice/patterns.jsx";
 import { ConnectorPractice } from "./practice/connectors.jsx";
 import { STORY_PROGRESS, StoriesPage } from "./stories/stories.jsx";
 import { AddWord, SettingsPanel } from "./settings.jsx";
-import { TabBar, UserMenu } from "./frame.jsx";
+import { TabBar, UserMenu, ModeBento } from "./frame.jsx";
 import { FormulasPage } from "./grammar.jsx";
 import { TalkloopPage } from "../talkloop/TalkloopPage.jsx";
+import { PageTitle, Eyebrow, Wordmark, Rotating, Decrypt, Reveal, Fade, Sparks, StarButton, Spot, GalaxyField, AppBackdrop, GooeySections, Digits, Typed } from "../bits/fx.jsx";
 
 export const ICON_PATHS = {
   practice: "M4 19.5A2.5 2.5 0 0 1 6.5 17H20M4 19.5A2.5 2.5 0 0 0 6.5 22H20V2H6.5A2.5 2.5 0 0 0 4 4.5v15ZM9 7h7M9 11h5",
@@ -46,8 +47,10 @@ export function TopBar({ storyMode, onStoryMode, formulas, onFormulas, talk, onT
     <React.Fragment>
       <header className="app-header">
         <div className="app-header-inner">
-          <div className="brand"><span className="brand-mark">W</span><span>Wortschatz</span><span className="brand-sub">German trainer</span></div>
-          <nav className="topnav" aria-label="Sections">{navButtons}</nav>
+          <div className="brand"><span className="brand-mark">W</span><span><Wordmark text="Wortschatz" /></span><span className="brand-sub">German trainer</span></div>
+          <nav className="topnav topnav-gooey" aria-label="Sections">
+            <GooeySections items={items.map(([, label]) => label)} active={items.findIndex(([id]) => id === page)} onChange={(i) => go(items[i][0])} />
+          </nav>
           <div className="header-actions">
             <button className="icon-btn" onClick={() => onTheme(dark ? "light" : "dark")} aria-label={dark ? "Switch to light mode" : "Switch to dark mode"} title={dark ? "Light mode" : "Dark mode"}>
               <Icon name={dark ? "sun" : "moon"} />
@@ -66,10 +69,10 @@ export function StreakHeader({ header, showCounts }) {
   return (
     <div className="glass" style={{ display: "flex", flexDirection: "column", gap: "12px", padding: "16px 18px", borderRadius: "18px" }}>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "12px", flexWrap: "wrap", fontSize: "13px", color: "var(--ink-soft)" }}>
-        <span><strong style={{ color: "var(--ink)", fontWeight: 600 }}>{header.reviewed} / {header.goal}</strong> reviewed today</span>
+        <span><strong style={{ color: "var(--ink)", fontWeight: 600 }}><Digits value={header.reviewed} /> / {header.goal}</strong> reviewed today</span>
         <span style={{ display: "flex", gap: "14px", fontVariantNumeric: "tabular-nums" }}>
           {extra && <span>{extra}</span>}
-          <span>{header.streak > 0 ? header.streak + "-day streak" : "No streak yet"}</span>
+          <span>{header.streak > 0 ? <><Digits value={header.streak} />-day streak</> : "No streak yet"}</span>
         </span>
       </div>
       <div style={{ height: "6px", background: "var(--tint)", borderRadius: "999px", overflow: "hidden" }}>
@@ -97,15 +100,19 @@ export function LoginScreen({ onLoggedIn }) {
   };
   const field = { fontFamily: "var(--font-serif)", fontSize: "16px", padding: "12px 14px", borderRadius: "10px", border: "1px solid var(--line)", background: "var(--paper-raised)", color: "var(--ink)", width: "100%", boxSizing: "border-box" };
   return (
-    <form onSubmit={submit} style={{ width: "min(380px, 100%)", display: "flex", flexDirection: "column", gap: "12px", padding: "32px 28px", borderRadius: "16px", border: "1px solid var(--line)", background: "var(--paper-raised)", boxShadow: "var(--shadow-card)", boxSizing: "border-box" }}>
+    <Reveal style={{ width: "min(380px, 100%)" }}>
+    <Spot className="login-card">
+    <form onSubmit={submit} style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
       <div className="brand-mark" style={{ width: "44px", height: "44px", borderRadius: "12px", fontSize: "21px", margin: "0 auto 4px" }}>W</div>
-      <div style={{ textAlign: "center", fontSize: "22px", fontWeight: 700, letterSpacing: "-.02em", color: "var(--ink)" }}>Sign in to Wortschatz</div>
-      <div style={{ textAlign: "center", fontSize: "14px", color: "var(--ink-soft)", marginTop: "-4px", marginBottom: "10px" }}>Your German vocabulary, grammar and speaking practice.</div>
+      <div style={{ textAlign: "center" }}><PageTitle text="Sign in to Wortschatz" tag="div" className="login-title" /></div>
+      <div className="login-sub">Practise your German <Rotating texts={["vocabulary", "grammar", "speaking", "stories"]} className="login-rotating" /></div>
       <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="Email" autoComplete="username" required style={field} />
       <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Password" autoComplete="current-password" required style={field} />
-      <button type="submit" disabled={state.busy} style={{ ...navBtnStyle, opacity: state.busy ? 0.6 : 1 }}>{state.busy ? "Signing in…" : "Sign in"}</button>
+      <StarButton type="submit" disabled={state.busy} className="login-button">{state.busy ? "Signing in…" : "Sign in"}</StarButton>
       {state.error && <div role="alert" style={{ fontFamily: "var(--font-mono)", fontSize: "11px", color: "var(--bad)", textAlign: "center" }}>{state.error}</div>}
     </form>
+    </Spot>
+    </Reveal>
   );
 }
 
@@ -214,10 +221,10 @@ export function App() {
     );
   }
   if (status === "login") {
-    return <div style={shellStyle}><LoginScreen onLoggedIn={(u, toTalk) => { setUser(u); if (toTalk) setTalk(true); }} /></div>;
+    return <div style={shellStyle}><GalaxyField /><LoginScreen onLoggedIn={(u, toTalk) => { setUser(u); if (toTalk) setTalk(true); }} /></div>;
   }
   if (status === "loading" || !summary) {
-    return <div style={shellStyle}><div style={{ ...counterStyle, fontSize: "13px" }}>Loading…</div></div>;
+    return <div style={shellStyle}><div style={{ ...counterStyle, fontSize: "13px" }}><Decrypt text="Loading your German…" /></div></div>;
   }
 
   const s = Object.assign({}, summary.settings, nav);
@@ -239,6 +246,8 @@ export function App() {
   const show = (p) => ({ display: page === p ? "block" : "none" });
   const drillProps = { version, onChange: applyChange, geminiKey, settings: s };
   return (
+    <Sparks>
+    <AppBackdrop />
     <div style={{ minHeight: "100%", fontFamily: "var(--font-serif)" }}>
       {topBar}
       <main className="app-main">
@@ -248,20 +257,20 @@ export function App() {
         <div style={show("talk")}>
           <TalkloopPage onLoggedOut={talkLoggedOut} />
         </div>
-        {visited.current.rules && <div style={show("rules")}><div style={{ animation: "cardIn .35s ease both" }}><FormulasPage /></div></div>}
+        {visited.current.rules && <div style={show("rules")}><Fade><FormulasPage /></Fade></div>}
         {visited.current.stories && (
           <div style={show("stories")}>
-            <div style={{ animation: "cardIn .35s ease both" }}>
+            <Fade>
               <StoriesPage settings={s} onSettings={onSettings} onChange={applyChange} />
-            </div>
+            </Fade>
           </div>
         )}
         <div style={{ display: page === "practice" ? "flex" : "none", flexDirection: "column", gap: "18px" }}>
           <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: "16px", flexWrap: "wrap" }}>
             <div>
-              <div className="page-eyebrow">{summary.levelTitle}</div>
-              <h1 className="page-title">Practice</h1>
-              <div className="page-sub">{summary.cardCount} cards · nouns, verbs, separable verbs, adjectives, connectors and phrases</div>
+              <Eyebrow text={summary.levelTitle} />
+              <PageTitle text="Practice" />
+              <Typed className="page-sub" text={`${summary.cardCount} cards · nouns, verbs, separable verbs, adjectives, connectors and phrases`} />
             </div>
             <button className="settings-toggle" onClick={() => setSettingsOpen((o) => !o)} aria-expanded={settingsOpen}>
               <Icon name="sliders" /><span>{summary.settingsLabel}</span>
@@ -269,8 +278,9 @@ export function App() {
           </div>
           {settingsOpen && <SettingsPanel summary={summary} onSettings={onSettings} geminiKey={geminiKey} setGeminiKey={setGeminiKey} ghToken={ghToken} setGhToken={setGhToken} />}
           <StreakHeader header={summary.header} showCounts={mode === "study" || mode === "write"} />
-          <TabBar mode={mode} setMode={setMode} mistakeCount={summary.mistakeCount} />
-          <div style={{ marginTop: "6px", animation: "cardIn .35s ease both" }} key={mode}>
+          <ModeBento mode={mode} setMode={setMode} mistakeCount={summary.mistakeCount} />
+          <div className="tabbar-phone"><TabBar mode={mode} setMode={setMode} mistakeCount={summary.mistakeCount} /></div>
+          <Reveal style={{ marginTop: "6px" }} key={mode} distance={18}>
             {mode === "study" && <StudyMode {...drillProps} />}
             {mode === "write" && <WriteMode {...drillProps} />}
             {mode === "build" && <PatternStudy onChange={applyChange} />}
@@ -282,10 +292,11 @@ export function App() {
             {mode === "cloze" && <ClozeQuiz {...drillProps} />}
             {mode === "mistakes" && <MistakesReview {...drillProps} />}
             {mode === "add" && <AddWord summary={summary} ghToken={ghToken} onToken={setGhToken} onAdded={() => { loadContent(true).finally(() => setVersion((v) => v + 1)); refreshSummary(); }} />}
-          </div>
+          </Reveal>
         </div>
       </div>
       </main>
     </div>
+    </Sparks>
   );
 }

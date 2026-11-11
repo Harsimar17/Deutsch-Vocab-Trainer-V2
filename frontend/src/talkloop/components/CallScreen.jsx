@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import { useUi, ui, wordTokens, setRef } from "../ui.js";
 import { TapButton, useTap } from "../tap.jsx";
+import { CallerOrb, Electric } from "../../bits/fx.jsx";
 import {
   openExplorer, replayMessage, translateMessage, peekWord, useSuggestion, submitComposer, sendTap, textFocus, textBlur,
   insertUmlaut, toggleUmlautShift, onTextInput, onTextBeforeInput, onTextKeyDown, setAutoSend, micClick, togglePause,
@@ -183,7 +184,7 @@ function Controls() {
   return (
     <div className="call-controls">
       <button type="button" id="mic" className="round mic" aria-pressed={mic.on} disabled={mic.disabled} title="Talk hands-free" onClick={micClick}>
-        <svg viewBox="0 0 24 24" aria-hidden="true"><path d={MIC} /></svg>
+        <Electric on={mic.on}><svg viewBox="0 0 24 24" aria-hidden="true"><path d={MIC} /></svg></Electric>
         <span className="round-label">{mic.label}</span>
       </button>
       <button type="button" id="pause" className="round pause" aria-pressed={pause.on} title={pause.on ? "Resume the call" : "Pause the call"} onClick={togglePause}>
@@ -215,7 +216,7 @@ export function CallScreen() {
   return (
     <main id="conversation" className="call" hidden={!show} data-state={callState}>
       <header className="call-head">
-        <div className="avatar" aria-hidden="true">{call.avatar}</div>
+        <div className="avatar avatar-orb" aria-hidden="true"><CallerOrb speaking={call.state === "speaking"}>{call.avatar}</CallerOrb></div>
         <div className="caller">
           <div className="caller-name">{call.name}</div>
           <div className="caller-sub"><span>{call.mode}</span> · <span id="call-timer">{call.timer}</span></div>
