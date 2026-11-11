@@ -1,4 +1,5 @@
 import React, { useState, useCallback, useEffect, useRef, useMemo } from "react";
+import { PageTitle, Eyebrow, Reveal, Typed } from "../bits/fx.jsx";
 import { monoLabel, smallOutline, srsCol } from "./ui/common.jsx";
 
 export const CASES = ["Nominative", "Akkusative", "Dative", "Genitive"];
@@ -395,17 +396,17 @@ export function FormulasPage() {
   return (
     <div style={{ ...srsCol, width: "100%", maxWidth: "760px", margin: "0 auto", alignItems: "stretch", gap: "18px" }}>
       <div>
-        <div className="page-eyebrow">Reference</div>
-        <h1 className="page-title">Grammar</h1>
-        <div className="page-sub">Word order, cases, endings and verb charts</div>
+        <Eyebrow text="Reference" />
+        <PageTitle text="Grammar" />
+        <Typed className="page-sub" text="Word order, cases, endings and verb charts" />
       </div>
       <div style={{ display: "flex", flexWrap: "wrap", gap: "8px", justifyContent: "center" }}>
         {RULES.map((g) => <button key={g.id} onClick={() => jump(g.id)} style={{ ...smallOutline("var(--ink-soft)"), borderColor: "var(--line)" }}>{g.title}</button>)}
       </div>
       {RULES.map((g) => (
-        <section key={g.id} id={"rules-" + g.id} className="rgroup">
+        <Reveal key={g.id}><section id={"rules-" + g.id} className="rgroup">
           <div style={{ marginBottom: "4px" }}>
-            <h2 style={{ margin: 0, fontFamily: "var(--font-serif)", fontWeight: 600, fontSize: "22px", color: "var(--ink)" }}>{g.title}</h2>
+            <h2 className="rgroup-title">{g.title}</h2>
             <div style={{ ...monoLabel, marginTop: "4px" }}>{g.sub}</div>
           </div>
           {g.rules.map((r, i) => (
@@ -417,7 +418,7 @@ export function FormulasPage() {
               {r.note && <div style={{ fontFamily: "var(--font-serif)", fontSize: "14px", fontStyle: "italic", color: "var(--ink-soft)", lineHeight: 1.5 }}>{r.note}</div>}
             </div>
           ))}
-        </section>
+        </section></Reveal>
       ))}
     </div>
   );
