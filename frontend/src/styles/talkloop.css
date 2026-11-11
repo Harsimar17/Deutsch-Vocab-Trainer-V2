@@ -528,3 +528,5 @@ body.typing .talkloop .auto-send { display: none; }
 @media (max-width: 760px) {
   .talkloop .call { z-index: 40; }
 }
+/* The word explorer (a tapped word, or 🔍) opens over the call, so it must sit above it. */
+.talkloop .explorer { z-index: 50; }
