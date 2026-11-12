@@ -244,6 +244,12 @@ body.in-call { overflow: hidden; }
 .talkloop .tw-word.used .tw-mark, .talkloop .tw-word.used .tw-de { color: var(--good); }
 .talkloop .tw-word.used .tw-de { text-decoration: line-through; text-decoration-thickness: 1px; }
 .talkloop .tw-word.flash { animation: tw-flash 1.2s ease-out; }
+.talkloop .tw-word.arrive { animation: tw-arrive 0.9s ease-out; }
+@keyframes tw-arrive {
+  0% { opacity: 0; transform: translateY(8px); background: color-mix(in srgb, var(--accent) 35%, var(--bg)); }
+  40% { opacity: 1; transform: translateY(0); }
+  100% { background: var(--bg); }
+}
 @keyframes tw-flash {
   0% { background: color-mix(in srgb, var(--good) 45%, var(--bg)); transform: scale(1.06); }
   100% { background: var(--bg); transform: scale(1); }

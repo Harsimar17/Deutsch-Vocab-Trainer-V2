@@ -101,7 +101,8 @@ function Drill() {
 }
 
 // The learnt words that fit this conversation: beside the call on a wide screen, a folding
-// strip above the dock on a phone. Ticked as they are said; a tap on one shows more.
+// strip above the dock on a phone. Ticked as they are said, each one bringing a new word in
+// (it slides in); a tap on one shows more.
 function TopicWords() {
   const tw = useUi((s) => s.topicWords);
   const [folded, setFolded] = useState(false);
@@ -122,7 +123,7 @@ function TopicWords() {
           return (
             // a word just ticked gets a new key, so its highlight plays again
             <li key={flash ? `${w.de}@${tw.flashAt}` : w.de} tabIndex={0} onClick={() => toggle(w.de)}
-              className={`tw-word ${w.status}` + (flash ? " flash" : "") + (open.has(w.de) ? " open" : "")}>
+              className={`tw-word ${w.status}` + (flash ? (w.status === "used" ? " flash" : " arrive") : "") + (open.has(w.de) ? " open" : "")}>
               <span className="tw-mark">{w.status === "used" ? "✓" : "○"}</span>
               <span className="tw-de" lang={tw.lang}>{w.de}</span>
               <span className="tw-en">{w.en}</span>
