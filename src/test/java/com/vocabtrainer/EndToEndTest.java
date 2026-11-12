@@ -681,6 +681,28 @@ class EndToEndTest {
 
     @Test
     @SuppressWarnings("unchecked")
+    void talkloopKeepsWhatCallsHadLatelyAcrossDevices() throws Exception {
+        String t = login(BEN, "ben-test-pw");
+        String link = (String) ok(post("/api/talkloop/link"), t, null).get("token");
+
+        // The laptop's drills had two situations; the phone then has one of them again and a new one.
+        ok(post("/api/talkloop/used"), link, Map.of("used", Map.of("drill-situations", List.of("Umzug", "Arzttermin"))));
+        Map<String, Object> used = (Map<String, Object>) ok(post("/api/talkloop/used"), link, Map.of("used", Map.of(
+                "drill-situations", List.of("Umzug", "Reise planen"),
+                "scene-cafe", List.of("Hallo! Was darf's sein?"),
+                "Bad Kind!", List.of("skipped")))).get("used");
+        assertEquals(List.of("Reise planen", "Umzug", "Arzttermin"), used.get("drill-situations")); // newest first
+        assertEquals(List.of("Hallo! Was darf's sein?"), used.get("scene-cafe"));
+        assertNull(used.get("Bad Kind!"));
+
+        // {} just reads it; a session can't use it; a wrong shape is refused.
+        assertEquals(2, ((Map<String, Object>) ok(post("/api/talkloop/used"), link, Map.of()).get("used")).size());
+        assertEquals(401, status(post("/api/talkloop/used"), t, Map.of()));
+        assertEquals(400, status(post("/api/talkloop/used"), link, Map.of("used", List.of())));
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
     void talkloopSyncsItsSentenceDeckAcrossDevices() throws Exception {
         String t = login(BEN, "ben-test-pw");
         String link = (String) ok(post("/api/talkloop/link"), t, null).get("token");

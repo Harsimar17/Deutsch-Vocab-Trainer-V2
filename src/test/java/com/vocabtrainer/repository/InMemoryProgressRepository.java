@@ -32,6 +32,7 @@ public class InMemoryProgressRepository extends ProgressRepository {
     private int talkloopSpokenWrites;
     private final Map<String, Map<String, Object>> talkloopSentences = new ConcurrentHashMap<>();
     private int talkloopSentenceWrites;
+    private final Map<String, Map<String, Object>> talkloopUsed = new ConcurrentHashMap<>();
     private final Map<String, Map<String, Map<String, Object>>> talkloopChats = new ConcurrentHashMap<>();
     private final Map<String, Map<String, Object>> talkloopTopics = new ConcurrentHashMap<>();
     private final Map<String, Map<String, Object>> talkloopKeys = new ConcurrentHashMap<>();
@@ -159,6 +160,19 @@ public class InMemoryProgressRepository extends ProgressRepository {
         rules(ctx);
         talkloopSentences.put(ctx.uid(), copy(data));
         talkloopSentenceWrites++;
+    }
+
+    @Override
+    public synchronized Map<String, Object> findTalkloopUsed(Ctx ctx) {
+        rules(ctx);
+        Map<String, Object> m = talkloopUsed.get(ctx.uid());
+        return m == null ? null : copy(m);
+    }
+
+    @Override
+    public synchronized void saveTalkloopUsed(Ctx ctx, Map<String, Object> data) {
+        rules(ctx);
+        talkloopUsed.put(ctx.uid(), copy(data));
     }
 
     @Override
