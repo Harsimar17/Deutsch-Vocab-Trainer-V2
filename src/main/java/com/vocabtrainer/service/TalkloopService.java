@@ -44,6 +44,10 @@ public class TalkloopService {
     private static final int MAX_SUBJECTS = 300;
     private static final int MAX_SUBJECTS_PER_CHAT = 40;
     private static final int MAX_SUBJECT = 60;
+    private static final Pattern USED_KIND = Pattern.compile("[a-z0-9_-]{1,40}");
+    private static final int MAX_USED_KINDS = 60;
+    private static final int MAX_USED_PER_KIND = 60;
+    private static final int MAX_USED_ITEM = 300;
     private static final Pattern CHAT_ID = Pattern.compile("[A-Za-z0-9_-]{1,40}");
     /** The keys Talkloop knows (the names its getKey() uses), and what a key may look like. */
     static final List<String> KEY_NAMES = List.of("gemini", "gemini2", "geminiLive", "groq", "groq2", "groq3",
@@ -288,6 +292,53 @@ public class TalkloopService {
                 repo.saveTalkloopSentences(ctx, Map.of("sentences", sentences));
             }
             return Map.of("sentences", sentences);
+        }
+    }
+
+    /**
+     * What Talkloop's calls have had lately, per kind (a drill's situations, the role cards,
+     * one scene's openings, the Büro's visits, a live call's subjects…), so a new call can
+     * steer clear of it on any device. The body is {used: {kind: [item, …]}}, each kind's
+     * items in the order they came up; each moves to the front of its kind (newest first),
+     * and only the newest {@value #MAX_USED_PER_KIND} per kind are kept. The whole record
+     * comes back, so {} just reads it. Malformed kinds and items are skipped.
+     */
+    @SuppressWarnings("unchecked")
+    public Map<String, Object> syncUsed(Ctx ctx, Map<String, Object> body) {
+        Object sentObject = body.getOrDefault("used", Map.of());
+        if (!(sentObject instanceof Map<?, ?> incoming)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "used: expected an object");
+        }
+        synchronized (syncLocks[Math.floorMod(ctx.uid().hashCode(), syncLocks.length)]) {
+            Map<String, Object> stored = repo.findTalkloopUsed(ctx);
+            Map<String, Object> kinds = new TreeMap<>(
+                    stored != null && stored.get("kinds") instanceof Map<?, ?> m ? (Map<String, Object>) m : Map.of());
+            boolean changed = false; // a device that only reads costs no write
+            for (Map.Entry<?, ?> e : incoming.entrySet()) {
+                if (!(e.getKey() instanceof String kind) || !USED_KIND.matcher(kind).matches()
+                        || !(e.getValue() instanceof List<?> items)
+                        || (!kinds.containsKey(kind) && kinds.size() >= MAX_USED_KINDS)) {
+                    continue;
+                }
+                List<Object> list = new ArrayList<>(kinds.get(kind) instanceof List<?> l ? l : List.of());
+                for (Object o : items.size() > MAX_USED_PER_KIND ? items.subList(items.size() - MAX_USED_PER_KIND, items.size()) : items) {
+                    if (!(o instanceof String raw) || raw.isBlank()) {
+                        continue;
+                    }
+                    String item = raw.strip();
+                    item = item.length() > MAX_USED_ITEM ? item.substring(0, MAX_USED_ITEM) : item;
+                    if (list.indexOf(item) != 0) {
+                        list.remove(item);
+                        list.add(0, item);
+                        changed = true;
+                    }
+                }
+                kinds.put(kind, list.subList(0, Math.min(MAX_USED_PER_KIND, list.size())));
+            }
+            if (changed) {
+                repo.saveTalkloopUsed(ctx, Map.of("kinds", kinds));
+            }
+            return Map.of("used", kinds);
         }
     }
 

@@ -385,6 +385,18 @@ public class ProgressRepository {
         commit(ctx.token(), List.of(update(progressName(ctx) + "/talkloop/topics", data, null)));
     }
 
+    // What each Talkloop mode has had lately (drill situations, role cards, scenes, Büro
+    // visits, live-call subjects), so a new call doesn't repeat it: talkloop/used.
+
+    public Map<String, Object> findTalkloopUsed(Ctx ctx) {
+        Map<String, Object> doc = getDocument(ctx.token(), progressName(ctx) + "/talkloop/used");
+        return doc == null ? null : fieldsOf(doc);
+    }
+
+    public void saveTalkloopUsed(Ctx ctx, Map<String, Object> data) {
+        commit(ctx.token(), List.of(update(progressName(ctx) + "/talkloop/used", data, null)));
+    }
+
     // ---- REST plumbing ----
     // Document names go into the URL literally: as URI *variables* their "/"
     // would be percent-encoded and Firestore would see a different path.

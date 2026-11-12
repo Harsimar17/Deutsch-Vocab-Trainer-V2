@@ -110,6 +110,12 @@ public class TalkloopController {
         return talkloop.syncSpoken(ctx, body);
     }
 
+    /** Merges what a device's calls have had lately (per mode) and returns all of it. Needs the link too. */
+    @PostMapping("/used")
+    public Map<String, Object> used(Ctx ctx, @RequestBody Map<String, Object> body) {
+        return talkloop.syncUsed(ctx, body);
+    }
+
     /** Merges a device's Dolmetscher sentence deck and returns the whole deck. Needs the link too. */
     @PostMapping("/sentences")
     public Map<String, Object> sentences(Ctx ctx, @RequestBody Map<String, Object> body) {

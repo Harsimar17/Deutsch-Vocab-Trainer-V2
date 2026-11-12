@@ -253,13 +253,21 @@ const ROLE_CARD = {
   events: ["was on holiday in Italy last summer", "moved to a new flat last month", "had a big birthday party last weekend", "started a new job two weeks ago", "broke their arm skiing last winter", "won a cooking competition last year", "got a dog in the spring"],
   plans: ["wants to visit Japan next year", "dreams of opening their own café", "is saving for a car", "wants to run a marathon", "plans to learn to sail", "wants to move to the countryside"],
 };
+// Each part is picked from those not on the last few cards (on any device), so cards don't repeat.
 function makeRoleCard() {
-  const pick = (list) => list[Math.floor(Math.random() * list.length)];
+  const recent = recentlyUsed("role-cards", 6);
+  const pick = (list, not = []) => {
+    const fresh = list.filter((x) => !not.includes(x) && !recent.some((card) => card.includes(x)));
+    const from = fresh.length ? fresh : list.filter((x) => !not.includes(x));
+    return from[Math.floor(Math.random() * from.length)];
+  };
   const c = ROLE_CARD;
   const first = pick(c.hobbies);
-  const second = pick(c.hobbies.filter((h) => h !== first));
+  const second = pick(c.hobbies, [first]);
   const age = 20 + Math.floor(Math.random() * 40);
-  return `${pick(c.names)}, ${age}, ${pick(c.jobs)} in ${pick(c.cities)}; ${pick(c.homes)}; ${first} and ${second}; ${pick(c.events)}; ${pick(c.plans)}`;
+  const card = `${pick(c.names)}, ${age}, ${pick(c.jobs)} in ${pick(c.cities)}; ${pick(c.homes)}; ${first} and ${second}; ${pick(c.events)}; ${pick(c.plans)}`;
+  noteUsed("role-cards", card);
+  return card;
 }
 
 // "Discuss a topic" kept asking the same question (and drifted to other subjects) because the
@@ -294,14 +302,13 @@ function wordResting(asked, de, turn) {
 }
 
 // A random topic for the level that the learner hasn't had yet: `recent` lists the topics
-// of earlier chats, newest first. Once every topic has been used, any but the last three.
+// of earlier chats, newest first. Once every topic has been used, one of those used longest ago.
 function pickTopic(level, recent = []) {
   const pool = ["A1", "A2"].includes(level) ? TOPICS.easy : [...TOPICS.harder, ...TOPICS.easy.slice(0, 3)];
   const used = Array.isArray(recent) ? recent : [recent].filter(Boolean);
-  let fresh = pool.filter((t) => !used.includes(t));
-  if (!fresh.length) fresh = pool.filter((t) => !used.slice(0, 3).includes(t));
-  if (!fresh.length) fresh = pool;
-  return fresh[Math.floor(Math.random() * fresh.length)];
+  const fresh = pool.filter((t) => !used.includes(t));
+  if (fresh.length) return fresh[Math.floor(Math.random() * fresh.length)];
+  return leastRecentFirst(pool, (t) => used.indexOf(t))[0];
 }
 
 // Free chat and interview open with "an easy question", and the AI's easy question is nearly
@@ -361,9 +368,21 @@ const themeByName = (name) => [...THEMES.talk, ...THEMES.story].find((t) => t.na
 
 // The chat's themes in the order to bring them up: ones not had lately first, shuffled.
 // `used` lists the subjects of earlier chats, newest first.
+// Once every theme has been had, the ones had longest ago come first (a few of the oldest
+// shuffled), not a random one: that brought back a theme from the last chat or two.
 function pickThemes(pool, used = []) {
-  const shuffle = (list) => list.map((t) => [Math.random(), t]).sort((a, b) => a[0] - b[0]).map(([, t]) => t.name);
-  return [...shuffle(pool.filter((t) => !used.includes(t.name))), ...shuffle(pool.filter((t) => used.includes(t.name)))];
+  const shuffle = (list) => list.map((t) => [Math.random(), t]).sort((a, b) => a[0] - b[0]).map(([, t]) => t);
+  const fresh = shuffle(pool.filter((t) => !used.includes(t.name)));
+  const had = leastRecentFirst(pool.filter((t) => used.includes(t.name)), (t) => used.indexOf(t.name));
+  return [...fresh, ...had].map((t) => t.name);
+}
+
+// Items already had, the one had longest ago first: `age` is its place in a newest-first list.
+// The oldest three are shuffled, so the order isn't the same every time.
+function leastRecentFirst(items, age) {
+  const sorted = [...items].sort((a, b) => age(b) - age(a));
+  const head = sorted.slice(0, 3).map((t) => [Math.random(), t]).sort((a, b) => a[0] - b[0]).map(([, t]) => t);
+  return [...head, ...sorted.slice(3)];
 }
 
 // Conversation modes. Open modes never end on their own — they run until you quit.
@@ -1360,6 +1379,73 @@ function syncSchedule(name, field, { keepalive = false } = {}) {
 const syncSpoken = (options) => syncSchedule("spoken", "words", options);
 const syncSentences = (options) => syncSchedule("sentences", "sentences", options);
 
+// ---------- what calls have had lately ----------
+// Left to itself the AI picks the same situation, scene opening or subject call after call. So
+// each mode's recent material is kept, newest first per kind, and the next call is told to
+// steer clear of it: the sentence drill's situations, the connector drill's tasks, the role
+// cards, how each scene opened, the Büro's visitors and their reasons. Kept here and in the
+// trainer's Firebase record (/api/talkloop/used), so it holds on every device and after the
+// browser's storage is cleared. (Topics and free-chat subjects have their own record: the
+// saved chats, see syncChats.)
+const USED_KEY = "used_by_kind"; // { kind: [item, …] }, newest first
+const USED_UNSENT_KEY = "used_unsent"; // { kind: [item, …] } in the order they came up, not in the trainer yet
+const USED_MAX = 60;
+let usedSync = null;
+
+const usedKind = (kind) => String(kind).toLowerCase().replace(/[^a-z0-9_-]+/g, "-").slice(0, 40);
+const recentlyUsed = (kind, n = USED_MAX) => (store.get(USED_KEY, {})[usedKind(kind)] ?? []).slice(0, n);
+
+function noteUsed(kind, item) {
+  const text = String(item ?? "").replace(/\s+/g, " ").trim().slice(0, 300);
+  if (!text) return;
+  const k = usedKind(kind);
+  const all = store.get(USED_KEY, {});
+  all[k] = [text, ...(all[k] ?? []).filter((t) => t !== text)].slice(0, USED_MAX);
+  store.set(USED_KEY, all);
+  const unsent = store.get(USED_UNSENT_KEY, {});
+  unsent[k] = [...(unsent[k] ?? []).filter((t) => t !== text), text].slice(-USED_MAX);
+  store.set(USED_UNSENT_KEY, unsent);
+}
+
+// Sends what came up here since the last sync and takes the trainer's whole record.
+function syncUsed({ keepalive = false } = {}) {
+  const link = trainerLink();
+  if (!link || usedSync) return;
+  const sent = store.get(USED_UNSENT_KEY, {});
+  const body = JSON.stringify({ used: sent });
+  usedSync = fetch(`${link.api}/api/talkloop/used`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${link.token}`, "Content-Type": "application/json" },
+    body,
+    keepalive: keepalive && body.length < 60_000,
+  })
+    .then(async (res) => {
+      if (!res.ok) return;
+      const remote = (await res.json()).used ?? {};
+      // What came up here while this was on its way stays unsent.
+      const unsent = store.get(USED_UNSENT_KEY, {});
+      for (const [k, items] of Object.entries(sent)) {
+        unsent[k] = (unsent[k] ?? []).filter((t) => !items.includes(t));
+        if (!unsent[k].length) delete unsent[k];
+      }
+      store.set(USED_UNSENT_KEY, unsent);
+      const local = store.get(USED_KEY, {});
+      const merged = {};
+      for (const k of new Set([...Object.keys(remote), ...Object.keys(local)])) {
+        merged[k] = [...new Set([...[...(unsent[k] ?? [])].reverse(), ...(remote[k] ?? []), ...(local[k] ?? [])])].slice(0, USED_MAX);
+      }
+      store.set(USED_KEY, merged);
+    })
+    .catch(() => {})
+    .finally(() => { usedSync = null; });
+}
+
+// A line for the partner: what earlier calls had, to be left alone ("" when nothing yet).
+function usedLine(kind, n, what) {
+  const items = recentlyUsed(kind, n);
+  return items.length ? `${what}: ${items.map((t) => JSON.stringify(t)).join(", ")}.` : "";
+}
+
 // ---------- the Dolmetscher's sentence deck ----------
 // Every sentence the learner is given to say is kept with its right version and comes back
 // like a word in the speaking schedule: said right, it moves up a stage and is due again after
@@ -1569,6 +1655,7 @@ function turnSystemPrompt({ language, nativeLanguage, level, scenario, mode, ten
     ...(LEVEL_GUIDE[level] ? [`At ${level}: ${LEVEL_GUIDE[level]}`] : []),
     m.extra,
     ...(m.usesScene && persona.goal ? [`Scene goal: ${persona.goal}`] : []),
+    ...(m.usesScene ? sceneVariety(scenario) : []),
     "The learner's message comes from speech recognition: ignore missing punctuation and obvious transcription slips.",
     // Said once, briefly: without it, models that get the schema only as text left suggestions empty.
     `Write reply_translation and coach.tip in ${nativeLanguage}; everything else in ${language}. suggestions: 2-3 short answers the learner could give.`,
@@ -1610,6 +1697,7 @@ function turnSystemPrompt({ language, nativeLanguage, level, scenario, mode, ten
           today.situation
             ? `Current situation: ${JSON.stringify(today.situation)}. Continue it from where the conversation left off.`
             : "No situation yet: start one.",
+          ...[usedLine("drill-situations", 25, "Situations of earlier drills: whenever you start a new situation, choose one clearly different from all of these")].filter(Boolean),
           `Ask first for words not said yet${notYet.length ? ` (${notYet.map((w) => w.de).join("; ")})` : ""}, one per step, the one fitting the next moment best. ${neverSay}`,
           // Spelled out: faster models (Groq) otherwise tend to say the word in the question.
           "Most important rule: your reply must NOT contain the word you are asking for, in any form, nor a translation of it, until the learner has said it correctly. Refer to it only as \"das Wort auf deinem Bildschirm\" and describe the moment so that this word is the natural thing to say. Wrong: \"Das Handy sieht schrecklich aus. Sag einen Satz mit diesem Wort.\" Right: \"Das Display ist kaputt und voller Kratzer. Wie findest du das Handy? Nutze das Wort auf deinem Bildschirm.\"",
@@ -1642,7 +1730,7 @@ function turnSystemPrompt({ language, nativeLanguage, level, scenario, mode, ten
   }
   if (m.joiner) {
     const judge = hints?.target ? ` Their task was: ${JSON.stringify(hints.target)}; coach judges whether their message joins those two sentences into one correct sentence with that connector: the connector used, the verb in the right place in each half, nothing changed in meaning. Either order of the halves is right where the connector allows it. A wrong or missing connector or word order gets a coach.correction with the right joined sentence (verb position goes in mistakes as verb_position).` : "";
-    lines.push(`${connectorsLine(hints?.pool ?? [])} situation: the next task, written exactly as: Verbinde mit „<connector>“: <sentence one> + <sentence two>. situation holds that whole task and nothing else, never a topic word. Two short everyday ${language} sentences at their level that make sense joined with it, about something new each time; also after a wrong try give a new one.${judge} reply: one short ${language} reaction to their try (praise, or the rule in a few words); never write the joined sentence of the new task. Every reply gives a new task, without exception: the drill goes on, task after task, until the learner ends the call; never ask whether they want to go on, never sum up or say goodbye. ${hints?.pool?.length === 1 ? `Every task uses „${hints.pool[0].name}“ and nothing else, with new sentences each time.` : "When every connector has had a task, start again from the first with new sentences."}`);
+    lines.push(`${connectorsLine(hints?.pool ?? [])} situation: the next task, written exactly as: Verbinde mit „<connector>“: <sentence one> + <sentence two>. situation holds that whole task and nothing else, never a topic word. Two short everyday ${language} sentences at their level that make sense joined with it, about something new each time; also after a wrong try give a new one.${connectorTasksLine()}${judge} reply: one short ${language} reaction to their try (praise, or the rule in a few words); never write the joined sentence of the new task. Every reply gives a new task, without exception: the drill goes on, task after task, until the learner ends the call; never ask whether they want to go on, never sum up or say goodbye. ${hints?.pool?.length === 1 ? `Every task uses „${hints.pool[0].name}“ and nothing else, with new sentences each time.` : "When every connector has had a task, start again from the first with new sentences."}`);
   }
   if (m.subjects && hints) {
     const quote = (list) => list.map((s) => JSON.stringify(s)).join(", ");
@@ -2980,6 +3068,11 @@ async function translateReply(text) {
 const messageEntries = new Map(); // message id -> its callLog entry (Translate keeps the translation with the call)
 function addCharacterMessage(turn, { silent = false } = {}) {
   const entry = { reply: turn.reply, reply_translation: turn.reply_translation, mood: turn.mood };
+  // A scene's opening line says how this call goes (what is ordered, what the problem is):
+  // kept, so the next call in this scene goes differently.
+  if (MODES[state.settings?.request?.mode]?.usesScene && !restoringCall && turn.reply && !callLog.some((e) => "reply" in e)) {
+    noteUsed(`scene-${state.settings.request.scenario}`, turn.reply.slice(0, 200));
+  }
   callLog.push(entry);
   saveCall();
   const id = addMessage({
@@ -3384,14 +3477,86 @@ async function liveModel(key) {
   return best;
 }
 
+// The connector drill's tasks from earlier calls, never to be given again.
+function connectorTasksLine() {
+  const line = usedLine("connector-tasks", 30, "Tasks given in earlier drills, never again (new sentences on new everyday subjects)");
+  return line ? ` ${line}` : "";
+}
+
+// How earlier calls in this scene opened, so this one goes differently.
+function sceneVariety(scenario) {
+  const line = usedLine(`scene-${scenario}`, 6, "Earlier calls in this scene opened like this");
+  return line ? [`${line} Make this call go differently: another request, item, detail or small problem, and open with other words.`] : [];
+}
+
+// A live free chat's subjects: earlier calls' to leave alone, this call's own so far.
+function liveSubjectLines(settings, m) {
+  const hints = subjectHints(settings.subjects ?? [], m.themes ? chatThemes(settings) : []);
+  const quote = (list) => list.map((s) => JSON.stringify(s)).join(", ");
+  const lines = [];
+  if (hints.covered.length) lines.push(`Talked about in earlier calls, so never bring these up yourself (follow the learner if they do): ${quote(hints.covered)}.`);
+  if (hints.current.length) lines.push(`Already talked about in this call: ${quote(hints.current)}; when the current subject runs dry, move on to a new one, not back to one of these.`);
+  return lines;
+}
+
+// A live call has no subject field, so every few turns (and when it ends) the AI names the
+// subjects talked about from the transcript. They go into the chat's subjects like a
+// turn-based chat's: saved with it in the trainer, left alone by the next calls, and the
+// topic-words panel follows the latest one.
+const LIVE_SUBJECTS_EVERY = 6; // learner turns
+const LIVE_SUBJECTS_SCHEMA = {
+  type: "OBJECT",
+  properties: { subjects: { type: "ARRAY", items: { type: "STRING" } } },
+  required: ["subjects"],
+};
+
+async function liveSubjectsFrom(conversation, known) {
+  const raw = await aiJson({
+    systemInstruction: `Name the subjects talked about in this part of a language-practice conversation, in the order they came up: each in two to four English words (e.g. "weekend plans", "his new job"), at most five, only real subjects (no greetings or small talk). Where one is the same as a subject already known, write it exactly as known.`,
+    schema: LIVE_SUBJECTS_SCHEMA,
+    contents: [{ role: "user", parts: [{ text: `${known.length ? `Subjects already known: ${known.map((s) => JSON.stringify(s)).join(", ")}\n` : ""}Conversation:\n${conversation}` }] }],
+    temperature: 0.2,
+  });
+  return [...new Set((Array.isArray(raw?.subjects) ? raw.subjects : []).map((s) => String(s).trim().toLowerCase().slice(0, 60)).filter(Boolean))].slice(0, 5);
+}
+
+function noteLiveSubjects() {
+  const settings = state.settings;
+  const id = chatId;
+  if (!settings?.live || !id || !MODES[settings.request.mode]?.subjects || MODES[settings.request.mode]?.office) return;
+  if (callLog.filter((e) => "you" in e).length < 2) return; // too short to have a subject
+  const conversation = recentConversation(14);
+  liveSubjectsFrom(conversation, settings.subjects ?? [])
+    .then((subjects) => {
+      if (!subjects.length) return;
+      if (state.settings === settings) { // still in the call
+        subjects.forEach(noteSubject);
+        saveCall();
+        prepareTopicWords();
+        return;
+      }
+      // The call has ended meanwhile: its saved chat gets them.
+      const chats = topicChats();
+      const chat = chats.find((c) => c.id === id);
+      if (!chat?.settings) return;
+      const current = (chat.settings.subjects ??= []);
+      for (const s of subjects) if (!current.includes(s)) current.push(s);
+      chat.topic = chatTitle(chat.settings);
+      store.set(CHATS_KEY, chats);
+      store.set(SUBJECTS_KEY, [...new Set([...[...subjects].reverse(), ...store.get(SUBJECTS_KEY, [])])].slice(0, 300));
+      queueChatUpload(id);
+    })
+    .catch((error) => debugLog(`live call: no subjects (${error.message})`));
+}
+
 // The partner's instructions for a spoken call: as turnSystemPrompt, without its JSON fields.
 const LIVE_DRILLS = {
   interpret: ({ language, nativeLanguage }) => ({
-    extra: `This is an interpreter drill. Each turn, say one short everyday sentence in ${nativeLanguage} for the learner to say in ${language}, a new situation each time. Check their version: if it is wrong, say the correct ${language} sentence once, then give the next one. Keep your own words very short, so they do the talking. Never stop giving sentences.`,
+    extra: `This is an interpreter drill. Each turn, say one short everyday sentence in ${nativeLanguage} for the learner to say in ${language}, a new situation each time. Check their version: if it is wrong, say the correct ${language} sentence once, then give the next one. Keep your own words very short, so they do the talking. Never stop giving sentences.${sentencesGiven({}).length ? ` Given in earlier drills, never again: ${sentencesGiven({}).slice(0, 30).map((g) => JSON.stringify(g)).join(" ")}.` : ""}`,
     opener: "(Start the interpreter drill: say in one short sentence what you will do, then give the first sentence.)",
   }),
   connectors: ({ language }, settings) => ({
-    extra: `This is a connector drill. ${connectorsLine(settings.connectors ?? [])} Each turn, say the task aloud: "Verbinde mit" and the connector, then two short everyday ${language} sentences that make sense joined with it, something new each time. The learner says them as one sentence. Check the connector and the word order: if it is wrong, say the correct sentence and the rule in a few words; if it is right, praise it in two or three words. Then give the next task at once. Never stop giving tasks and never ask whether they want to go on.`,
+    extra: `This is a connector drill. ${connectorsLine(settings.connectors ?? [])} Each turn, say the task aloud: "Verbinde mit" and the connector, then two short everyday ${language} sentences that make sense joined with it, something new each time. The learner says them as one sentence. Check the connector and the word order: if it is wrong, say the correct sentence and the rule in a few words; if it is right, praise it in two or three words. Then give the next task at once. Never stop giving tasks and never ask whether they want to go on.${connectorTasksLine()}`,
     opener: "(Start the connector drill: say in one short sentence what you will do, then give the first task.)",
   }),
 };
@@ -3409,8 +3574,10 @@ function liveSystemPrompt(settings, recap = []) {
     `Learner: ${language} at CEFR ${level}, native ${nativeLanguage}. Speak at their level.${LEVEL_GUIDE[level] ? ` At ${level}: ${LEVEL_GUIDE[level]}` : ""}`,
     extra,
     ...(m.usesScene && persona.goal ? [`Scene goal: ${persona.goal}`] : []),
+    ...(m.usesScene ? sceneVariety(scenario) : []),
     ...(settings.topic ? [`Today's topic: "${settings.topic}". Stay on it.`] : []),
     ...(m.themes && settings.subjects?.length ? [`Start with ${themeByName(settings.subjects[0])?.ask ?? settings.subjects[0]}.`] : []),
+    ...(m.subjects && !m.office ? liveSubjectLines(settings, m) : []),
     ...(settings.roleCard ? [`The learner's role card (they play this person): ${settings.roleCard}.`] : []),
     "The learner may pause to think: wait for them.",
     "A message in brackets starting \"(Coach, not the learner:\" comes from the learning app: do what it says, in your own voice and in character, and never mention a coach or an app.",
@@ -3606,6 +3773,8 @@ function liveFlushLearner() {
   addLearnerMessage(said);
   state.history.push({ role: "user", content: said });
   markTopicWords(said);
+  live.learnerTurns = (live.learnerTurns ?? 0) + 1;
+  if (live.learnerTurns % LIVE_SUBJECTS_EVERY === 0) noteLiveSubjects();
   if (state.drill?.live) liveDrillAttempt(said);
   else liveCoach(said, live.lastReply ?? "");
 }
@@ -4005,8 +4174,8 @@ function officeRemember() {
 
 function officePick() {
   const memory = officeMemory();
-  const recentNames = memory.slice(-2).map((m) => m.name);
-  const recentReasons = store.get("office_recent_reasons", []);
+  const recentNames = [...new Set([...memory.slice(-2).map((m) => m.name), ...recentlyUsed("office-colleagues", 2)])];
+  const recentReasons = [...new Set([...store.get("office_recent_reasons", []), ...recentlyUsed("office-reasons", 8)])];
   const colleague = shuffled(OFFICE_COLLEAGUES.filter((c) => !recentNames.includes(c.name)))[0] ?? OFFICE_COLLEAGUES[0];
   const now = new Date();
   const hour = now.getHours() + now.getMinutes() / 60;
@@ -4015,7 +4184,9 @@ function officePick() {
   // A reason tied to this moment (lunch, Friday afternoon) wins half the time it fits.
   const reason = (timely.length && Math.random() < 0.5 ? shuffled(timely)[0] : null)
     ?? shuffled(OFFICE_REASONS.filter((r) => !r.when && !r.day && !recentReasons.includes(r.why)))[0] ?? OFFICE_REASONS[0];
-  store.set("office_recent_reasons", [...recentReasons, reason.why].slice(-8));
+  store.set("office_recent_reasons", [...store.get("office_recent_reasons", []), reason.why].slice(-8));
+  noteUsed("office-reasons", reason.why);
+  noteUsed("office-colleagues", colleague.name);
   return { ...colleague, reason: reason.why };
 }
 
@@ -4263,7 +4434,10 @@ async function sendTurn(message) {
       nextSentence(state.settings, turn.situation);
     }
     // The connector drill's next pair to join, kept with the call like the interpreter's sentence.
-    if (MODES[state.settings.request.mode]?.joiner && turn.situation.trim()) state.settings.joinThis = turn.situation.trim();
+    if (MODES[state.settings.request.mode]?.joiner && turn.situation.trim()) {
+      state.settings.joinThis = turn.situation.trim();
+      noteUsed("connector-tasks", state.settings.joinThis);
+    }
 
     state.rapport = Math.max(0, state.rapport + Math.max(-2, Math.min(2, turn.rapport_delta)));
     renderStats();
@@ -4290,6 +4464,7 @@ async function sendTurn(message) {
     // The drill's situation is kept here and sent back each turn (only the last few turns
     // are), so the story stays coherent; the header shows it.
     if (todayWords && MODES[state.settings.request.mode]?.drill && turn.situation?.trim()) {
+      if (turn.situation.trim().slice(0, 80) !== todayWords.situation) noteUsed("drill-situations", turn.situation.trim().slice(0, 80));
       todayWords.situation = turn.situation.trim().slice(0, 80);
       ui.merge("call", { mode: `Sentence drill · ${todayWords.situation}` });
     }
@@ -5041,6 +5216,7 @@ function heardDelete() {
 function endCall() {
   officeStop();
   stopLive();
+  noteLiveSubjects(); // what a live free chat was about, for the next calls
   clearLiveHandle();
   liveReconnectPending = false;
   stopListening();
@@ -5076,6 +5252,7 @@ function endCall() {
   syncMistakes(); // the call is over: send its mistakes
   syncSpoken();
   syncSentences();
+  syncUsed();
   flushChatUploads(); // and the chat, without waiting
 }
 
@@ -5141,6 +5318,7 @@ function initTalkloop() {
       syncMistakes();
       syncSpoken();
       syncSentences();
+      syncUsed();
       syncChats().catch(() => {});
     });
   // Leaving the page (closing the tab, switching apps) sends what this device recorded.
@@ -5149,6 +5327,7 @@ function initTalkloop() {
       syncMistakes({ keepalive: true });
       syncSpoken({ keepalive: true });
       syncSentences({ keepalive: true });
+      syncUsed({ keepalive: true });
       flushChatUploads({ keepalive: true });
     } else if (liveReconnectPending && !state.paused && state.settings?.live && !live && ui.get().view.call) {
       startLive(); // the live call dropped while the app was in the background
