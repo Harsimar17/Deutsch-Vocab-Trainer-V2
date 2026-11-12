@@ -740,8 +740,13 @@ function nextVocabBatch(n = 12) {
 // Nothing here ever holds up the call: a local match fills the panel at once, the AI's better
 // pick replaces it whenever it arrives, and if it never does the local one simply stays.
 // Kept in state.settings.topicWords, so it is saved with the call:
-// { subject, gen, source: "local" | "ai", words: [{ de, en, example, angle, fit, status: "open" | "used" }] }
-const TOPIC_WORDS_MAX = 10;
+// { subject, gen, source: "local" | "ai", words: [{ de, en, example, angle, fit, status: "open" | "used" }],
+//   reserve: [same, not shown yet], owed: words still to add once more are found }
+// Each word the learner says brings the next one in from the reserve, so there is always
+// something left to use; when the reserve runs low, the AI picks more from where the
+// conversation has got to (refillTopicWords).
+const TOPIC_WORDS_MAX = 10; // shown at first
+const TOPIC_WORDS_RESERVE = 10; // kept back, to replace the words the learner uses
 const TOPIC_WORDS_MISSED_KEY = "topic_words_missed"; // offered last time but not used: they get a head start
 const TOPIC_STOP = new Set("aber alle auch eine einem einen einer eines oder sein sind sollte sollten soll wird werden wurde haben hast hatte nicht noch schon sehr viel mehr dann wenn weil dass denn doch kann können könnte muss müssen ihre ihren seine deine meine mein dein unser euer über unter durch gegen ohne zwischen wie was wer wann warum welche welcher lieber besser gute guter gutes eine ist the and for with your what when where which their about from that this they them into than then have has had are was were will would could should over some other more most very just like make made does did".split(" "));
 
@@ -807,14 +812,14 @@ function scoreTopicWord(w, subjectTokens, missed) {
   return score + (KNOWN_LEVELS.includes(w.level) ? 0 : 1.5) + (missed.has(w.de) ? 1 : 0);
 }
 
-function localTopicWords(subject, pool) {
+function localTopicWords(subject, pool, max = TOPIC_WORDS_MAX + TOPIC_WORDS_RESERVE) {
   const tokens = topicTokens(subject);
   const missed = new Set(store.get(TOPIC_WORDS_MISSED_KEY, []));
   return pool
     .map((w) => [scoreTopicWord(w, tokens, missed), w])
     .filter(([s]) => s >= 3)
     .sort((a, b) => b[0] - a[0])
-    .slice(0, TOPIC_WORDS_MAX)
+    .slice(0, max)
     .map(([, w]) => w);
 }
 
@@ -836,8 +841,12 @@ const TOPIC_WORDS_SCHEMA = {
 };
 
 // The AI's pick: from the learner's words, only the ones a native speaker would really use on
-// this subject, each with an angle (a question whose natural answer needs it).
-async function aiTopicWords(subject, pool, local, language) {
+// this subject, each with an angle (a question whose natural answer needs it). With
+// `conversation` (the last lines of the call) it picks for where the talk has got to, and
+// `exclude` (German words) are words already shown or kept back.
+async function aiTopicWords(subject, pool, local, language, { conversation = "", exclude = new Set(), max = TOPIC_WORDS_MAX + TOPIC_WORDS_RESERVE } = {}) {
+  pool = pool.filter((w) => !exclude.has(w.de));
+  local = local.filter((w) => !exclude.has(w.de));
   const learnt = pool.filter((w) => !KNOWN_LEVELS.includes(w.level));
   const known = pool.filter((w) => KNOWN_LEVELS.includes(w.level));
   const tokens = topicTokens(subject);
@@ -850,10 +859,13 @@ async function aiTopicWords(subject, pool, local, language) {
     ...shuffled(known).slice(0, Math.max(0, 120 - learnt.length)),
   ])].slice(0, 320);
   if (!candidates.length) return [];
+  const following = conversation
+    ? " The conversation so far is given too: prefer words that fit where it is now and where it could naturally go next, still on the subject."
+    : "";
   const raw = await aiJson({
-    systemInstruction: `You help a ${language} learner practise their own vocabulary in a real conversation. From the candidate list, choose only the words a native speaker would naturally use when talking about the subject. fit: 3 = central to the subject, 2 = comes up naturally, 1 = would need forcing (leave those out). Choose at most ${TOPIC_WORDS_MAX}, fewer if few fit; an empty list is fine. Prefer words marked *. angle: in English, at most 10 words, a question about the subject itself whose natural answer uses the word (e.g. "ask about the disadvantages of a car ban"). Write de exactly as in the list.`,
+    systemInstruction: `You help a ${language} learner practise their own vocabulary in a real conversation. From the candidate list, choose only the words a native speaker would naturally use when talking about the subject.${following} fit: 3 = central to the subject, 2 = comes up naturally, 1 = would need forcing (leave those out). Choose at most ${max}, best first, fewer if few fit; an empty list is fine. Prefer words marked *. angle: in English, at most 10 words, a question about the subject itself whose natural answer uses the word (e.g. "ask about the disadvantages of a car ban"). Write de exactly as in the list.`,
     schema: TOPIC_WORDS_SCHEMA,
-    contents: [{ role: "user", parts: [{ text: `Subject: ${subject}\nCandidates (* = learnt recently):\n${candidates.map((w) => `${KNOWN_LEVELS.includes(w.level) ? "" : "*"}${w.de}${w.en ? ` — ${w.en}` : ""}`).join("\n")}` }] }],
+    contents: [{ role: "user", parts: [{ text: `Subject: ${subject}\n${conversation ? `Conversation so far:\n${conversation}\n` : ""}Candidates (* = learnt recently):\n${candidates.map((w) => `${KNOWN_LEVELS.includes(w.level) ? "" : "*"}${w.de}${w.en ? ` — ${w.en}` : ""}`).join("\n")}` }] }],
     temperature: 0.3,
   });
   const picked = [];
@@ -862,7 +874,7 @@ async function aiTopicWords(subject, pool, local, language) {
     const w = candidates.find((c) => c.de === p.de) ?? candidates.find((c) => bareWord(c.de) === bareWord(p.de ?? ""));
     if (w && !picked.some((x) => x.w === w)) picked.push({ w, fit: Number(p.fit), angle: String(p.angle ?? "").slice(0, 120) });
   }
-  return picked.sort((a, b) => b.fit - a.fit).slice(0, TOPIC_WORDS_MAX);
+  return picked.sort((a, b) => b.fit - a.fit).slice(0, max);
 }
 
 const topicWordEntry = (w, extra = {}) => ({ de: w.de, en: w.en ?? "", example: w.example ?? "", angle: "", fit: 0, status: "open", ...extra });
@@ -881,9 +893,16 @@ function prepareTopicWords(settings = state.settings) {
     .then((pool) => {
       if (topicWordsLoading !== loading) return; // a newer subject came along meanwhile
       topicWordsLoading = null;
+      topicPool = { settings, pool };
       if (pool.length && state.settings === settings) pickTopicWords(settings, subject, pool);
     })
     .catch((error) => { topicWordsLoading = null; debugLog(`topic words: no words (${error.message})`); });
+}
+
+// The panel's first words, the rest kept back; used words stay (ticked) at the top.
+function splitTopicWords(used, entries) {
+  const fresh = entries.filter((e) => !used.some((u) => u.de === e.de));
+  return { words: [...used, ...fresh.slice(0, TOPIC_WORDS_MAX)], reserve: fresh.slice(TOPIC_WORDS_MAX) };
 }
 
 function pickTopicWords(settings, subject, pool) {
@@ -892,20 +911,16 @@ function pickTopicWords(settings, subject, pool) {
   const kept = (prev?.words ?? []).filter((w) => w.status === "used");
   const local = localTopicWords(subject, pool);
   const gen = (prev?.gen ?? 0) + 1;
-  settings.topicWords = {
-    subject,
-    gen,
-    source: "local",
-    words: [...kept, ...local.filter((w) => !kept.some((k) => k.de === w.de)).map((w) => topicWordEntry(w))],
-  };
+  settings.topicWords = { subject, gen, source: "local", owed: 0, ...splitTopicWords(kept, local.map((w) => topicWordEntry(w))) };
   renderTopicWords();
   aiTopicWords(subject, pool, local, settings.request.language)
     .then((picked) => {
       const tw = settings.topicWords;
       if (!tw || tw.gen !== gen || state.settings !== settings) return; // the subject moved on meanwhile
       const used = tw.words.filter((w) => w.status === "used");
-      tw.words = [...used, ...picked.filter((p) => !used.some((u) => u.de === p.w.de)).map((p) => topicWordEntry(p.w, { fit: p.fit, angle: p.angle }))];
+      Object.assign(tw, splitTopicWords(used, picked.map((p) => topicWordEntry(p.w, { fit: p.fit, angle: p.angle }))));
       tw.source = "ai";
+      tw.owed = 0;
       renderTopicWords();
       liveQueueTopicWords();
       saveCall();
@@ -913,14 +928,94 @@ function pickTopicWords(settings, subject, pool) {
     .catch((error) => debugLog(`topic words: kept the quick list (${error.message})`));
 }
 
-// The learner's sentence: every panel word in it is ticked. Returns the words newly used.
+// The learner's sentence: every panel word in it is ticked, and each one brings the next word
+// in from the reserve. Returns the words newly used.
 function markTopicWords(text) {
   const tw = state.settings?.topicWords;
   if (!tw || !text) return [];
   const fresh = tw.words.filter((w) => w.status !== "used" && saysWord(text, w.de));
+  if (!fresh.length) return fresh;
   for (const w of fresh) { w.status = "used"; w.usedAt = Date.now(); }
-  if (fresh.length) renderTopicWords(fresh.map((w) => w.de));
+  tw.reserve ??= [];
+  const added = [];
+  for (let i = 0; i < fresh.length; i++) {
+    const next = takeReserveWord(tw);
+    if (next) added.push(next);
+    else tw.owed = (tw.owed ?? 0) + 1;
+  }
+  tw.words.push(...added);
+  renderTopicWords([...fresh, ...added].map((w) => w.de));
+  if (added.length) liveQueueTopicWords();
+  if (tw.reserve.length < 3) refillTopicWords();
   return fresh;
+}
+
+// The next kept-back word not already on the panel (the subject may have moved on meanwhile).
+function takeReserveWord(tw) {
+  while (tw.reserve?.length) {
+    const next = tw.reserve.shift();
+    if (!tw.words.some((w) => w.de === next.de)) return next;
+  }
+  return null;
+}
+
+// The last few lines of the call, for picking words that fit where the talk is now.
+function recentConversation(lines = 8) {
+  return callLog
+    .slice(-lines)
+    .map((e) => (e.you ? `Learner: ${e.you}` : e.reply ? `Partner: ${e.reply}` : ""))
+    .filter(Boolean)
+    .join("\n")
+    .slice(-1500);
+}
+
+// More words for the reserve, from the subject and what has been said so far: the AI's pick,
+// else a local match on the subject and the latest lines. Words owed to the panel (used ones
+// that had nothing to replace them) are added at once; the rest are kept back.
+let topicRefill = null; // the settings a refill is running for
+let topicPool = null; // { settings, pool }: the words read for this call
+function refillTopicWords() {
+  const settings = state.settings;
+  const tw = settings?.topicWords;
+  if (!tw || topicRefill === settings) return;
+  topicRefill = settings;
+  const { gen, subject } = tw;
+  const conversation = recentConversation();
+  const poolReady = topicPool?.settings === settings ? Promise.resolve(topicPool.pool) : topicWordPool(settings);
+  poolReady
+    .then(async (pool) => {
+      topicPool = { settings, pool };
+      const exclude = new Set([...tw.words, ...(tw.reserve ?? [])].map((w) => w.de));
+      const local = localTopicWords(`${subject} ${conversation}`, pool.filter((w) => !exclude.has(w.de)));
+      let entries;
+      try {
+        const picked = await aiTopicWords(subject, pool, local, settings.request.language, { conversation, exclude, max: TOPIC_WORDS_RESERVE });
+        entries = picked.map((p) => topicWordEntry(p.w, { fit: p.fit, angle: p.angle }));
+      } catch (error) {
+        debugLog(`topic words: more from a quick match (${error.message})`);
+        entries = local.slice(0, TOPIC_WORDS_RESERVE).map((w) => topicWordEntry(w));
+      }
+      const now = settings.topicWords;
+      if (!now || now.gen !== gen || state.settings !== settings) return; // the subject moved on meanwhile
+      const have = new Set([...now.words, ...(now.reserve ?? [])].map((w) => w.de));
+      now.reserve = [...(now.reserve ?? []), ...entries.filter((e) => !have.has(e.de))];
+      const added = [];
+      while (now.owed > 0) {
+        const next = takeReserveWord(now);
+        if (!next) break;
+        added.push(next);
+        now.owed--;
+      }
+      if (added.length) {
+        now.words.push(...added);
+        liveQueueTopicWords();
+      }
+      now.owed = 0; // none left that fit: nothing more is waited for
+      renderTopicWords(added.map((w) => w.de));
+      saveCall();
+    })
+    .catch((error) => debugLog(`topic words: no more words (${error.message})`))
+    .finally(() => { if (topicRefill === settings) topicRefill = null; });
 }
 
 // The partner's instructions for the panel's words: conversation first, words only as openings.
@@ -965,7 +1060,9 @@ function renderTopicWords(flash = []) {
         ? "Words appear once a subject comes up."
         : !words.length
           ? tw.source === "ai" ? "None of your words fit this one: just talk!" : "Looking for your words that fit…"
-          : tw.source === "ai" ? "Your learnt words that fit. Use them where they come naturally." : "Quick match: refining…",
+          : used === words.length && tw.owed > 0
+            ? "All used! Finding more of your words for where the talk is going…"
+            : tw.source === "ai" ? "Your learnt words that fit. Each one you use brings in another." : "Quick match: refining…",
       lang: state.settings?.locale ?? "de-DE",
       words: words.map((w) => ({
         de: w.de,
