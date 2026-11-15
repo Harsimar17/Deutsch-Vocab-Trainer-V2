@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 // assets/ from classpath:static exactly as before. Files that only the backend serves
 // (data/*.json, icons, talkloop/chatgpt.html, talkloop/piper.js) stay in
 // src/main/resources/static and are copied there by Maven, so emptyOutDir stays off.
-const BACKEND = "http://localhost:8080";
+const BACKEND = process.env.BACKEND || "http://localhost:8080"; // e.g. BACKEND=http://localhost:8090 npm run dev
 const staticDir = fileURLToPath(new URL("../src/main/resources/static", import.meta.url));
 
 export default defineConfig({
@@ -26,12 +26,8 @@ export default defineConfig({
     port: 5173,
     fs: { allow: [".", staticDir] },
     // `npm run dev` next to a running Spring Boot: the API and static data come from it.
-    proxy: {
-      "/api": BACKEND,
-      "/mcp": BACKEND,
-      "/data": BACKEND,
-      "/talkloop/piper.js": BACKEND,
-      "/talkloop/chatgpt.html": BACKEND,
-    },
+    // The backend only accepts requests from its own origin, so they go as if from there.
+    proxy: Object.fromEntries(["/api", "/mcp", "/data", "/talkloop/piper.js", "/talkloop/chatgpt.html"]
+      .map((path) => [path, { target: BACKEND, changeOrigin: true, headers: { origin: BACKEND } }])),
   },
 });

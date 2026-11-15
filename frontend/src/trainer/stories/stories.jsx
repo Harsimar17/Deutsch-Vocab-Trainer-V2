@@ -1,4 +1,5 @@
 import React, { useState, useCallback, useEffect, useRef, useMemo } from "react";
+import { PageTitle, Eyebrow, Count } from "../../bits/fx.jsx";
 import ReactDOM from "react-dom";
 import { api } from "../lib/api.js";
 import { useContent, useDrill } from "../lib/content.js";
@@ -70,9 +71,9 @@ export function StoriesList({ progress, onSettings }) {
   return (
     <div style={{ ...srsCol, width: "100%", maxWidth: "560px", margin: "0 auto", alignItems: "stretch", gap: "22px" }}>
       <div style={{ textAlign: "center" }}>
-        <div style={{ fontFamily: "var(--font-mono)", fontSize: "10px", fontWeight: 500, letterSpacing: "0.28em", color: "var(--accent)", marginBottom: "8px" }}>{data.level} · LESEN</div>
-        <div style={{ fontFamily: "var(--font-serif)", fontWeight: 600, fontSize: "30px", color: "var(--ink)", letterSpacing: "-0.01em" }}>Geschichten</div>
-        <div style={{ ...monoLabel, color: "var(--ink-soft)", marginTop: "8px" }}>{data.readCount} / {data.total} gelesen</div>
+        <Eyebrow text={`${data.level} · Lesen`} />
+        <PageTitle text="Geschichten" align="center" />
+        <div style={{ ...monoLabel, color: "var(--ink-soft)", marginTop: "8px" }}><Count to={data.readCount} /> / {data.total} gelesen</div>
       </div>
       {data.groups.map((g, gi) => {
         const st = testStatusText(g.test, "words");
@@ -85,8 +86,8 @@ export function StoriesList({ progress, onSettings }) {
               {g.phase.description && <div style={{ fontFamily: "var(--font-serif)", fontStyle: "italic", fontSize: "13px", color: "var(--ink-soft)" }}>{g.phase.description}</div>}
               {g.phase.note && <div style={{ fontFamily: "var(--font-serif)", fontSize: "13px", color: "var(--ink-faint)", marginTop: "4px", lineHeight: 1.5 }}>{g.phase.note}</div>}
             </div>
-            {g.stories.map((s) => (
-              <button key={s.id} onClick={() => onSettings("openStory", s.id)} style={{
+            {g.stories.map((s, si) => (
+              <button key={s.id} className="story-row" onClick={() => onSettings("openStory", s.id)} style={{
                 display: "flex", alignItems: "center", gap: "12px", textAlign: "left", width: "100%", padding: "12px 14px", borderRadius: "12px",
                 border: "1px solid " + (s.read ? "var(--good-soft)" : "var(--line-card)"), background: "var(--paper-raised)", boxShadow: "var(--shadow-soft)", cursor: "pointer", color: "var(--ink)",
               }}>

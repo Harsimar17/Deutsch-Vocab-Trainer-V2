@@ -339,3 +339,59 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   /* During a Talkloop call the call is the whole screen: the app's header and tab bar step aside. */
   body.in-call .app-header, body.in-call .bottomnav { display: none; }
 }
+
+/* ---------- React Bits effects (src/bits) ---------- */
+/* Sign-in: a spotlight card over drifting particles. */
+.fx-particles { position: fixed; inset: 0; z-index: 0; }
+.fx-particles > * { width: 100%; height: 100%; }
+.login-card { position: relative; z-index: 1; width: 100%; box-sizing: border-box; padding: 32px 28px !important;
+  background: var(--paper-raised) !important; border: 1px solid var(--line-card); box-shadow: var(--shadow-card) !important;
+  border-radius: 20px !important; -webkit-backdrop-filter: saturate(160%) blur(18px); backdrop-filter: saturate(160%) blur(18px); }
+.login-title { font-family: var(--font-display); font-size: 24px; font-weight: 700; letter-spacing: -.02em; color: var(--ink); }
+.login-sub { display: flex; justify-content: center; align-items: baseline; gap: 6px; flex-wrap: wrap; text-align: center;
+  font-size: 14px; color: var(--ink-soft); margin: -2px 0 10px; }
+.login-rotating { display: inline-flex; overflow: hidden; padding: 1px 8px; border-radius: 8px; background: var(--btn-grad); color: #fff; font-weight: 600; }
+.login-button { width: 100%; padding: 13px 20px !important; border-radius: 12px; background: var(--btn-grad) !important; color: #fff !important;
+  font-weight: 600; font-size: 15px; box-shadow: var(--glow); }
+/* Magnet wrappers keep the button's own width. */
+.fx-magnet { display: block; }
+/* Titles split into letters keep the page title's look while the letters rise. */
+.page-title.split-parent, .login-title.split-parent { background: none; -webkit-background-clip: border-box; background-clip: border-box; color: var(--ink); }
+
+/* The WebGL aurora behind the whole app replaces the CSS one (kept for reduced motion). */
+.fx-backdrop { position: fixed; inset: 0; z-index: -1; pointer-events: none; }
+.fx-backdrop > * { width: 100%; height: 100%; }
+html.fx-backdrop-on body::before { display: none; }
+/* Gooey navigation: it draws its own pill. */
+.topnav.topnav-gooey { background: none; border: 0; padding: 0; }
+/* Rolling digits sit in the line like text. */
+.fx-digits { display: inline-flex; vertical-align: baseline; }
+/* Practice: the exercises as a bento grid on wide screens; phones keep the tab strip. */
+.bento { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
+.bento-cell { min-width: 0; }
+.bento-wide { grid-column: span 2; }
+.bento-tile { height: 100%; }
+.bento-button { display: flex; flex-direction: column; align-items: flex-start; gap: 3px; width: 100%; height: 100%; min-height: 92px; padding: 14px 14px 12px;
+  border: 0; background: none; color: var(--ink); text-align: left; cursor: pointer; border-radius: 16px; position: relative; z-index: 1; }
+.bento-icon { font-size: 20px; line-height: 1; margin-bottom: 4px; }
+.bento-label { font-family: var(--font-display); font-weight: 700; font-size: 15px; letter-spacing: -.01em; }
+.bento-text { font-size: 12px; line-height: 1.35; color: var(--ink-soft); }
+.bento-tile.on .bento-label { background: var(--btn-grad); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.tabbar-phone { display: none; }
+@media (max-width: 760px) {
+  .bento { display: none; }
+  .tabbar-phone { display: block; }
+}
+/* Grammar: section headings that come into focus as they scroll in. */
+.rgroup-title { margin: 0; font-family: var(--font-display); font-weight: 700; font-size: 22px; color: var(--ink); }
+
+/* Eyebrow labels sit on their own line above the title (the title letters are an inline block). */
+.page-eyebrow { display: flex; width: fit-content; }
+
+/* Story rows: a light lift on hover (cheap CSS instead of an effect per row). */
+.story-row { transition: transform .18s ease, border-color .18s ease, box-shadow .18s ease !important; }
+@media (hover: hover) { .story-row:hover { transform: translateY(-2px); border-color: var(--line-card) !important; box-shadow: var(--shadow-card) !important; } }
+
+/* The gooey nav sizes its own items: the old .topnav button styles must not reach them. */
+.topnav.topnav-gooey .gooey-nav__link { height: auto; padding: var(--gn-y) var(--gn-x); gap: 8px; border-radius: 999px; background: none; box-shadow: none; font-size: 14px; }
+.topnav.topnav-gooey .gooey-nav__link:hover { background: none; filter: none; }

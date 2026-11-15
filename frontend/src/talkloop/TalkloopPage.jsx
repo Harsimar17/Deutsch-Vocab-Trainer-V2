@@ -1,4 +1,5 @@
 import React, { useEffect } from "react";
+import { PageTitle, Eyebrow, Digits, Reveal, Typed } from "../bits/fx.jsx";
 import "../styles/talkloop.css";
 import { useUi } from "./ui.js";
 import { initTalkloop, setLoggedOutHandler } from "./engine.js";
@@ -21,20 +22,21 @@ export function TalkloopPage({ onLoggedOut }) {
     <div className="talkloop">
       <header className="topbar">
         <div>
-          <span className="eyebrow">Talkloop</span>
-          <h1>Speaking practice</h1>
+          <Eyebrow text="Talkloop" className="eyebrow" />
+          <PageTitle text="Speaking practice" tag="h1" className="" />
+          <Typed className="talk-sub" loop text={["Real conversations with an AI partner, in German.", "Say it, get corrected, say it again.", "Your learnt words come up naturally."]} />
         </div>
         <div className="stats">
-          <span id="streak" title="Days in a row you practised">🔥 {stats.streak}</span>
+          <span id="streak" title="Days in a row you practised">🔥 <Digits value={stats.streak} /></span>
         </div>
       </header>
-      {view.keygate && <KeyGate />}
-      {view.setup && <Setup />}
+      {view.keygate && <Reveal><KeyGate /></Reveal>}
+      {view.setup && <Reveal><Setup /></Reveal>}
       <CallScreen />
       <Explorer />
-      {view.chatgpt && <ChatGptCard />}
-      <Mistakes />
-      <Bookmarks />
+      {view.chatgpt && <Reveal><ChatGptCard /></Reveal>}
+      <Reveal><Mistakes /></Reveal>
+      <Reveal><Bookmarks /></Reveal>
     </div>
   );
 }
