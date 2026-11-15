@@ -703,6 +703,25 @@ class EndToEndTest {
 
     @Test
     @SuppressWarnings("unchecked")
+    void examMarksAreKeptPerLearnerNewestFirst() throws Exception {
+        String t = login(BEN, "ben-test-pw");
+        assertEquals(List.of(), ok(get("/api/exam/results"), t, null).get("results"));
+        ok(post("/api/exam/results"), t, Map.of("result", Map.of("module", "lesen", "diff", "hard", "points", 73, "passed", true, "at", 1000)));
+        List<Map<String, Object>> all = (List<Map<String, Object>>) ok(post("/api/exam/results"), t,
+                Map.of("result", Map.of("module", "sprechen", "diff", "extreme", "points", 55, "passed", false, "at", 2000))).get("results");
+        assertEquals(List.of("sprechen", "lesen"), all.stream().map(r -> r.get("module")).toList());
+        assertEquals(73, ((Number) all.get(1).get("points")).intValue());
+        assertEquals(2, ((List<?>) ok(get("/api/exam/results"), t, null).get("results")).size());
+
+        // Odd results are refused; another learner has none; it needs a login.
+        assertEquals(400, status(post("/api/exam/results"), t, Map.of("result", Map.of("module", "tanzen", "diff", "hard", "points", 50, "passed", true))));
+        assertEquals(400, status(post("/api/exam/results"), t, Map.of("result", Map.of("module", "lesen", "diff", "hard", "points", 140, "passed", true))));
+        assertEquals(List.of(), ok(get("/api/exam/results"), login(ANNA, "anna-test-pw"), null).get("results"));
+        assertEquals(401, status(get("/api/exam/results"), null, null));
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
     void talkloopSyncsItsSentenceDeckAcrossDevices() throws Exception {
         String t = login(BEN, "ben-test-pw");
         String link = (String) ok(post("/api/talkloop/link"), t, null).get("token");

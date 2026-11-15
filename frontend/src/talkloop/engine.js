@@ -2183,7 +2183,7 @@ function geminiTtsBlocked() {
   return Date.now() < store.get("tts_blocked_until", 0);
 }
 
-async function geminiTts(text) {
+async function geminiTts(text, voice = TTS_VOICE) {
   const key = getKey();
   if (!key) return null;
   const request = (key) => fetch(`${API_BASE}/${TTS_MODEL}:generateContent?key=${encodeURIComponent(key)}`, {
@@ -2193,7 +2193,7 @@ async function geminiTts(text) {
       contents: [{ parts: [{ text }] }],
       generationConfig: {
         responseModalities: ["AUDIO"],
-        speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: TTS_VOICE } } },
+        speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: voice } } },
       },
     }),
   });
@@ -5342,4 +5342,6 @@ export {
   textFocus, textBlur, insertUmlaut, toggleUmlautShift, onTextInput, onTextBeforeInput, onTextKeyDown,
   setAutoSend, micClick, togglePause, toggleCoach, drillSay, drillHear, skipDrill, heardEdit, heardDelete, endCall,
   MODES, TENSES, PROVIDERS,
+  // the Prüfung tab writes and marks its exam with the learner's AI, and on Gemini its examiners speak with Gemini's voices
+  aiJson, providerReady, getProvider, geminiTts, geminiTtsBlocked,
 };

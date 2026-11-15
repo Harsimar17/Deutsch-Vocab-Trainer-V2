@@ -279,7 +279,7 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .brand-mark::after { content: ""; position: absolute; inset: 0; border-radius: inherit; box-shadow: inset 0 1px 0 rgba(255,255,255,.45); }
 .brand-sub { font-family: var(--font-serif); font-weight: 500; color: var(--ink-faint); font-size: 12px; letter-spacing: .08em; text-transform: uppercase; }
 .topnav { position: relative; display: flex; gap: 2px; margin: 0 auto; padding: 4px; border-radius: 14px; background: var(--tint); border: 1px solid var(--line); }
-.topnav button { position: relative; display: inline-flex; align-items: center; gap: 8px; height: 34px; padding: 0 15px; border: 0; border-radius: 10px; background: transparent;
+.topnav button { position: relative; display: inline-flex; align-items: center; gap: 8px; height: 34px; padding: 0 13px; border: 0; border-radius: 10px; background: transparent;
   color: var(--ink-soft); font-size: 14px; font-weight: 500; cursor: pointer; white-space: nowrap; }
 .topnav button svg { width: 16px; height: 16px; }
 .topnav button[aria-current="page"] { background: var(--btn-grad); color: #fff; box-shadow: var(--glow); }
@@ -328,7 +328,7 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   .app-main { padding: 22px 16px calc(100px + env(safe-area-inset-bottom)); }
   .page-title { font-size: 32px; }
   /* a floating glass dock, clear of the home indicator */
-  .bottomnav { display: grid; grid-template-columns: repeat(4, 1fr); position: fixed; left: 12px; right: 12px; bottom: calc(10px + env(safe-area-inset-bottom)); z-index: 30;
+  .bottomnav { display: grid; grid-template-columns: repeat(5, 1fr); position: fixed; left: 12px; right: 12px; bottom: calc(10px + env(safe-area-inset-bottom)); z-index: 30;
     height: 64px; padding: 6px; border-radius: 22px; border: 1px solid var(--line-card); background: var(--header-bg); box-shadow: var(--shadow-card);
     -webkit-backdrop-filter: saturate(180%) blur(24px); backdrop-filter: saturate(180%) blur(24px); }
   .bottomnav button { position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; border: 0; border-radius: 16px; background: none;

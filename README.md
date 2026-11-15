@@ -17,6 +17,8 @@ browser, an account, and (for speaking practice) a free key, explained below.
   Each phase ends with a test (*Phasentest*).
 - **Talkloop, the speaking partner:** you talk German out loud, an AI answers with a
   voice like in a phone call, corrects your mistakes and uses the words you learnt.
+- **Prüfung, the exam simulation:** a whole Goethe-Zertifikat B1 exam (Lesen, Hören,
+  Schreiben, Sprechen), written fresh by your AI every time and harder than the real one.
 
 ### Step 1: Get an account
 
@@ -102,6 +104,27 @@ While you talk:
 Use **Chrome** on a laptop or Android phone, or **Safari** on an iPhone. If the microphone
 doesn't work, check that the browser is allowed to use it.
 
+### Step 6: Take a practice exam (the *Prüfung* tab)
+
+It works like the Goethe-Zertifikat B1: the same four modules, the same parts, the same
+kinds of tasks and a clock. Your AI writes a new exam every time (it uses the AI key you
+saved in Talkloop), so you never get the same one twice.
+
+1. Choose how hard it is: **Original** (like the real exam), **Schwer** (×1,5) or **Extrem**
+   (×2). The harder levels have more difficult texts, less time, faster audio that you hear
+   only once, and you need 70 % or 80 % to pass instead of 60 %. If you pass here, the real
+   exam feels easier.
+2. Tap **Ganze Prüfung starten** (about two and a half hours), or do one module.
+3. **Lesen** and **Hören:** answer, then tap *Abgeben*. You see every right answer with the
+   reason. In Hören you start the audio once and it runs by itself, as in the exam room.
+4. **Schreiben:** write the three texts. The AI gives you points like an examiner, shows
+   your mistakes and a model answer.
+5. **Sprechen:** an AI examiner (Frau Brandt) and an AI partner (Jonas) talk to you. You plan
+   something with Jonas, give a short presentation and answer questions. Speak into the
+   microphone (or type). With Gemini as your AI they speak with Gemini's natural voices.
+
+Your results are saved in your account. Pronunciation is not marked.
+
 ### A good daily plan (20–30 minutes)
 
 1. **Review** in the trainer (5 min).
@@ -177,6 +200,8 @@ Tests mirror the same packages under `src/test/java`.
 | Session JWT with a 24 h idle timeout | — | — | `security/JwtService`, `security/SessionInterceptor` |
 | Talkloop (speaking practice, at `/talkloop/`, opened from the user menu): reads the learnt words and keeps its mistake log here, so it follows the learner across devices | `TalkloopController` | `TalkloopService` | `ProgressRepository`, `security/TalkloopLinkInterceptor` |
 
+| Prüfung (the Goethe B1 exam simulation): written, timed and marked in the page with the learner's AI; only the marks are kept here | `ExamController` | `ExamService` | `ProgressRepository` |
+
 ## API
 
 All `/api` calls except `/api/vocab`, `/api/auth/login` and `/api/users` need
@@ -200,6 +225,7 @@ it was issued, so a session ends after 24 h without a request. Send
 | `POST /api/sentences/generate` (+ `X-Gemini-Key`) | saved sentence, or generate + save; `{needsKey}` without a key |
 | `POST /api/vocab/words` (+ `X-GitHub-Token`) | add a word = one commit on GitHub |
 | `GET /api/vocab` | the raw file (public) |
+| `GET /api/exam/results`, `POST /api/exam/results` `{result: {module, diff, points, passed, at}}` | the Prüfung tab's marks, newest first (the newest 60 are kept, in `scores/{uid}/exam/results`); `module` is `lesen`, `hoeren`, `schreiben` or `sprechen`, `diff` is `real`, `hard` or `extreme` |
 | `POST /api/talkloop/link` | → `{token, expiresAt}`: a link for Talkloop (learnt words and its mistake log only), valid 180 days, never renewed |
 | `GET /api/talkloop/words` (with the link as `Bearer`, not a session) | learnt words (every card with a schedule), least secure first → `{count, words: [{de, en, cat, lvl, example, box, lapses, last}]}` |
 | `POST /api/talkloop/mistakes` (with the link) `{languages: {German: {resetAt, entries: [{type, at, said, fix}]}}}` | Talkloop's mistake log: merges what a device recorded since its last sync (newest `resetAt` wins and drops older entries; duplicates removed; newest 300 per language kept) → the whole log in the same shape. Stored in `scores/{uid}/talkloop/mistakes` |
@@ -297,6 +323,38 @@ the call header and sent back each turn so the story stays coherent. A word come
 once more at a later step needing another form, then on its 1/3/7/21-day schedule. The drill never runs dry: after the due and
 new words it goes on with the ones due soonest. Without the trainer linked it uses the
 imported words of the chosen level.
+
+## Prüfung (exam simulation)
+
+The Prüfung tab (`frontend/src/exam/`) simulates the Goethe-Zertifikat B1. Like Talkloop it
+runs in the browser with the learner's own AI (`aiJson` from Talkloop's engine, so the same
+keys and backups); the backend only keeps each finished module's mark.
+
+- `spec.js` is the exam: the modules and their Teile (Lesen 5 Teile / 30 items / 65 min,
+  Hören 4 / 30 / 40 min, Schreiben 3 tasks / 60 min, Sprechen 3 Teile / 15 min), what the AI
+  is asked to write for each Teil (never a real exam text; subjects are drawn from lists and
+  not repeated until the list is used up), and how its answer becomes tasks. A Teil whose
+  answer is incomplete is asked for again.
+- **Harder than the real exam.** `DIFFICULTIES` in `spec.js`: Original ×1 (B1, full time,
+  60 % to pass), Schwer ×1,5 (B1+/B2 texts about 30 % longer, 80 % of the time, audio 1.1×
+  and heard once, 70 % to pass, longer texts to write, a demanding examiner) and Extrem ×2
+  (B2, 65 % of the time, audio 1.2× once, 80 % to pass, stricter marking).
+- **Lesen, Hören.** The Teile are written one after the other and the clock starts when
+  Teil 1 is ready; at zero the module is handed in. Afterwards every item shows the solution
+  and the passage that decides it, and Hören its transcript. A Hören Teil's recording is
+  started once and runs by itself (reading time, then each text, twice where the exam plays
+  it twice); it can't be paused or repeated (`audio.js`: Talkloop's Piper voice, pitched
+  lower or higher for a man or a woman, else the browser's German voices).
+- **Schreiben.** The AI marks each text by the exam's criteria (Erfüllung, Kohärenz,
+  Wortschatz, Strukturen; 40 + 40 + 20 points), lists corrections and writes a model answer.
+- **Sprechen.** An AI examiner and an AI second candidate run the three Teile in the exam's
+  order (plan together; presentation; the partner's feedback and question, the examiner's
+  questions, then the partner's presentation with the learner's feedback and question). The
+  learner speaks through the browser's speech recognition or types. With Gemini as the AI,
+  both speak with Gemini's TTS voices (Kore and Charon) until its daily limit, then with the
+  voice on the device. The transcript is marked per Teil (28 + 40 + 16 points, scaled to 100:
+  pronunciation, the other 16, can't be judged from a transcript).
+- A module in progress survives a reload (kept in the browser; Sprechen starts again).
 
 ## Talkloop in ChatGPT
 
