@@ -95,6 +95,13 @@
 .exam-quote b { display: block; font-size: 13px; color: var(--accent); margin-bottom: 4px; }
 .exam-write { width: 100%; box-sizing: border-box; padding: 14px; border-radius: 12px; border: 1px solid var(--line); background: var(--paper-raised); color: var(--ink); font-size: 16px; line-height: 1.65; resize: vertical; min-height: 200px; }
 .exam-write-foot { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.exam-form { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.exam-form label { display: flex; flex-direction: column; gap: 5px; font-size: 13.5px; font-weight: 600; color: var(--ink-soft, var(--ink)); }
+.exam-form input { padding: 10px 12px; border-radius: 10px; border: 1px solid var(--line); background: var(--paper-raised); color: var(--ink); font-size: 15.5px; font-weight: 400; }
+.exam-form label.ok input { border-color: var(--good); }
+.exam-form label.miss input { border-color: var(--bad); }
+.exam-form em { font-style: normal; color: var(--good); font-size: 13px; }
+@media (max-width: 640px) { .exam-form { grid-template-columns: 1fr; } }
 .exam-umlauts { display: flex; gap: 4px; }
 .exam-umlauts button { width: 34px; height: 34px; border-radius: 8px; border: 1px solid var(--line); background: var(--paper-raised); color: var(--ink); font-size: 15px; cursor: pointer; }
 .exam-words { margin-left: auto; font-size: 13px; font-weight: 600; color: var(--ink-faint); font-variant-numeric: tabular-nums; }

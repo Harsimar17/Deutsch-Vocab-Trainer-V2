@@ -3,9 +3,10 @@ import "../styles/exam.css";
 import { api } from "../trainer/lib/api.js";
 import { aiJson, providerReady, getProvider, geminiTts, geminiTtsBlocked } from "../talkloop/engine.js";
 import {
-  DIFFICULTIES, MODULES, TEILE, moduleMinutes, systemPrompt, validTeil, scoreItems, grade, examBlurb,
-  writePrompt, buildWriting, gradeWritingPrompt, gradeResult, countWords, CRITERIA_LABELS,
+  DIFFICULTIES, MODULES, modulesFor, teileFor, moduleMinutes, systemPrompt, validTeil, scoreItems, grade, examBlurb,
+  writePrompt, buildWriting, gradeWritingPrompt, gradeFormPrompt, formResult, gradeResult, countWords, CRITERIA_LABELS,
   speakPrompt, buildSpeaking, speakTurnPrompt, gradeSpeakingPrompt, SPEAK_POINTS, EXAMINER, PARTNER,
+  scriptedSpeakPrompt, buildScriptedSpeaking, scriptedCard, speakScript, scriptTurnPrompt, gradeScriptedSpeakingPrompt, speakPoints, speakPartTitles,
 } from "./spec.js";
 import { playLines, stopAudio, warmVoice, listen, stopListening, canListen } from "./audio.js";
 
@@ -81,9 +82,9 @@ function Item({ number, item, value, onPick, review }) {
         <div className="exam-select-row">
           <select value={value ?? ""} disabled={review} onChange={(e) => onPick(e.target.value === "" ? undefined : Number(e.target.value))} aria-label={`Aufgabe ${number}`}>
             <option value="">–</option>
-            {item.options.map((o, i) => <option key={i} value={i}>{o === "0" ? "0 (keine Anzeige passt)" : `Anzeige ${o}`}</option>)}
+            {item.options.map((o, i) => <option key={i} value={i}>{item.plain ? `${"abcdefghij"[i]}) ${o}` : o === "0" ? "0 (keine Anzeige passt)" : `Anzeige ${o}`}</option>)}
           </select>
-          {review && value !== item.answer && <span className="exam-solution">Lösung: {item.options[item.answer]}</span>}
+          {review && value !== item.answer && <span className="exam-solution">Lösung: {item.plain ? `${"abcdefghij"[item.answer]}) ` : ""}{item.options[item.answer]}</span>}
         </div>
       ) : (
         <div className={`exam-options${item.letters ? " col" : ""}`}>
@@ -121,7 +122,7 @@ function AudioClip({ id, audio, allowed, played, playing, onPlay, review }) {
 
 function ItemsModule({ module, diff, level, onDone, onQuit }) {
   const d = DIFFICULTIES[diff];
-  const specs = TEILE[module.id];
+  const specs = teileFor(module.id, level);
   const key = `exam_mod_${module.id}`;
   const [st, setSt] = useSaved(key, { parts: [], answers: {}, played: {}, deadline: 0, result: null });
   const [error, setError] = useState(null);
@@ -143,7 +144,7 @@ function ItemsModule({ module, diff, level, onDone, onQuit }) {
         const spec = specs[i];
         const sections = await askBuilt(systemPrompt(diff, level), spec.prompt(), spec.schema, (r) => { const s = spec.build(r); return validTeil(spec, s) ? s : null; });
         if (!alive.current) return;
-        setSt((s) => ({ ...s, parts: [...s.parts, { sections }], deadline: s.deadline || Date.now() + moduleMinutes(module.id, diff) * 60000 }));
+        setSt((s) => ({ ...s, parts: [...s.parts, { sections }], deadline: s.deadline || Date.now() + moduleMinutes(module.id, diff, level) * 60000 }));
         await sleep(50); // let the save land before the next Teil reads it
       }
     } catch (e) {
@@ -307,7 +308,7 @@ function Feedback({ g }) {
 function WritingModule({ module, diff, level, onDone, onQuit }) {
   const d = DIFFICULTIES[diff];
   const key = "exam_mod_schreiben";
-  const [st, setSt] = useSaved(key, { tasks: null, texts: ["", "", ""], deadline: 0, result: null });
+  const [st, setSt] = useSaved(key, { tasks: null, texts: ["", "", ""], fields: [], deadline: 0, result: null });
   const [error, setError] = useState(null);
   const [busy, setBusy] = useState("");
   const [tab, setTab] = useState(0);
@@ -320,7 +321,7 @@ function WritingModule({ module, diff, level, onDone, onQuit }) {
     try {
       const p = writePrompt(diff, level);
       const tasks = await askBuilt(systemPrompt(diff, level), p.text, p.schema, (r) => buildWriting(r, diff, level));
-      if (alive.current) setSt((s) => ({ ...s, tasks, deadline: Date.now() + moduleMinutes("schreiben", diff) * 60000 }));
+      if (alive.current) setSt((s) => ({ ...s, tasks, deadline: Date.now() + moduleMinutes("schreiben", diff, level) * 60000 }));
     } catch (e) { if (alive.current) setError((e && e.message) || String(e)); }
   }, []);
   useEffect(() => { if (!st.tasks) load(); }, []);
@@ -331,13 +332,20 @@ function WritingModule({ module, diff, level, onDone, onQuit }) {
     try {
       const grades = [];
       for (let i = 0; i < st.tasks.length; i++) {
-        setBusy(`Aufgabe ${i + 1} wird bewertet…`);
-        const p = gradeWritingPrompt(st.tasks[i], st.texts[i], diff, level);
+        const task = st.tasks[i];
+        setBusy(`${task.title} wird bewertet…`);
+        if (task.fields) {
+          const p = gradeFormPrompt(task, st.fields ?? []);
+          grades.push(await askBuilt(p.system, p.text, p.schema, (r) => formResult(r, task)));
+          continue;
+        }
+        const p = gradeWritingPrompt(task, st.texts[i], diff, level);
         grades.push(st.texts[i].trim()
-          ? await askBuilt(p.system, p.text, p.schema, (r) => gradeResult(r, st.tasks[i].max))
-          : gradeResult({ comment: "Nothing was written for this task." }, st.tasks[i].max));
+          ? await askBuilt(p.system, p.text, p.schema, (r) => gradeResult(r, task.max))
+          : gradeResult({ comment: "Nothing was written for this task." }, task.max));
       }
-      const points = grades.reduce((n, g) => n + g.points, 0);
+      // The real exams give different points per level (A1 15, A2 20, B1 100): shown out of 100.
+      const points = Math.round((grades.reduce((n, g) => n + g.points, 0) / st.tasks.reduce((n, t) => n + t.max, 0)) * 100);
       const result = { module: "schreiben", diff, level, points, passed: points >= d.pass, at: Date.now(), grades };
       if (alive.current) { setSt((s) => ({ ...s, result })); window.scrollTo({ top: 0 }); }
     } catch (e) { if (alive.current) setError(`Die Bewertung ist fehlgeschlagen: ${(e && e.message) || e}`); }
@@ -357,11 +365,13 @@ function WritingModule({ module, diff, level, onDone, onQuit }) {
       <div className="exam-module">
         <ModuleHead module={module} diff={diff} level={level} onQuit={() => { saved.set(key, null); onQuit(); }} />
         {error ? <Problem error={`Die Aufgaben konnten nicht geschrieben werden: ${error}`} onRetry={load} />
-          : <div className="exam-card exam-wait"><div className="exam-spinner" />Die KI schreibt die drei Aufgaben…</div>}
+          : <div className="exam-card exam-wait"><div className="exam-spinner" />Die KI schreibt die Aufgaben…</div>}
       </div>
     );
   }
   const task = st.tasks[tab];
+  const n = st.tasks.length;
+  const filled = (i) => (st.tasks[i].fields ? (st.fields ?? []).some((v) => v && v.trim()) : st.texts[i].trim());
   const words = countWords(st.texts[tab]);
   const g = st.result?.grades[tab];
   return (
@@ -370,27 +380,45 @@ function WritingModule({ module, diff, level, onDone, onQuit }) {
         ? <ResultCard result={st.result} module={module} onNext={() => { saved.set(key, null); onDone(st.result); }} />
         : (
           <ModuleHead module={module} diff={diff} level={level} deadline={st.deadline} onTimeUp={submit} onQuit={() => { saved.set(key, null); onQuit(); }}>
-            <span className="exam-progress">{st.texts.filter((t) => t.trim()).length} / 3</span>
+            <span className="exam-progress">{st.tasks.filter((_, i) => filled(i)).length} / {n}</span>
           </ModuleHead>
         )}
       <div className="exam-tabs" role="tablist">
         {st.tasks.map((t, i) => <button key={i} role="tab" aria-selected={tab === i} className={tab === i ? "on" : ""} onClick={() => setTab(i)}>{t.title}{st.result ? ` · ${st.result.grades[i].points}/${t.max}` : ""}</button>)}
       </div>
       <div className="exam-card">
-        <div className="exam-kind">{task.kind} · {task.max} Punkte · ca. {task.target} Wörter</div>
+        <div className="exam-kind">{task.kind} · {task.max} Punkte{task.target ? ` · ca. ${task.target} Wörter` : ""}</div>
         <p className="exam-situation">{task.situation}</p>
         {task.points && <ul className="exam-points">{task.points.map((p, i) => <li key={i}>{p}</li>)}</ul>}
         {task.quote && <blockquote className="exam-quote"><b>{task.quote.name}</b>{task.quote.text}</blockquote>}
         <p className="exam-closing">{task.closing}</p>
-        <textarea ref={area} className="exam-write" rows={10} value={st.texts[tab]} readOnly={Boolean(st.result) || Boolean(busy)} spellCheck={false} autoCorrect="off" autoCapitalize="sentences"
-          placeholder="Schreiben Sie hier…" onChange={(e) => { const v = e.target.value; setSt((s) => ({ ...s, texts: s.texts.map((t, i) => (i === tab ? v : t)) })); }} />
-        <div className="exam-write-foot">
-          {!st.result && <span className="exam-umlauts">{["ä", "ö", "ü", "ß", "Ä", "Ö", "Ü"].map((c) => <button key={c} onClick={() => type(c)} tabIndex={-1}>{c}</button>)}</span>}
-          <span className={`exam-words${words >= task.target ? " ok" : ""}`}>{words} / {task.target} Wörter</span>
-        </div>
+        {task.fields ? (
+          <div className="exam-form">
+            {task.fields.map((f, i) => {
+              const m = g?.form?.[i];
+              return (
+                <label key={i} className={m ? (m.right ? "ok" : "miss") : ""}>
+                  <span>{i + 1}. {f.label}</span>
+                  <input value={(st.fields ?? [])[i] ?? ""} readOnly={Boolean(st.result) || Boolean(busy)} spellCheck={false}
+                    onChange={(e) => { const v = e.target.value; setSt((s) => { const fields = [...(s.fields ?? [])]; fields[i] = v; return { ...s, fields }; }); }} />
+                  {m && !m.right && <em>Lösung: {m.solution}</em>}
+                </label>
+              );
+            })}
+          </div>
+        ) : (
+          <React.Fragment>
+            <textarea ref={area} className="exam-write" rows={10} value={st.texts[tab]} readOnly={Boolean(st.result) || Boolean(busy)} spellCheck={false} autoCorrect="off" autoCapitalize="sentences"
+              placeholder="Schreiben Sie hier…" onChange={(e) => { const v = e.target.value; setSt((s) => ({ ...s, texts: s.texts.map((t, i) => (i === tab ? v : t)) })); }} />
+            <div className="exam-write-foot">
+              {!st.result && <span className="exam-umlauts">{["ä", "ö", "ü", "ß", "Ä", "Ö", "Ü"].map((c) => <button key={c} onClick={() => type(c)} tabIndex={-1}>{c}</button>)}</span>}
+              <span className={`exam-words${words >= task.target ? " ok" : ""}`}>{words} / {task.target} Wörter</span>
+            </div>
+          </React.Fragment>
+        )}
         {g && (
           <div className="exam-feedback">
-            <Feedback g={g} />
+            {g.form ? (g.comment && <p className="exam-comment">{g.comment}</p>) : <Feedback g={g} />}
             {g.better && <details><summary>Musterlösung</summary><div className="exam-text">{g.better.split(/\n+/).map((p, i) => <p key={i}>{p}</p>)}</div></details>}
           </div>
         )}
@@ -398,9 +426,9 @@ function WritingModule({ module, diff, level, onDone, onQuit }) {
       {error && <Problem error={error} onRetry={submit} />}
       {!st.result && (
         <div className="exam-foot">
-          {tab > 0 && <button className="exam-btn ghost" onClick={() => setTab(tab - 1)}>← Aufgabe {tab}</button>}
-          {tab < 2 && <button className="exam-btn" onClick={() => setTab(tab + 1)}>Aufgabe {tab + 2} →</button>}
-          {tab === 2 && <button className="exam-btn" disabled={Boolean(busy)} onClick={() => { if (st.texts.every((t) => t.trim()) || window.confirm("Nicht alle Aufgaben sind bearbeitet. Trotzdem abgeben?")) submit(); }}>{busy || "Abgeben"}</button>}
+          {tab > 0 && <button className="exam-btn ghost" onClick={() => setTab(tab - 1)}>← {st.tasks[tab - 1].title}</button>}
+          {tab < n - 1 && <button className="exam-btn" onClick={() => setTab(tab + 1)}>{st.tasks[tab + 1].title} →</button>}
+          {tab === n - 1 && <button className="exam-btn" disabled={Boolean(busy)} onClick={() => { if (st.tasks.every((_, i) => filled(i)) || window.confirm("Nicht alle Aufgaben sind bearbeitet. Trotzdem abgeben?")) submit(); }}>{busy || "Abgeben"}</button>}
         </div>
       )}
     </div>
@@ -513,7 +541,7 @@ function SpeakingModule({ module, diff, level, onDone, onQuit }) {
   const start = () => {
     const chosen = sheet.topics[topic];
     sheetRef.current = { ...sheet, topic: chosen, other: sheet.topics[1 - topic] };
-    setDeadline(Date.now() + moduleMinutes("sprechen", diff) * 60000);
+    setDeadline(Date.now() + moduleMinutes("sprechen", diff, level) * 60000);
     go("plan");
     run(async () => {
       await say(0, EXAMINER, `Guten Tag. Mein Name ist ${EXAMINER.name}, das ist ${PARTNER.name}. Wir beginnen mit Teil 1: Planen Sie bitte gemeinsam.`);
@@ -701,6 +729,235 @@ function SpeakingModule({ module, diff, level, onDone, onQuit }) {
   );
 }
 
+// ---------- Sprechen A1 / A2 ----------
+// The real A1 and A2 oral exams: short exchanges on cards with the examiner and a partner,
+// run from the script in spec.js one step at a time. A "me" step waits for the candidate.
+function ScriptedSpeaking({ module, diff, level, onDone, onQuit }) {
+  const d = DIFFICULTIES[diff];
+  const titles = speakPartTitles(level);
+  const [sheet, setSheet] = useState(null);
+  const [error, setError] = useState(null);
+  const [stage, setStage] = useState("prep"); // prep → run → grading → done
+  const [log, setLog] = useState([]);
+  const [deadline, setDeadline] = useState(0);
+  const [busy, setBusy] = useState("");
+  const [waiting, setWaiting] = useState(null); // the "me" step the candidate is on
+  const [part, setPart] = useState(0);
+  const [mic, setMic] = useState(false);
+  const [heard, setHeard] = useState("");
+  const [draft, setDraft] = useState("");
+  const [note, setNote] = useState("");
+  const [stuck, setStuck] = useState(false);
+  const [result, setResult] = useState(null);
+  const ref = useRef({ steps: [], i: 0, log: [], stage: "prep", micOk: canListen, saidHere: false });
+  const alive = useRef(true);
+  const end = useRef(null);
+  useEffect(() => { alive.current = true; warmVoice(); return () => { alive.current = false; stopAudio(); stopListening(); }; }, []);
+  useEffect(() => { end.current?.scrollIntoView({ block: "nearest", behavior: "smooth" }); }, [log, busy, heard]);
+
+  const load = useCallback(async () => {
+    setError(null);
+    try {
+      const p = scriptedSpeakPrompt(level);
+      const s = await askBuilt(systemPrompt(diff, level), p.text, p.schema, buildScriptedSpeaking(level));
+      if (alive.current) setSheet(s);
+    } catch (e) { if (alive.current) setError((e && e.message) || String(e)); }
+  }, []);
+  useEffect(() => { load(); }, []);
+
+  const over = () => !alive.current || ["grading", "done"].includes(ref.current.stage);
+  const add = (p, who, text, me = false) => {
+    ref.current.log = [...ref.current.log, { part: p, who, text, me }];
+    setLog(ref.current.log);
+  };
+  const people = { E: EXAMINER, P: PARTNER };
+  const listenNow = (silence) => {
+    if (!ref.current.micOk || !alive.current) return;
+    setMic(true);
+    setHeard("");
+    listen({
+      silence,
+      onText: setHeard,
+      onEnd: (text, problem) => {
+        if (!alive.current) return;
+        setMic(false);
+        setHeard("");
+        if (problem) { ref.current.micOk = false; setNote(problem); }
+        if (text) learnerSaid(text);
+      },
+    });
+  };
+  // Plays the script from where it stands up to the next step that is the candidate's.
+  const advance = async () => {
+    const r = ref.current;
+    setStuck(false);
+    try {
+      while (r.i < r.steps.length && !over()) {
+        const step = r.steps[r.i];
+        setPart(step.part);
+        if (step.me) {
+          r.saidHere = false;
+          setBusy("");
+          setWaiting(step);
+          listenNow(step.long ? 0 : 3500);
+          return;
+        }
+        const who = people[step.say || step.ai];
+        let text = step.text;
+        if (step.ai) {
+          setBusy(`${who.name} überlegt…`);
+          const p = scriptTurnPrompt({ who: step.ai, task: step.task }, diff, level);
+          const sofar = r.log.filter((m) => m.part === step.part).map((m) => `${m.me ? ME : m.who}: ${m.text}`).join("\n");
+          text = await askBuilt(p.system, `THIS TEIL SO FAR:\n${sofar || "(nothing yet)"}`, p.schema, (x) => (typeof x.reply === "string" && x.reply.trim() ? x.reply.trim() : null), 2);
+        }
+        if (over()) return;
+        add(step.part, who.name, text);
+        setBusy(`${who.name} spricht…`);
+        await playLines([{ text, gender: who.gender }], { rate: d.rate, cloud: geminiVoice() });
+        r.i++;
+      }
+      if (!over()) finish();
+    } catch (e) {
+      console.warn("Exam examiner turn failed:", e);
+      if (alive.current) { setBusy(""); setStuck(true); setNote(`Die KI hat nicht geantwortet (${(e && e.message) || e}).`); }
+    }
+  };
+  const next = () => {
+    stopListening();
+    setMic(false);
+    setWaiting(null);
+    ref.current.i++;
+    advance();
+  };
+  const learnerSaid = (text) => {
+    const step = ref.current.steps[ref.current.i];
+    if (!step?.me || over()) return;
+    setNote("");
+    add(step.part, ME, text, true);
+    ref.current.saidHere = true;
+    if (!step.long) next();
+  };
+  const finish = async () => {
+    stopAudio(); stopListening();
+    ref.current.stage = "grading";
+    setStage("grading");
+    setBusy("");
+    setWaiting(null);
+    try {
+      const points = speakPoints(level);
+      const p = gradeScriptedSpeakingPrompt(level, sheet, ref.current.log.map((m) => ({ ...m, who: m.me ? ME : m.who })), diff);
+      const grades = await askBuilt(p.system, p.text, p.schema, (r) => (r.teil1 && r.teil2 && r.teil3 ? [r.teil1, r.teil2, r.teil3].map((t, i) => gradeResult(t, points[i])) : null));
+      const sum = grades.reduce((n, g) => n + g.points, 0);
+      const total = Math.round((sum / points.reduce((a, b) => a + b, 0)) * 100);
+      if (alive.current) { setResult({ module: "sprechen", diff, level, points: total, passed: total >= d.pass, at: Date.now(), grades }); ref.current.stage = "done"; setStage("done"); window.scrollTo({ top: 0 }); }
+    } catch (e) { if (alive.current) setError(`Die Bewertung ist fehlgeschlagen: ${(e && e.message) || e}`); }
+  };
+  const start = () => {
+    ref.current.steps = speakScript(level, sheet, diff);
+    ref.current.i = 0;
+    ref.current.stage = "run";
+    setStage("run");
+    setDeadline(Date.now() + moduleMinutes("sprechen", diff, level) * 60000);
+    advance();
+  };
+  const send = () => {
+    const text = draft.trim();
+    if (!text || !waiting) return;
+    setDraft("");
+    learnerSaid(text);
+  };
+  const quit = () => { stopAudio(); stopListening(); onQuit(); };
+
+  if (!sheet) {
+    return (
+      <div className="exam-module">
+        <ModuleHead module={module} diff={diff} level={level} onQuit={quit} />
+        {error ? <Problem error={`Die Aufgaben konnten nicht geschrieben werden: ${error}`} onRetry={load} />
+          : <div className="exam-card exam-wait"><div className="exam-spinner" />Die KI schreibt die Karten…</div>}
+      </div>
+    );
+  }
+  const cardFor = (p) => scriptedCard(level, sheet, p);
+  if (stage === "prep") {
+    return (
+      <div className="exam-module">
+        <ModuleHead key="prep" module={module} diff={diff} level={level} onQuit={quit}><span className="exam-progress">Vorbereitung</span></ModuleHead>
+        <div className="exam-instruction">Sie sprechen mit der Prüferin {EXAMINER.name} und dem zweiten Kandidaten {PARTNER.name} (beide KI), wie in der echten {level}-Prüfung in drei Teilen.
+          {canListen ? " Erlauben Sie das Mikrofon, wenn der Browser fragt." : " Dieser Browser hat keine Spracheingabe: Sie können Ihre Antworten tippen."}</div>
+        {titles.map((t, i) => (
+          <div className="exam-card exam-sheet" key={i}>
+            <div className="exam-kind">{t}</div>
+            <p className="exam-situation"><b>{cardFor(i).title}</b></p>
+            <ul className="exam-points">{cardFor(i).lines.map((x, k) => <li key={k}>{x}</li>)}</ul>
+          </div>
+        ))}
+        <div className="exam-foot"><button className="exam-btn" onClick={start}>Ich bin bereit: Prüfung beginnen</button></div>
+      </div>
+    );
+  }
+  if (stage === "done" && result) {
+    return (
+      <div className="exam-module">
+        <ResultCard result={result} module={module} onNext={() => onDone(result)} note="Die Aussprache kann aus dem Transkript nicht bewertet werden; die Punkte sind auf 100 hochgerechnet." />
+        {result.grades.map((g, i) => (
+          <div className="exam-card" key={i}><div className="exam-kind">{titles[i]} · {g.points}/{g.max}</div><Feedback g={g} /></div>
+        ))}
+        <div className="exam-card"><div className="exam-kind">Transkript</div>
+          <div className="exam-chat static">{log.map((m, i) => <div key={i} className={`exam-msg${m.me ? " me" : ""}`}><small>{m.who}</small>{m.text}</div>)}</div>
+        </div>
+      </div>
+    );
+  }
+  const myTurn = Boolean(waiting) && !busy;
+  const card = cardFor(part);
+  return (
+    <div className="exam-module">
+      <ModuleHead key="exam" module={module} diff={diff} level={level} deadline={deadline} onTimeUp={() => { if (!["grading", "done"].includes(ref.current.stage)) finish(); }} onQuit={quit}>
+        <span className="exam-progress">Teil {part + 1} / 3</span>
+      </ModuleHead>
+      {stage === "grading"
+        ? (error ? <Problem error={error} onRetry={() => { setError(null); finish(); }} /> : <div className="exam-card exam-wait"><div className="exam-spinner" />Die Prüfer beraten sich und bewerten Ihre Leistung…</div>)
+        : (
+          <React.Fragment>
+            <div className="exam-card exam-sheet">
+              <div className="exam-kind">{titles[part]}</div>
+              <p className="exam-situation"><b>{card.title}</b></p>
+              <ul className="exam-points">{card.lines.map((x, k) => <li key={k}>{x}</li>)}</ul>
+            </div>
+            <div className="exam-card">
+              <div className="exam-chat">
+                {log.map((m, i) => <div key={i} className={`exam-msg${m.me ? " me" : ""}`}><small>{m.who}</small>{m.text}</div>)}
+                {heard && <div className="exam-msg me interim"><small>{ME}</small>{heard}</div>}
+                {busy && <div className="exam-status">{busy}</div>}
+                {myTurn && <div className="exam-status">{waiting.me}</div>}
+                <div ref={end} />
+              </div>
+              {note && <div className="exam-note">{note}</div>}
+              <div className="exam-speak">
+                {canListen && (
+                  <button className={`exam-mic${mic ? " on" : ""}`} disabled={!myTurn && !mic} aria-pressed={mic}
+                    onClick={() => (mic ? stopListening() : (ref.current.micOk = true, listenNow(waiting?.long ? 0 : 3500)))}>
+                    {mic ? "■ Fertig gesprochen" : "🎤 Sprechen"}
+                  </button>
+                )}
+                <textarea rows={2} value={draft} disabled={!myTurn} placeholder={myTurn ? "…oder hier tippen" : ""} onChange={(e) => setDraft(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); } }} />
+                <button className="exam-btn" disabled={!myTurn || !draft.trim()} onClick={send}>Senden</button>
+              </div>
+              {(waiting?.long || stuck) && (
+                <div className="exam-foot">
+                  {stuck
+                    ? <button className="exam-btn" onClick={advance}>Erneut versuchen</button>
+                    : <button className="exam-btn" disabled={Boolean(busy) || !ref.current.saidHere} onClick={next}>Fertig: weiter</button>}
+                </div>
+              )}
+            </div>
+          </React.Fragment>
+        )}
+    </div>
+  );
+}
+
 // ---------- results ----------
 function ResultCard({ result, module, onNext, note }) {
   const d = DIFFICULTIES[result.diff];
@@ -777,25 +1034,27 @@ export function ExamPage({ onTalkloop, defaultLevel = "B1" }) {
   };
 
   if (run && run.index < run.queue.length) {
-    const module = MODULES.find((m) => m.id === run.queue[run.index]);
-    const Runner = RUNNERS[module.id];
+    const runLevel = run.level || "B1";
+    const module = modulesFor(runLevel).find((m) => m.id === run.queue[run.index]);
+    const Runner = module.id === "sprechen" && runLevel !== "B1" ? ScriptedSpeaking : RUNNERS[module.id];
     return (
       <div className="exam">
         {run.queue.length > 1 && <div className="exam-steps">{run.queue.map((id, i) => <span key={id} className={i === run.index ? "on" : i < run.index ? "done" : ""}>{MODULES.find((m) => m.id === id).label}</span>)}</div>}
-        <Runner key={module.id} module={module} diff={run.diff} level={run.level || "B1"} onDone={record} onQuit={skip} />
+        <Runner key={module.id} module={module} diff={run.diff} level={runLevel} onDone={record} onQuit={skip} />
       </div>
     );
   }
   if (run) return <div className="exam"><Certificate run={run} onClose={() => setRun(null)} /></div>;
 
   const d = DIFFICULTIES[diff];
-  const total = MODULES.reduce((n, m) => n + moduleMinutes(m.id, diff), 0);
+  const mods = modulesFor(level);
+  const total = mods.reduce((n, m) => n + moduleMinutes(m.id, diff, level), 0);
   return (
     <div className="exam">
       <div>
-        <div className="page-eyebrow">Goethe-style · {level} Simulation</div>
+        <div className="page-eyebrow">Goethe-Zertifikat {level} · Simulation</div>
         <h1 className="page-title">Prüfung</h1>
-        <div className="page-sub">Alle vier Module auf {level}-Niveau. Deine KI schreibt neue Aufgaben, bewertet deine Texte und prüft dich mündlich.</div>
+        <div className="page-sub">Alle vier Module im Format der echten {level}-Prüfung. Deine KI schreibt neue Aufgaben, bewertet deine Texte und prüft dich mündlich.</div>
       </div>
       <div className="exam-card">
         <div className="exam-kind">Sprachniveau</div>
@@ -826,13 +1085,13 @@ export function ExamPage({ onTalkloop, defaultLevel = "B1" }) {
         <span>Lesen → Hören → Schreiben → Sprechen · ca. {total} Minuten</span>
       </button>
       <div className="exam-modules">
-        {MODULES.map((m) => {
-          const last = history.find((h) => h.module === m.id);
+        {mods.map((m) => {
+          const last = history.find((h) => h.module === m.id && (h.level || "B1") === level);
           return (
             <button key={m.id} className="exam-modcard glass" onClick={() => begin([m.id])}>
               <b>{m.label}</b>
               <span>{m.about}</span>
-              <span>{moduleMinutes(m.id, diff)} Minuten</span>
+              <span>{moduleMinutes(m.id, diff, level)} Minuten</span>
               {last && <em className={last.passed ? "ok" : "no"}>zuletzt {last.points} % ({last.level || "B1"} · {DIFFICULTIES[last.diff]?.label ?? last.diff})</em>}
             </button>
           );
