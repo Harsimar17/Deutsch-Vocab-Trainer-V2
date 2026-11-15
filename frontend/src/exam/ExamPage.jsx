@@ -3,7 +3,7 @@ import "../styles/exam.css";
 import { api } from "../trainer/lib/api.js";
 import { aiJson, providerReady, getProvider, geminiTts, geminiTtsBlocked } from "../talkloop/engine.js";
 import {
-  DIFFICULTIES, MODULES, TEILE, moduleMinutes, systemPrompt, validTeil, scoreItems, grade,
+  DIFFICULTIES, MODULES, TEILE, moduleMinutes, systemPrompt, validTeil, scoreItems, grade, examBlurb,
   writePrompt, buildWriting, gradeWritingPrompt, gradeResult, countWords, CRITERIA_LABELS,
   speakPrompt, buildSpeaking, speakTurnPrompt, gradeSpeakingPrompt, SPEAK_POINTS, EXAMINER, PARTNER,
 } from "./spec.js";
@@ -47,13 +47,13 @@ function Timer({ deadline, onTimeUp }) {
   return <span className={`exam-timer${left < 300 ? " low" : ""}`} role="timer" aria-label="Time left">{clock(left)}</span>;
 }
 
-function ModuleHead({ module, diff, deadline, onTimeUp, onQuit, children }) {
+function ModuleHead({ module, diff, level, deadline, onTimeUp, onQuit, children }) {
   const d = DIFFICULTIES[diff];
   return (
     <div className="exam-head glass">
       <div>
         <div className="exam-head-title">{module.label}</div>
-        <div className="exam-head-sub">{d.label} {d.factor} · bestanden ab {d.pass} %</div>
+        <div className="exam-head-sub">{level} · {d.label} {d.factor} · bestanden ab {d.pass} %</div>
       </div>
       {children}
       {deadline ? <Timer deadline={deadline} onTimeUp={onTimeUp} /> : <span className="exam-timer">--:--</span>}
@@ -119,7 +119,7 @@ function AudioClip({ id, audio, allowed, played, playing, onPlay, review }) {
   );
 }
 
-function ItemsModule({ module, diff, onDone, onQuit }) {
+function ItemsModule({ module, diff, level, onDone, onQuit }) {
   const d = DIFFICULTIES[diff];
   const specs = TEILE[module.id];
   const key = `exam_mod_${module.id}`;
@@ -141,7 +141,7 @@ function ItemsModule({ module, diff, onDone, onQuit }) {
     try {
       for (let i = saved.get(key, st).parts.length; i < specs.length; i++) {
         const spec = specs[i];
-        const sections = await askBuilt(systemPrompt(diff), spec.prompt(), spec.schema, (r) => { const s = spec.build(r); return validTeil(spec, s) ? s : null; });
+        const sections = await askBuilt(systemPrompt(diff, level), spec.prompt(), spec.schema, (r) => { const s = spec.build(r); return validTeil(spec, s) ? s : null; });
         if (!alive.current) return;
         setSt((s) => ({ ...s, parts: [...s.parts, { sections }], deadline: s.deadline || Date.now() + moduleMinutes(module.id, diff) * 60000 }));
         await sleep(50); // let the save land before the next Teil reads it
@@ -208,7 +208,7 @@ function ItemsModule({ module, diff, onDone, onQuit }) {
     setPlaying(null);
     const score = scoreItems(st.parts, st.answers);
     // Teile the AI never delivered count as wrong only if the clock ran out on them.
-    const result = { module: module.id, diff, points: score.points, right: score.right, total: score.total, passed: score.points >= d.pass, at: Date.now() };
+    const result = { module: module.id, diff, level, points: score.points, right: score.right, total: score.total, passed: score.points >= d.pass, at: Date.now() };
     setSt((s) => ({ ...s, result }));
     setTeil(0);
     window.scrollTo({ top: 0 });
@@ -225,7 +225,7 @@ function ItemsModule({ module, diff, onDone, onQuit }) {
       {review
         ? <ResultCard result={st.result} module={module} onNext={() => { saved.set(key, null); onDone(st.result); }} />
         : (
-          <ModuleHead module={module} diff={diff} deadline={st.deadline} onTimeUp={submit} onQuit={() => { saved.set(key, null); onQuit(); }}>
+      <ModuleHead module={module} diff={diff} level={level} deadline={st.deadline} onTimeUp={submit} onQuit={() => { saved.set(key, null); onQuit(); }}>
             <span className="exam-progress">{answered} / {total}</span>
           </ModuleHead>
         )}
@@ -304,7 +304,7 @@ function Feedback({ g }) {
   );
 }
 
-function WritingModule({ module, diff, onDone, onQuit }) {
+function WritingModule({ module, diff, level, onDone, onQuit }) {
   const d = DIFFICULTIES[diff];
   const key = "exam_mod_schreiben";
   const [st, setSt] = useSaved(key, { tasks: null, texts: ["", "", ""], deadline: 0, result: null });
@@ -318,8 +318,8 @@ function WritingModule({ module, diff, onDone, onQuit }) {
   const load = useCallback(async () => {
     setError(null);
     try {
-      const p = writePrompt(diff);
-      const tasks = await askBuilt(systemPrompt(diff), p.text, p.schema, (r) => buildWriting(r, diff));
+      const p = writePrompt(diff, level);
+      const tasks = await askBuilt(systemPrompt(diff, level), p.text, p.schema, (r) => buildWriting(r, diff, level));
       if (alive.current) setSt((s) => ({ ...s, tasks, deadline: Date.now() + moduleMinutes("schreiben", diff) * 60000 }));
     } catch (e) { if (alive.current) setError((e && e.message) || String(e)); }
   }, []);
@@ -332,13 +332,13 @@ function WritingModule({ module, diff, onDone, onQuit }) {
       const grades = [];
       for (let i = 0; i < st.tasks.length; i++) {
         setBusy(`Aufgabe ${i + 1} wird bewertet…`);
-        const p = gradeWritingPrompt(st.tasks[i], st.texts[i], diff);
+        const p = gradeWritingPrompt(st.tasks[i], st.texts[i], diff, level);
         grades.push(st.texts[i].trim()
           ? await askBuilt(p.system, p.text, p.schema, (r) => gradeResult(r, st.tasks[i].max))
           : gradeResult({ comment: "Nothing was written for this task." }, st.tasks[i].max));
       }
       const points = grades.reduce((n, g) => n + g.points, 0);
-      const result = { module: "schreiben", diff, points, passed: points >= d.pass, at: Date.now(), grades };
+      const result = { module: "schreiben", diff, level, points, passed: points >= d.pass, at: Date.now(), grades };
       if (alive.current) { setSt((s) => ({ ...s, result })); window.scrollTo({ top: 0 }); }
     } catch (e) { if (alive.current) setError(`Die Bewertung ist fehlgeschlagen: ${(e && e.message) || e}`); }
     if (alive.current) setBusy("");
@@ -355,7 +355,7 @@ function WritingModule({ module, diff, onDone, onQuit }) {
   if (!st.tasks) {
     return (
       <div className="exam-module">
-        <ModuleHead module={module} diff={diff} onQuit={() => { saved.set(key, null); onQuit(); }} />
+        <ModuleHead module={module} diff={diff} level={level} onQuit={() => { saved.set(key, null); onQuit(); }} />
         {error ? <Problem error={`Die Aufgaben konnten nicht geschrieben werden: ${error}`} onRetry={load} />
           : <div className="exam-card exam-wait"><div className="exam-spinner" />Die KI schreibt die drei Aufgaben…</div>}
       </div>
@@ -369,7 +369,7 @@ function WritingModule({ module, diff, onDone, onQuit }) {
       {st.result
         ? <ResultCard result={st.result} module={module} onNext={() => { saved.set(key, null); onDone(st.result); }} />
         : (
-          <ModuleHead module={module} diff={diff} deadline={st.deadline} onTimeUp={submit} onQuit={() => { saved.set(key, null); onQuit(); }}>
+          <ModuleHead module={module} diff={diff} level={level} deadline={st.deadline} onTimeUp={submit} onQuit={() => { saved.set(key, null); onQuit(); }}>
             <span className="exam-progress">{st.texts.filter((t) => t.trim()).length} / 3</span>
           </ModuleHead>
         )}
@@ -416,7 +416,7 @@ const geminiVoice = () => (getProvider() === "gemini" && !geminiTtsBlocked() ? (
 const ME = "Kandidat/in";
 const PART_TITLES = ["Teil 1 · Gemeinsam etwas planen", "Teil 2 · Ein Thema präsentieren", "Teil 3 · Über ein Thema sprechen"];
 
-function SpeakingModule({ module, diff, onDone, onQuit }) {
+function SpeakingModule({ module, diff, level, onDone, onQuit }) {
   const d = DIFFICULTIES[diff];
   const [sheet, setSheet] = useState(null);
   const [error, setError] = useState(null);
@@ -440,8 +440,8 @@ function SpeakingModule({ module, diff, onDone, onQuit }) {
   const load = useCallback(async () => {
     setError(null);
     try {
-      const p = speakPrompt();
-      const s = await askBuilt(systemPrompt(diff), p.text, p.schema, buildSpeaking);
+      const p = speakPrompt(level);
+      const s = await askBuilt(systemPrompt(diff, level), p.text, p.schema, buildSpeaking);
       if (alive.current) { setSheet(s); setPrepEnd(Date.now() + d.prep * 60000); }
     } catch (e) { if (alive.current) setError((e && e.message) || String(e)); }
   }, []);
@@ -464,7 +464,7 @@ function SpeakingModule({ module, diff, onDone, onQuit }) {
   const aiSay = async (part, who, stageName, extra, context) => {
     if (over()) return;
     setBusy(`${who.name} überlegt…`);
-    const p = speakTurnPrompt(stageName, sheetRef.current, diff, extra);
+    const p = speakTurnPrompt(stageName, sheetRef.current, diff, level, extra);
     const text = await askBuilt(p.system, context || "(Die Prüfung beginnt.)", p.schema, (r) => (typeof r.reply === "string" && r.reply.trim() ? r.reply.trim() : null), 2);
     await say(part, who, text);
   };
@@ -503,11 +503,11 @@ function SpeakingModule({ module, diff, onDone, onQuit }) {
     setBusy("");
     try {
       const full = { ...sheetRef.current };
-      const p = gradeSpeakingPrompt(full, ref.current.log.map((m) => ({ ...m, who: m.me ? ME : m.who })), diff);
+      const p = gradeSpeakingPrompt(full, ref.current.log.map((m) => ({ ...m, who: m.me ? ME : m.who })), diff, level);
       const grades = await askBuilt(p.system, p.text, p.schema, (r) => (r.teil1 && r.teil2 && r.teil3 ? [r.teil1, r.teil2, r.teil3].map((t, i) => gradeResult(t, SPEAK_POINTS[i])) : null));
       const sum = grades.reduce((n, g) => n + g.points, 0);
       const points = Math.round((sum / SPEAK_POINTS.reduce((a, b) => a + b, 0)) * 100);
-      if (alive.current) { setResult({ module: "sprechen", diff, points, passed: points >= d.pass, at: Date.now(), grades }); go("done"); window.scrollTo({ top: 0 }); }
+      if (alive.current) { setResult({ module: "sprechen", diff, level, points, passed: points >= d.pass, at: Date.now(), grades }); go("done"); window.scrollTo({ top: 0 }); }
     } catch (e) { if (alive.current) { setError(`Die Bewertung ist fehlgeschlagen: ${(e && e.message) || e}`); } }
   };
   const start = () => {
@@ -588,7 +588,7 @@ function SpeakingModule({ module, diff, onDone, onQuit }) {
   if (!sheet) {
     return (
       <div className="exam-module">
-        <ModuleHead module={module} diff={diff} onQuit={quit} />
+        <ModuleHead module={module} diff={diff} level={level} onQuit={quit} />
         {error ? <Problem error={`Die Aufgaben konnten nicht geschrieben werden: ${error}`} onRetry={load} />
           : <div className="exam-card exam-wait"><div className="exam-spinner" />Die KI schreibt die Aufgabenblätter…</div>}
       </div>
@@ -637,7 +637,7 @@ function SpeakingModule({ module, diff, onDone, onQuit }) {
   if (stage === "prep") {
     return (
       <div className="exam-module">
-        <ModuleHead key="prep" module={module} diff={diff} deadline={prepEnd} onTimeUp={start} onQuit={quit}><span className="exam-progress">Vorbereitung</span></ModuleHead>
+      <ModuleHead key="prep" module={module} diff={diff} level={level} deadline={prepEnd} onTimeUp={start} onQuit={quit}><span className="exam-progress">Vorbereitung</span></ModuleHead>
         <div className="exam-instruction">Vorbereitungszeit: {d.prep} Minuten. Sie dürfen sich Notizen auf Papier machen, aber nicht ablesen. Danach sprechen Sie mit der Prüferin {EXAMINER.name} und dem zweiten Kandidaten {PARTNER.name} (beide KI).
           {canListen ? " Erlauben Sie das Mikrofon, wenn der Browser fragt." : " Dieser Browser hat keine Spracheingabe: Sie können Ihre Antworten tippen."}</div>
         {sheetCard}
@@ -661,7 +661,7 @@ function SpeakingModule({ module, diff, onDone, onQuit }) {
   const myTurn = !busy && ["plan", "present", "peer", "questions", "feedback"].includes(stage);
   return (
     <div className="exam-module">
-      <ModuleHead key="exam" module={module} diff={diff} deadline={deadline} onTimeUp={() => { if (!["grading", "done"].includes(ref.current.stage)) finish(); }} onQuit={quit}>
+      <ModuleHead key="exam" module={module} diff={diff} level={level} deadline={deadline} onTimeUp={() => { if (!["grading", "done"].includes(ref.current.stage)) finish(); }} onQuit={quit}>
         <span className="exam-progress">Teil {part + 1} / 3</span>
       </ModuleHead>
       {stage === "grading"
@@ -711,7 +711,7 @@ function ResultCard({ result, module, onNext, note }) {
         <div className="exam-result-title">{module.label}: {result.passed ? "bestanden" : "nicht bestanden"}</div>
         <div className="exam-result-sub">
           {result.total ? `${result.right} von ${result.total} richtig · ` : ""}{d.label} {d.factor}, bestanden ab {d.pass} %
-          {result.passed ? ` · In der echten Prüfung: ${grade(result.points)}` : result.points >= 60 ? " · Für die echte Prüfung (60 %) hätte es gereicht." : ""}
+          {result.passed ? ` · ${result.level} practice: ${grade(result.points)}` : ""}
         </div>
         {note && <div className="exam-result-note">{note}</div>}
       </div>
@@ -731,7 +731,7 @@ function Certificate({ run, onClose }) {
       <div className={`exam-cert glass ${passed ? "pass" : "fail"}`}>
         <div className="page-eyebrow">Prüfungsergebnis · {d.label} {d.factor}</div>
         <h2>{passed ? "Bestanden" : "Nicht bestanden"}</h2>
-        <p>{passed ? `Jedes Modul über ${d.pass} %. Die echte Prüfung verlangt 60 %: Sie sind vorbereitet.` : `Zum Bestehen braucht hier jedes Modul ${d.pass} % (in der echten Prüfung 60 %).`}</p>
+        <p>{passed ? `Jedes Modul über ${d.pass} %. Die ${run.level || "B1"} practice exam is passed.` : `Zum Bestehen braucht hier jedes Modul ${d.pass} %.`}</p>
         <table>
           <tbody>
             {rows.map(({ module, r }) => (
@@ -749,9 +749,10 @@ function Certificate({ run, onClose }) {
 // ---------- the tab ----------
 const RUNNERS = { lesen: ItemsModule, hoeren: ItemsModule, schreiben: WritingModule, sprechen: SpeakingModule };
 
-export function ExamPage({ onTalkloop }) {
+export function ExamPage({ onTalkloop, defaultLevel = "B1" }) {
   const [run, setRun] = useSaved("exam_run", null); // {diff, queue, index, results}
   const [diff, setDiff] = useSaved("exam_difficulty", "hard");
+  const [level, setLevel] = useSaved("exam_cefr_level", defaultLevel);
   const [history, setHistory] = useState([]);
   const [problem, setProblem] = useState("");
   useEffect(() => { api.get("/api/exam/results", { quiet: true }).then((r) => setHistory(r.results ?? [])).catch(() => {}); }, []);
@@ -760,14 +761,14 @@ export function ExamPage({ onTalkloop }) {
     if (!providerReady()) { setProblem("The exam is written and marked by your own AI. Save an AI key in the Talkloop tab first (Groq's is free), then come back."); return; }
     setProblem("");
     for (const m of MODULES) saved.set(`exam_mod_${m.id}`, null);
-    setRun({ diff, queue, index: 0, results: {} });
+    setRun({ diff, level, queue, index: 0, results: {} });
     window.scrollTo({ top: 0 });
   };
   const record = (result) => {
-    const { module, diff: level, points, passed, at } = result;
-    api.post("/api/exam/results", { result: { module, diff: level, points, passed, at } }, undefined, { quiet: true })
+    const { module, diff: difficulty, level: cefr, points, passed, at } = result;
+    api.post("/api/exam/results", { result: { module, diff: difficulty, level: cefr, points, passed, at } }, undefined, { quiet: true })
       .then((r) => setHistory(r.results ?? [])).catch(api.report);
-    setRun((r) => ({ ...r, results: { ...r.results, [module]: { points, passed, diff: level } }, index: r.index + 1 }));
+    setRun((r) => ({ ...r, results: { ...r.results, [module]: { points, passed, diff: difficulty, level: cefr } }, index: r.index + 1 }));
     window.scrollTo({ top: 0 });
   };
   const skip = () => {
@@ -781,7 +782,7 @@ export function ExamPage({ onTalkloop }) {
     return (
       <div className="exam">
         {run.queue.length > 1 && <div className="exam-steps">{run.queue.map((id, i) => <span key={id} className={i === run.index ? "on" : i < run.index ? "done" : ""}>{MODULES.find((m) => m.id === id).label}</span>)}</div>}
-        <Runner key={module.id} module={module} diff={run.diff} onDone={record} onQuit={skip} />
+        <Runner key={module.id} module={module} diff={run.diff} level={run.level || "B1"} onDone={record} onQuit={skip} />
       </div>
     );
   }
@@ -792,9 +793,19 @@ export function ExamPage({ onTalkloop }) {
   return (
     <div className="exam">
       <div>
-        <div className="page-eyebrow">Goethe-Zertifikat B1 · Simulation</div>
+        <div className="page-eyebrow">Goethe-style · {level} Simulation</div>
         <h1 className="page-title">Prüfung</h1>
-        <div className="page-sub">Alle vier Module mit allen Teilen, im Format der echten Prüfung, aber schwerer. Jede Prüfung schreibt Ihre KI neu; sie bewertet Ihre Texte und prüft Sie mündlich.</div>
+        <div className="page-sub">Alle vier Module auf {level}-Niveau. Deine KI schreibt neue Aufgaben, bewertet deine Texte und prüft dich mündlich.</div>
+      </div>
+      <div className="exam-card">
+        <div className="exam-kind">Sprachniveau</div>
+        <div className="exam-levels" role="radiogroup" aria-label="Sprachniveau">
+          {["A1", "A2", "B1"].map((x) => (
+            <button key={x} role="radio" aria-checked={level === x} className={level === x ? "on" : ""} onClick={() => setLevel(x)}>
+              <b>{x}</b><span>{x === "A1" ? "Anfang" : x === "A2" ? "Grundlage" : "Mittelstufe"}</span>
+            </button>
+          ))}
+        </div>
       </div>
       <div className="exam-card">
         <div className="exam-kind">Schwierigkeit</div>
@@ -805,7 +816,7 @@ export function ExamPage({ onTalkloop }) {
             </button>
           ))}
         </div>
-        <p className="exam-blurb">{d.blurb}</p>
+        <p className="exam-blurb">{examBlurb(diff, level)}</p>
       </div>
       {problem && (
         <div className="exam-card exam-problem" role="alert"><div>{problem}</div>{onTalkloop && <button className="exam-btn" onClick={onTalkloop}>Open Talkloop</button>}</div>
@@ -822,7 +833,7 @@ export function ExamPage({ onTalkloop }) {
               <b>{m.label}</b>
               <span>{m.about}</span>
               <span>{moduleMinutes(m.id, diff)} Minuten</span>
-              {last && <em className={last.passed ? "ok" : "no"}>zuletzt {last.points} % ({DIFFICULTIES[last.diff]?.label ?? last.diff})</em>}
+              {last && <em className={last.passed ? "ok" : "no"}>zuletzt {last.points} % ({last.level || "B1"} · {DIFFICULTIES[last.diff]?.label ?? last.diff})</em>}
             </button>
           );
         })}
@@ -835,7 +846,7 @@ export function ExamPage({ onTalkloop }) {
               {history.slice(0, 12).map((h, i) => (
                 <tr key={i}>
                   <td>{new Date(h.at).toLocaleDateString()}</td><td>{MODULES.find((m) => m.id === h.module)?.label ?? h.module}</td>
-                  <td>{DIFFICULTIES[h.diff]?.label ?? h.diff}</td><td>{h.points} %</td><td className={h.passed ? "ok" : "no"}>{h.passed ? "bestanden" : "nicht bestanden"}</td>
+                  <td>{h.level || "B1"} · {DIFFICULTIES[h.diff]?.label ?? h.diff}</td><td>{h.points} %</td><td className={h.passed ? "ok" : "no"}>{h.passed ? "bestanden" : "nicht bestanden"}</td>
                 </tr>
               ))}
             </tbody>

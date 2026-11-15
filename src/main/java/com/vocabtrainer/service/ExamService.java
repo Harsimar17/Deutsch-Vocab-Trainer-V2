@@ -24,6 +24,7 @@ public class ExamService {
     static final int MAX_RESULTS = 60;
     private static final Set<String> MODULES = Set.of("lesen", "hoeren", "schreiben", "sprechen");
     private static final Set<String> DIFFICULTIES = Set.of("real", "hard", "extreme");
+    private static final Set<String> LEVELS = Set.of("A1", "A2", "B1");
 
     private final ProgressRepository repo;
 
@@ -40,6 +41,7 @@ public class ExamService {
         if (!(body.get("result") instanceof Map<?, ?> r)
                 || !(r.get("module") instanceof String module) || !MODULES.contains(module)
                 || !(r.get("diff") instanceof String diff) || !DIFFICULTIES.contains(diff)
+                || (r.get("level") != null && (!(r.get("level") instanceof String level) || !LEVELS.contains(level)))
                 || !(r.get("points") instanceof Number points) || points.intValue() < 0 || points.intValue() > 100
                 || !(r.get("passed") instanceof Boolean passed)) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "result: expected {module, diff, points, passed}");
@@ -47,6 +49,7 @@ public class ExamService {
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("module", module);
         result.put("diff", diff);
+        result.put("level", r.get("level") instanceof String level ? level : "B1");
         result.put("points", points.intValue());
         result.put("passed", passed);
         result.put("at", r.get("at") instanceof Number at && at.longValue() > 0 ? at.longValue() : System.currentTimeMillis());

@@ -1,4 +1,4 @@
-// The Prüfung tab's exam: the layout of the Goethe-Zertifikat B1 (four modules, every Teil),
+// The Prüfung tab's exam: a four-module Goethe-style practice paper,
 // how much harder than the real one it is, and what the AI is asked to write for each Teil.
 // Nothing here is a real exam text: every paper is written afresh by the learner's AI.
 
@@ -7,30 +7,29 @@
 // heard once, a higher pass mark, longer texts to write, a tougher examiner.
 export const DIFFICULTIES = {
   real: {
-    label: "Original", factor: "×1", blurb: "Wie die echte Prüfung: B1, volle Zeit, 60 % zum Bestehen.",
+    label: "Original", factor: "×1", blurb: "Volle Zeit, 60 % zum Bestehen.",
     time: 1, pass: 60, rate: 1, twice: true, words: 1, prep: 15, planTurns: 5, questions: 1,
-    language: "Language and tasks are at level B1, exactly as demanding as the real exam.",
+    language: "Keep language and tasks at the selected CEFR level, with no extra difficulty.",
     examiner: "You are friendly and patient, as in the real exam.",
-    grading: "Grade as a real Goethe B1 examiner would.",
+    grading: "Grade fairly against the selected CEFR level.",
   },
   hard: {
-    label: "Schwer", factor: "×1,5", blurb: "B1+/B2-Texte, 20 % weniger Zeit, schnelleres Audio nur einmal, 70 % zum Bestehen.",
+    label: "Schwer", factor: "×1,5", blurb: "Etwas anspruchsvoller, 20 % weniger Zeit, Audio nur einmal, 70 % zum Bestehen.",
     time: 0.8, pass: 70, rate: 1.1, twice: false, words: 1.25, prep: 10, planTurns: 6, questions: 2,
-    language: "Make it noticeably HARDER than the real exam: vocabulary and sentence structures of B1+ to B2 "
-      + "(subordinate clauses, Konjunktiv II, passive, nominalisations), texts about 30% longer than in the real exam, "
+    language: "Make the tasks noticeably harder while staying within the selected CEFR level: use less obvious clues and plausible distractors, and texts about 20% longer, "
       + "the correct answer always paraphrased (never in the text's own words), and every wrong option made plausible by something the text really mentions.",
     examiner: "You are correct but demanding: you ask follow-up questions (warum, zum Beispiel, und wenn …?), do not accept one-word answers, "
       + "and in the planning task you disagree with some suggestions and raise a practical problem.",
-    grading: "Grade strictly, one notch harder than a real Goethe B1 examiner: what would just pass in the real exam loses a point here.",
+    grading: "Grade strictly for the selected CEFR level; borderline work should not pass.",
   },
   extreme: {
-    label: "Extrem", factor: "×2", blurb: "B2-Niveau, 35 % weniger Zeit, schnelles Audio nur einmal, 80 % zum Bestehen.",
+    label: "Extrem", factor: "×2", blurb: "Maximal anspruchsvoll, 35 % weniger Zeit, Audio nur einmal, 80 % zum Bestehen.",
     time: 0.65, pass: 80, rate: 1.2, twice: false, words: 1.5, prep: 5, planTurns: 7, questions: 3,
-    language: "Make it MUCH HARDER than the real exam: level B2 throughout, texts about 50% longer than in the real exam, idiomatic expressions, "
+    language: "Make the tasks much harder while keeping vocabulary and grammar within the selected CEFR level: use subtle clues and plausible distractors, texts about 35% longer, "
       + "information that is only implied and has to be inferred, and wrong options that differ from the truth in a single detail (a negation, a time, a condition, who did it).",
     examiner: "You are a strict examiner under time pressure: you interrupt long pauses with a new question, challenge every opinion with a counter-argument, "
       + "ask for precise reasons and examples, and in the planning task you reject the first suggestion and change one condition halfway through.",
-    grading: "Grade very strictly, by B2 standards: B1-level language that is merely correct earns middling points at best.",
+    grading: "Grade strictly against the selected CEFR level; reward accurate, appropriate language and task completion.",
   },
 };
 
@@ -42,7 +41,8 @@ export const MODULES = [
 ];
 export const moduleMinutes = (id, diff) => Math.max(5, Math.round(MODULES.find((m) => m.id === id).minutes * DIFFICULTIES[diff].time));
 export const WRITE_WORDS = [80, 80, 40];
-export const writeTarget = (i, diff) => Math.round((WRITE_WORDS[i] * DIFFICULTIES[diff].words) / 5) * 5;
+const LEVEL_WORD_FACTOR = { A1: 0.5, A2: 0.75, B1: 1 };
+export const writeTarget = (i, diff, level = "B1") => Math.max(20, Math.round((WRITE_WORDS[i] * DIFFICULTIES[diff].words * (LEVEL_WORD_FACTOR[level] ?? 1)) / 5) * 5);
 export const WRITE_POINTS = [40, 40, 20];
 
 // ---------- schema shorthands (the shape Talkloop's aiJson takes) ----------
@@ -82,9 +82,18 @@ function pick(kind, n = 1) {
   return n === 1 ? from[0] : from;
 }
 
-export function systemPrompt(diff) {
-  return "You write original practice papers in the exact format of the Goethe-Zertifikat B1 exam for adults. Never reproduce a real exam text: invent everything. "
+const LEVEL_GUIDE = {
+  A1: "Use very common everyday vocabulary, short simple main clauses, mostly present tense, and one clear idea per sentence. Avoid subordinate clauses and abstract topics.",
+  A2: "Use common everyday vocabulary and short sentences. Present, Perfekt and simple future are suitable; use only simple weil, dass or wenn clauses and familiar topics.",
+  B1: "Use natural but clear intermediate German: connected texts, common subordinate clauses, reasons, opinions and everyday abstract topics.",
+};
+export const examBlurb = (diff, level) => `${level}: ${DIFFICULTIES[diff].blurb}`;
+
+export function systemPrompt(diff, level = "B1") {
+  return `You write original German CEFR ${level} practice papers for adult learners, using the four-module Goethe-style practice format. Never reproduce a real exam text: invent everything. `
     + "Everything the candidate reads or hears is in German, with correct spelling and ß/umlauts. "
+    + `Target level: ${level}. ${LEVEL_GUIDE[level] ?? LEVEL_GUIDE.B1} Keep the grammar, vocabulary, task wording, answer options, audio and model responses suitable for ${level}. `
+    + `For A1 or A2, simplify the topics and shorten all reading/listening texts in the task request to a practical ${level} length; the selected level takes priority over any example word counts in the task template. `
     + `${DIFFICULTIES[diff].language} `
     + "Every answer must be decidable from the text alone, with exactly one defensible solution. Spread the correct answers evenly and unpredictably over the options. "
     + "Each \"why\" is one short German sentence naming the passage that decides the answer.";
@@ -216,14 +225,15 @@ export function validTeil(spec, sections) {
 }
 
 // ---------- Schreiben ----------
-export const writePrompt = (diff) => {
+export const writePrompt = (diff, level = "B1") => {
   const [a, b] = pick("write", 2);
+  const simpler = level === "A1" || level === "A2";
   return {
     text: "Schreiben. Write the three tasks of the module, in German, addressed to the candidate with \"Sie\":\n"
-      + `1. An informal e-mail to a friend about: ${a}. "situation" (2–3 sentences setting the scene) and exactly 3 "points" the e-mail must cover (describe, give reasons, make a suggestion).\n`
-      + `2. An opinion for an online guest book. A TV discussion was about "${pick("l4")}". "situation" introduces it in one sentence; "post" is one viewer's comment (40–60 words, with "name") that the candidate reacts to with their own opinion.\n`
-      + `3. A short formal e-mail (to a teacher, landlord, employer or office) about: ${b}. "situation" says who it goes to and what must be said (apologise or ask, and give a reason).\n`
-      + `Target lengths: ${writeTarget(0, diff)}, ${writeTarget(1, diff)} and ${writeTarget(2, diff)} words.`,
+      + `1. ${simpler ? "A short message to a friend" : "An informal e-mail to a friend"} about: ${a}. "situation" (1–2 simple sentences setting the scene) and exactly 3 short "points" to cover (say what happened, how you feel, and ask or suggest something).\n`
+      + `2. ${simpler ? "A simple opinion message" : "An opinion for an online guest book"}. A discussion was about "${pick("l4")}". "situation" introduces it in one sentence; "post" is a short comment (with "name") that the candidate answers with their own opinion.\n`
+      + `3. ${simpler ? "A short polite note" : "A short formal e-mail"} to a teacher, landlord, employer or office about: ${b}. "situation" says who it goes to and what must be said (apologise or ask, and give a simple reason).\n`
+      + `Target lengths for CEFR ${level}: ${writeTarget(0, diff, level)}, ${writeTarget(1, diff, level)} and ${writeTarget(2, diff, level)} words. Use short, level-appropriate prompts and points.`,
     schema: obj({
       task1: obj({ situation: S, points: arr(S) }),
       task2: obj({ situation: S, name: S, post: S }),
@@ -231,15 +241,16 @@ export const writePrompt = (diff) => {
     }),
   };
 };
-export function buildWriting(r, diff) {
+export function buildWriting(r, diff, level = "B1") {
+  const simpler = level === "A1" || level === "A2";
   const tasks = [
-    { title: "Aufgabe 1", kind: "Persönliche E-Mail", situation: text(r.task1?.situation), points: list(r.task1?.points).map(text).filter(Boolean).slice(0, 3),
+    { title: "Aufgabe 1", kind: simpler ? "Nachricht an einen Freund" : "Persönliche E-Mail", situation: text(r.task1?.situation), points: list(r.task1?.points).map(text).filter(Boolean).slice(0, 3),
       closing: "Schreiben Sie etwas zu allen drei Punkten. Achten Sie auf den Textaufbau (Anrede, Einleitung, Reihenfolge der Inhaltspunkte, Schluss)." },
-    { title: "Aufgabe 2", kind: "Meinung im Gästebuch", situation: text(r.task2?.situation), quote: { name: text(r.task2?.name), text: text(r.task2?.post) },
+    { title: "Aufgabe 2", kind: simpler ? "Einfache Meinung" : "Meinung im Gästebuch", situation: text(r.task2?.situation), quote: { name: text(r.task2?.name), text: text(r.task2?.post) },
       closing: "Schreiben Sie nun Ihre Meinung zum Thema." },
-    { title: "Aufgabe 3", kind: "Formelle E-Mail", situation: text(r.task3?.situation),
+    { title: "Aufgabe 3", kind: simpler ? "Kurze höfliche Nachricht" : "Formelle E-Mail", situation: text(r.task3?.situation),
       closing: "Vergessen Sie nicht die Anrede und den Gruß am Schluss." },
-  ].map((t, i) => ({ ...t, target: writeTarget(i, diff), max: WRITE_POINTS[i] }));
+  ].map((t, i) => ({ ...t, target: writeTarget(i, diff, level), max: WRITE_POINTS[i] }));
   if (tasks.some((t) => !t.situation) || tasks[0].points.length < 3 || !tasks[1].quote.text) return null;
   return tasks;
 }
@@ -249,10 +260,11 @@ const GRADE = {
   erfuellung: I, kohaerenz: I, wortschatz: I, strukturen: I, comment: S,
   corrections: arr(obj({ wrong: S, right: S, why: S })),
 };
-export function gradeWritingPrompt(task, answer, diff) {
+export function gradeWritingPrompt(task, answer, diff, level = "B1") {
   const words = countWords(answer);
   return {
-    system: "You are an examiner for the Schreiben module of the Goethe-Zertifikat B1. You grade one text by the exam's four criteria, each from 0 (nothing usable) to 5 (fully met): "
+    system: `You are an examiner for a CEFR ${level} German writing practice exam. Grade against ${level}, not against a fixed B1 standard. `
+      + "Grade one text by the exam's four criteria, each from 0 (nothing usable) to 5 (fully met): "
       + "erfuellung (every content point covered at the right length and in the right register, informal or formal), kohaerenz (structure, salutation and closing, connectors), "
       + "wortschatz (range and accuracy), strukturen (grammar, word order, spelling). "
       + `${DIFFICULTIES[diff].grading} A text far below the target length, off the task, or not in German scores 0–1 on erfuellung; an empty text scores 0 everywhere. `
@@ -278,14 +290,19 @@ export function gradeResult(raw, max, criteria = CRITERIA) {
 
 // ---------- Sprechen ----------
 export const SPEAK_POINTS = [28, 40, 16]; // + 16 for pronunciation, which a written transcript can't show
-export const speakPrompt = () => {
+export const speakPrompt = (level = "B1") => {
   const [a, b] = pick("speak", 2);
+  const steps = level === "A1"
+    ? "five very simple steps: say the topic; say one thing you do; say what you like; give one short reason; say thank you"
+    : level === "A2"
+      ? "five simple steps: introduce the topic; describe your experience; say how people do it at home; give one advantage and your opinion; conclude and thank the listener"
+      : "the standard five steps (introduce the topic and structure; own experience; the situation in the home country; advantages, disadvantages and own opinion; conclusion and thanks)";
   return {
-    text: "Sprechen. Write the task sheets of the module, in German:\n"
+    text: `Sprechen at CEFR ${level}. Write the task sheets in German, with short and level-appropriate instructions and topics:\n`
       + "\"plan\": Teil 1, planning something together with a partner: \"situation\" (2–3 sentences, e.g. a farewell party for a course mate, a visit to someone in hospital, a weekend trip with the course) "
       + "and exactly 4 \"points\" to settle, as short questions (Wann? Wo? Was mitbringen? Wer macht was?).\n"
       + `"topics": Teil 2, two presentation topics to choose from, "${a}" and "${b}". Each has a "title" (a question or statement about the topic) and exactly 5 "slides": `
-      + "the standard five steps (introduce the topic and structure; own experience; the situation in the home country; advantages, disadvantages and own opinion; conclusion and thanks), each phrased for that topic in one sentence.",
+      + `${steps}, each phrased for that topic in one short sentence.`,
     schema: obj({ plan: obj({ situation: S, points: arr(S) }), topics: arr(obj({ title: S, slides: arr(S) })) }),
   };
 };
@@ -300,9 +317,10 @@ export const PARTNER = { name: "Jonas", gender: "m" };
 const TURN = obj({ reply: S });
 const spoken = "Speak German only, in natural spoken sentences without lists, brackets or stage directions, at most 3 sentences per turn unless told otherwise. "
   + "Never correct the candidate's German and never switch to English: this is an exam, not a lesson.";
-export function speakTurnPrompt(stage, sheet, diff, extra = {}) {
+export function speakTurnPrompt(stage, sheet, diff, level = "B1", extra = {}) {
   const d = DIFFICULTIES[diff];
-  const base = `This is the Sprechen module of a Goethe-Zertifikat B1 exam simulation. ${spoken} ${d.examiner}`;
+  const presentationWords = { A1: 45, A2: 80, B1: 130 }[level] ?? 130;
+  const base = `This is the Sprechen module of a CEFR ${level} German practice exam. Speak at ${level}: ${LEVEL_GUIDE[level] ?? LEVEL_GUIDE.B1} ${spoken} ${d.examiner}`;
   const prompts = {
     plan: () => `${base}\nYou are ${PARTNER.name}, the other candidate, a confident speaker. Teil 1: you and the candidate plan something together.\nSITUATION: ${sheet.plan.situation}\nPOINTS TO SETTLE: ${sheet.plan.points.join(" | ")}\n`
       + "Make suggestions of your own, react to the candidate's, ask what they think, and move to the next point once one is settled. Do not settle everything yourself: the candidate has to contribute. "
@@ -313,17 +331,17 @@ export function speakTurnPrompt(stage, sheet, diff, extra = {}) {
       + `(question ${extra.n} of ${extra.of}): about a detail, a reason, or the opposite view. Refer to something the candidate actually said. `
       + "First react to their last answer in half a sentence. Do not repeat a question that was already asked.",
     presentation: () => `${base}\nYou are ${PARTNER.name}, the other candidate. Teil 2: give your own short presentation on "${extra.topic}", following these steps: ${extra.slides.join(" | ")}. `
-      + "About 130 words, as one connected talk in the first person, with one concrete experience and a clear opinion. End by thanking the listener.",
+      + `About ${presentationWords} words, as one connected talk in the first person, with level-appropriate sentences. End by thanking the listener.`,
     answer: () => `${base}\nYou are ${PARTNER.name}, the other candidate. You have just given a presentation on "${extra.topic}". The candidate now gives feedback and asks you a question. `
       + "Thank them and answer their question in 2–3 sentences. If they asked no question, say what you would have liked to be asked, briefly.",
   };
   return { system: prompts[stage](), schema: TURN };
 }
-export function gradeSpeakingPrompt(sheet, transcript, diff) {
+export function gradeSpeakingPrompt(sheet, transcript, diff, level = "B1") {
   const show = (part) => transcript.filter((m) => m.part === part).map((m) => `${m.who}: ${m.text}`).join("\n") || "(the candidate said nothing)";
   const part = obj(GRADE);
   return {
-    system: "You are the second examiner for the Sprechen module of the Goethe-Zertifikat B1 and grade the CANDIDATE (lines marked \"Kandidat/in\") from the transcript of the three parts. "
+    system: `You are the second examiner for a CEFR ${level} German speaking practice exam. Grade the CANDIDATE (lines marked \"Kandidat/in\") against ${level}, not a fixed B1 standard. `
       + "For each part give four marks from 0 (nothing usable) to 5 (fully met): erfuellung (the task done: suggestions, reactions and agreement in Teil 1; all five steps of the presentation in Teil 2; "
       + "real answers, feedback and a question in Teil 3), kohaerenz (connected speech, linking words, reacting to the partner), wortschatz (range and accuracy), strukturen (grammar, word order). "
       + `${DIFFICULTIES[diff].grading} The transcript comes from speech recognition: ignore spelling, capital letters and punctuation, and do not judge pronunciation. `

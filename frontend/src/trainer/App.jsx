@@ -262,7 +262,7 @@ export function App() {
           <TalkloopPage onLoggedOut={talkLoggedOut} />
         </div>
         {/* Stays mounted once opened: an exam's clock and audio go on while another tab is looked at. */}
-        {visited.current.exam && <div style={show("exam")}><ExamPage onTalkloop={() => { setExam(false); setTalk(true); }} /></div>}
+        {visited.current.exam && <div style={show("exam")}><ExamPage onTalkloop={() => { setExam(false); setTalk(true); }} defaultLevel={s.levels?.at(-1) || "B1"} /></div>}
         {visited.current.rules && <div style={show("rules")}><Fade><FormulasPage /></Fade></div>}
         {visited.current.stories && (
           <div style={show("stories")}>
