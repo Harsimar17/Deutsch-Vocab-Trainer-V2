@@ -397,6 +397,17 @@ public class ProgressRepository {
         commit(ctx.token(), List.of(update(progressName(ctx) + "/talkloop/used", data, null)));
     }
 
+    // The Prüfung tab's marks (one per finished exam module): exam/results.
+
+    public Map<String, Object> findExamResults(Ctx ctx) {
+        Map<String, Object> doc = getDocument(ctx.token(), progressName(ctx) + "/exam/results");
+        return doc == null ? null : fieldsOf(doc);
+    }
+
+    public void saveExamResults(Ctx ctx, Map<String, Object> data) {
+        commit(ctx.token(), List.of(update(progressName(ctx) + "/exam/results", data, null)));
+    }
+
     // ---- REST plumbing ----
     // Document names go into the URL literally: as URI *variables* their "/"
     // would be percent-encoded and Firestore would see a different path.

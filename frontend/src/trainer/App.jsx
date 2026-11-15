@@ -10,6 +10,7 @@ import { AddWord, SettingsPanel } from "./settings.jsx";
 import { TabBar, UserMenu, ModeBento } from "./frame.jsx";
 import { FormulasPage } from "./grammar.jsx";
 import { TalkloopPage } from "../talkloop/TalkloopPage.jsx";
+import { ExamPage } from "../exam/ExamPage.jsx";
 import { PageTitle, Eyebrow, Wordmark, Rotating, Decrypt, Reveal, Fade, Sparks, StarButton, Spot, GalaxyField, AppBackdrop, GooeySections, Digits, Typed } from "../bits/fx.jsx";
 
 export const ICON_PATHS = {
@@ -17,6 +18,7 @@ export const ICON_PATHS = {
   stories: "M2 4h6a4 4 0 0 1 4 4v13a3 3 0 0 0-3-3H2V4Zm20 0h-6a4 4 0 0 0-4 4v13a3 3 0 0 1 3-3h7V4Z",
   rules: "M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01",
   talk: "M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5Z",
+  exam: "M9 11l3 3L22 4M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11",
   sun: "M12 17a5 5 0 1 0 0-10 5 5 0 0 0 0 10ZM12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42",
   moon: "M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79Z",
   logout: "M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9",
@@ -30,16 +32,17 @@ export function Icon({ name }) {
   );
 }
 
-export function TopBar({ storyMode, onStoryMode, formulas, onFormulas, talk, onTalk, theme, onTheme, user, onLogout }) {
+export function TopBar({ storyMode, onStoryMode, formulas, onFormulas, talk, onTalk, exam, onExam, theme, onTheme, user, onLogout }) {
   const dark = theme === "dark";
-  const page = talk ? "talk" : formulas ? "rules" : storyMode ? "stories" : "practice";
+  const page = talk ? "talk" : exam ? "exam" : formulas ? "rules" : storyMode ? "stories" : "practice";
   const go = (p) => {
-    if (p === "talk") { onTalk(true); return; }
-    onTalk(false);
+    onTalk(p === "talk");
+    onExam(p === "exam");
+    if (p === "talk" || p === "exam") return;
     onFormulas(p === "rules");
     if (p !== "rules" && storyMode !== (p === "stories")) onStoryMode(p === "stories");
   };
-  const items = [["practice", "Practice"], ["stories", "Stories"], ["rules", "Grammar"], ["talk", "Talkloop"]];
+  const items = [["practice", "Practice"], ["stories", "Stories"], ["rules", "Grammar"], ["talk", "Talkloop"], ["exam", "Prüfung"]];
   const navButtons = items.map(([id, label]) => (
     <button key={id} onClick={() => go(id)} aria-current={page === id ? "page" : undefined}><Icon name={id} /><span>{label}</span></button>
   ));
@@ -144,6 +147,7 @@ export function App() {
     history.replaceState(null, "", "/");
     return true;
   });
+  const [exam, setExam] = useState(false); // the Prüfung tab (the Goethe B1 exam simulation) is open
   const [version, setVersion] = useState(0); // bump → practice rounds restart
   // memory only, for this visit — never saved
   const [geminiKey, setGeminiKey] = useState("");
@@ -174,7 +178,7 @@ export function App() {
     if (!user) {
       // someone else may log in next: drop everything of the last user
       STORY_PROGRESS.value = null; STORY_PROGRESS.stale = true; setNav(NAV_START); visited.current = {};
-      setSummary(null); setSaveError(null); setGeminiKey(""); setGhToken(""); setMode("study"); setSettingsOpen(false); setFormulas(false); setTalk(false);
+      setSummary(null); setSaveError(null); setGeminiKey(""); setGhToken(""); setMode("study"); setSettingsOpen(false); setFormulas(false); setTalk(false); setExam(false);
       setStatus("login");
       return;
     }
@@ -235,13 +239,13 @@ export function App() {
     </div>
   ) : null;
   const topBar = (
-    <TopBar storyMode={s.storyMode} onStoryMode={(v) => onSettings("setStoryMode", v)} formulas={formulas} onFormulas={setFormulas} talk={talk} onTalk={setTalk}
+    <TopBar storyMode={s.storyMode} onStoryMode={(v) => onSettings("setStoryMode", v)} formulas={formulas} onFormulas={setFormulas} talk={talk} onTalk={setTalk} exam={exam} onExam={setExam}
       theme={theme} onTheme={(t) => onSettings("setTheme", t)} user={user} onLogout={logout} />
   );
 
   // Practice, Stories and Rules stay mounted once opened and are only hidden,
   // so switching between them starts nothing again on the backend.
-  const page = talk ? "talk" : formulas ? "rules" : s.storyMode ? "stories" : "practice";
+  const page = talk ? "talk" : exam ? "exam" : formulas ? "rules" : s.storyMode ? "stories" : "practice";
   if (!visited.current[page]) visited.current[page] = true;
   const show = (p) => ({ display: page === p ? "block" : "none" });
   const drillProps = { version, onChange: applyChange, geminiKey, settings: s };
@@ -251,12 +255,14 @@ export function App() {
     <div style={{ minHeight: "100%", fontFamily: "var(--font-serif)" }}>
       {topBar}
       <main className="app-main">
-      <div style={{ maxWidth: page === "talk" ? "760px" : page === "rules" ? "760px" : page === "stories" ? "680px" : "600px", margin: "0 auto", display: "flex", flexDirection: "column", gap: "22px" }}>
+      <div style={{ maxWidth: page === "talk" || page === "exam" ? "760px" : page === "rules" ? "760px" : page === "stories" ? "680px" : "600px", margin: "0 auto", display: "flex", flexDirection: "column", gap: "22px" }}>
         {notice}
         {/* Started in the background right after login, so it is ready when its tab is opened. */}
         <div style={show("talk")}>
           <TalkloopPage onLoggedOut={talkLoggedOut} />
         </div>
+        {/* Stays mounted once opened: an exam's clock and audio go on while another tab is looked at. */}
+        {visited.current.exam && <div style={show("exam")}><ExamPage onTalkloop={() => { setExam(false); setTalk(true); }} /></div>}
         {visited.current.rules && <div style={show("rules")}><Fade><FormulasPage /></Fade></div>}
         {visited.current.stories && (
           <div style={show("stories")}>
