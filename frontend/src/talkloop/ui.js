@@ -10,7 +10,7 @@ let state = {
   // The setup screen's choices (setForm in engine.js keeps some of them in this browser).
   form: {
     language: "German", native: "English", level: "A1", mode: "lead", officeGap: "normal", tense: "any",
-    scenario: "cafe", connector: "mix", useVocab: true, sayAgain: true, liveVoice: false, grammarCheck: true,
+    scenario: "cafe", connector: "mix", useVocab: true, sayAgain: true, liveVoice: false, geminiVoice: "", grammarCheck: true,
   },
   keyStatus: "",
   keySummary: "",

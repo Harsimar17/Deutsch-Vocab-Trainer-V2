@@ -2183,7 +2183,12 @@ function geminiTtsBlocked() {
   return Date.now() < store.get("tts_blocked_until", 0);
 }
 
-async function geminiTts(text, voice = TTS_VOICE) {
+// The Gemini voice chosen on the setup screen; "" keeps the standard ones (Kore, Puck live).
+const geminiVoiceChoice = () => store.get("gemini_voice", "");
+// A chosen Gemini voice speaks the replies itself (before Piper) while a key and quota last.
+const geminiVoiceFirst = () => Boolean(geminiVoiceChoice()) && Boolean(getKey()) && !geminiTtsBlocked();
+
+async function geminiTts(text, voice = geminiVoiceChoice() || TTS_VOICE) {
   const key = getKey();
   if (!key) return null;
   const request = (key) => fetch(`${API_BASE}/${TTS_MODEL}:generateContent?key=${encodeURIComponent(key)}`, {
@@ -2527,7 +2532,7 @@ const voiceRate = () => (["A1", "A2"].includes(state.settings.level) ? 0.9 : 1);
 function prepareVoice(text, mood) {
   const locale = state.settings.locale;
   const key = `${locale}|${mood}|${text}`;
-  if (!hasPiperVoice(locale) || !piperLoaded(locale) || ttsCache.has(key) || pendingTts.has(key)) return;
+  if (geminiVoiceFirst() || !hasPiperVoice(locale) || !piperLoaded(locale) || ttsCache.has(key) || pendingTts.has(key)) return;
   const pending = piperSpeak(text, locale, { speed: voiceRate(), mood })
     .then((audio) => {
       rememberTts(key, { audio, note: "" });
@@ -2640,8 +2645,11 @@ async function speak(text, wordSpans, onDone, mood = "neutral") {
   // 1. Piper, once it's loaded. A reply never waits for a download: until the voice is
   //    ready, it starts loading and this reply uses the next voice. If it's already
   //    downloaded and only loading into memory, give it a moment first.
+  //    Skipped when the learner picked a Gemini voice: that one speaks first.
   let piperNote = "";
-  if (hasPiperVoice(locale)) {
+  if (geminiVoiceFirst()) {
+    piperNote = `${geminiVoiceChoice()} chosen`;
+  } else if (hasPiperVoice(locale)) {
     if (!piperLoaded(locale)) {
       const loading = preloadPiper(locale).catch(() => null);
       if (await piperReady(locale)) await Promise.race([loading, sleep(1500)]);
@@ -3970,7 +3978,7 @@ async function startLive() {
     ws.onopen = () => liveSend({
       setup: {
         model,
-        generationConfig: { responseModalities: ["AUDIO"], speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: office ? state.settings.colleague?.voice ?? "Puck" : "Puck" } } } },
+        generationConfig: { responseModalities: ["AUDIO"], speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: office ? state.settings.colleague?.voice ?? "Puck" : geminiVoiceChoice() || "Puck" } } } },
         systemInstruction: { parts: [{ text: office ? officeSystemPrompt(state.settings, recap) : liveSystemPrompt(state.settings, recap) }] },
         ...(office ? { tools: OFFICE_TOOLS } : {}),
         inputAudioTranscription: {},
@@ -5009,6 +5017,11 @@ function setForm(patch) {
   if ("officeGap" in patch) store.set("office_gap", patch.officeGap);
   if ("sayAgain" in patch) store.set("say_again", patch.sayAgain);
   if ("liveVoice" in patch) store.set("live_voice", patch.liveVoice);
+  if ("geminiVoice" in patch && patch.geminiVoice !== before.geminiVoice) {
+    store.set("gemini_voice", patch.geminiVoice);
+    ttsCache.clear(); // replays in the old voice would be confusing
+    pendingTts.clear();
+  }
   if ("grammarCheck" in patch) store.set("grammar_check", patch.grammarCheck);
   if ("language" in patch && patch.language !== before.language) {
     preloadSelectedVoice();
@@ -5271,6 +5284,7 @@ function initTalkloop() {
       officeGap: store.get("office_gap", "normal"),
       sayAgain: store.get("say_again", true),
       liveVoice: liveVoiceOn(),
+      geminiVoice: geminiVoiceChoice(),
       grammarCheck: grammarCheckOn(),
     },
   });
