@@ -77,3 +77,26 @@ export const PROVIDERS = [
   { value: "gemini", label: "Google Gemini" },
   { value: "openai", label: "OpenAI — GPT-6 Luna" },
 ];
+
+// Gemini's prebuilt voices (they all speak German). "" keeps the standard voices: Kore for
+// replies, Puck in the live call. Any other choice is used for both.
+export const GEMINI_VOICE_OPTIONS = [
+  {
+    label: "Female",
+    options: [
+      ["Kore", "firm"], ["Aoede", "breezy"], ["Leda", "youthful"], ["Zephyr", "bright"],
+      ["Autonoe", "bright"], ["Callirrhoe", "easy-going"], ["Despina", "smooth"], ["Erinome", "clear"],
+      ["Laomedeia", "upbeat"], ["Achernar", "soft"], ["Gacrux", "mature"], ["Pulcherrima", "forward"],
+      ["Vindemiatrix", "gentle"], ["Sulafat", "warm"],
+    ],
+  },
+  {
+    label: "Male",
+    options: [
+      ["Puck", "upbeat"], ["Charon", "informative"], ["Fenrir", "excitable"], ["Orus", "firm"],
+      ["Enceladus", "breathy"], ["Iapetus", "clear"], ["Umbriel", "easy-going"], ["Algieba", "smooth"],
+      ["Algenib", "gravelly"], ["Rasalgethi", "informative"], ["Alnilam", "firm"], ["Schedar", "even"],
+      ["Achird", "friendly"], ["Zubenelgenubi", "casual"], ["Sadachbia", "lively"], ["Sadaltager", "knowledgeable"],
+    ],
+  },
+].map((g) => ({ label: g.label, options: g.options.map(([value, style]) => ({ value, label: `${value} — ${style}` })) }));

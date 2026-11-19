@@ -281,6 +281,12 @@ and the auto-send switch only while not typing, and the "Browser voice…" note 
 instead of under every reply. At 375 × 812 the conversation went from 33% to 48% of the
 screen while a correction is shown, and 62% without one.
 
+**Gemini voice.** A *Gemini voice* dropdown on the setup screen (remembered in the browser)
+picks one of Gemini's 30 prebuilt voices. *Standard* keeps the old behaviour: Piper's voice
+first, Gemini's Kore when Piper isn't ready, Puck in the live call. Any other choice speaks
+the replies first (while a Gemini key and the daily quota last) and is the live call's voice
+too; the Büro's colleagues keep their own voices.
+
 **Typing umlauts.** For a keyboard without them, the reply box has three ways: a row of
 keys above it (**ä ö ü ß** and a **⇧** for capitals; a letter at the start of a sentence is
 a capital anyway), a quote mark before a vowel (`"a` gives ä, `"o` ö, `"u` ü, `"s` ß, capitals

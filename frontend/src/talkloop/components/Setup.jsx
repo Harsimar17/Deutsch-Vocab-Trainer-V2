@@ -2,7 +2,7 @@ import React, { useEffect, useRef } from "react";
 import { StarButton, Pull, Blur } from "../../bits/fx.jsx";
 import { useUi } from "../ui.js";
 import { setForm, startConversation, changeKey, chooseAi, openChat, deleteChat, topicChats, MODES } from "../engine.js";
-import { LANGUAGES, NATIVE_LANGUAGES, LEVELS, MODE_OPTIONS, OFFICE_GAPS, TENSE_OPTIONS, SCENE_OPTIONS } from "../options.js";
+import { LANGUAGES, NATIVE_LANGUAGES, LEVELS, MODE_OPTIONS, OFFICE_GAPS, TENSE_OPTIONS, SCENE_OPTIONS, GEMINI_VOICE_OPTIONS } from "../options.js";
 
 // After a call: what was said, tried and not reached.
 function Recap({ recap }) {
@@ -136,6 +136,16 @@ export function Setup() {
           <select id="connector" value={form.connector} disabled={!m.joiner} onChange={(e) => setForm({ connector: e.target.value })}>
             <option value="mix">Mix — all up to my level</option>
             {connectors.map((g) => (
+              <optgroup key={g.label} label={g.label}>
+                {g.options.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+              </optgroup>
+            ))}
+          </select>
+        </label>
+        <label>Gemini voice
+          <select id="gemini-voice" value={form.geminiVoice} onChange={(e) => setForm({ geminiVoice: e.target.value })}>
+            <option value="">Standard — Kore (Puck in the live call)</option>
+            {GEMINI_VOICE_OPTIONS.map((g) => (
               <optgroup key={g.label} label={g.label}>
                 {g.options.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
               </optgroup>
