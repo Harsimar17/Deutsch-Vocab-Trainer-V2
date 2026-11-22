@@ -1,12 +1,75 @@
 import React, { useEffect, useRef } from "react";
 import { StarButton, Pull, Blur } from "../../bits/fx.jsx";
 import { useUi } from "../ui.js";
-import { setForm, startConversation, changeKey, chooseAi, openChat, deleteChat, topicChats, MODES } from "../engine.js";
+import { setForm, startConversation, changeKey, chooseAi, openChat, deleteChat, topicChats, MODES, markLevelTest, levelTests } from "../engine.js";
 import { LANGUAGES, NATIVE_LANGUAGES, LEVELS, MODE_OPTIONS, OFFICE_GAPS, TENSE_OPTIONS, SCENE_OPTIONS, GEMINI_VOICE_OPTIONS } from "../options.js";
+
+const day = (at) => new Date(at).toLocaleDateString([], { day: "numeric", month: "short" });
+
+// Earlier level tests, newest first.
+function LevelHistory({ tests }) {
+  if (!tests?.length) return null;
+  return (
+    <p className="muted level-history"><strong>Your tests: </strong>
+      {tests.slice(0, 8).map((t) => `${t.level} (${day(t.at)})`).join(" · ")}
+    </p>
+  );
+}
+
+// After a Sprechstand test: the level, each criterion with the learner's own sentence, what's next.
+function LevelResult({ recap }) {
+  if (recap.loading) return <p aria-live="polite">Marking your answers… this takes a few seconds.</p>;
+  if (recap.error) {
+    return (
+      <>
+        <p aria-live="polite">{recap.error}</p>
+        {recap.retry && <button type="button" onClick={markLevelTest}>Mark again</button>}
+        <LevelHistory tests={recap.history} />
+      </>
+    );
+  }
+  const r = recap.result;
+  const earlier = recap.history?.[1];
+  return (
+    <div className="level-result">
+      <p className="level-badge"><span className="level-big">{r.level}</span>
+        <span className="muted"> your speaking level (scale A1– to B1+){earlier ? ` · last time ${earlier.level}` : ""}</span>
+      </p>
+      {r.summary && <p>{r.summary}</p>}
+      <ul className="level-criteria">
+        {r.criteria.map((c) => (
+          <li key={c.key}>
+            <strong>{c.name} · {c.level}</strong> <span className="muted">({c.about})</span><br />
+            {c.note}
+            {c.quote && <><br /><em className="muted">„{c.quote}“</em></>}
+          </li>
+        ))}
+      </ul>
+      {r.strengths.length > 0 && <><p><strong>What you do well</strong></p><ul>{r.strengths.map((s) => <li key={s}>{s}</li>)}</ul></>}
+      {r.nextSteps.length > 0 && <><p><strong>For the next level</strong></p><ul>{r.nextSteps.map((s) => <li key={s}>{s}</li>)}</ul></>}
+      {r.corrections.length > 0 && (
+        <>
+          <p><strong>Mistakes worth fixing</strong></p>
+          <ul>{r.corrections.map((c) => <li key={c.said}><s>{c.said}</s> → {c.better}</li>)}</ul>
+        </>
+      )}
+      <p className="muted">Measured: {r.stats.answers} answers, {r.stats.avgWords} words per answer, longest {r.stats.longest}. Pronunciation isn't judged, and speech recognition can hide small mistakes, so take it as an estimate.</p>
+      <LevelHistory tests={recap.history} />
+    </div>
+  );
+}
 
 // After a call: what was said, tried and not reached.
 function Recap({ recap }) {
   if (!recap) return null;
+  if (recap.kind === "level") {
+    return (
+      <div id="recap" className="recap">
+        <h3><Blur text="Sprechstand" /></h3>
+        <LevelResult recap={recap} />
+      </div>
+    );
+  }
   const line = (label, list, sep = ", ") => list.length ? <p><strong>{label}: </strong>{list.join(sep)}</p> : null;
   return (
     <div id="recap" className="recap">
@@ -109,8 +172,10 @@ export function Setup() {
         <label>I speak
           {select("native", NATIVE_LANGUAGES.map((n) => <option key={n}>{n}</option>))}
         </label>
-        <label>Level
-          {select("level", LEVELS.map((l) => <option key={l} value={l}>{l}</option>))}
+        <label style={dim(!m.assess)}>Level
+          <select id="level" value={form.level} disabled={Boolean(m.assess)} onChange={(e) => setForm({ level: e.target.value })}>
+            {LEVELS.map((l) => <option key={l} value={l}>{l}</option>)}
+          </select>
         </label>
         <label>Mode
           {select("mode", MODE_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>))}
@@ -120,8 +185,10 @@ export function Setup() {
             {OFFICE_GAPS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
           </select>
         </label>
-        <label>Tense to practise
-          {select("tense", TENSE_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>))}
+        <label style={dim(!m.assess)}>Tense to practise
+          <select id="tense" value={form.tense} disabled={Boolean(m.assess)} onChange={(e) => setForm({ tense: e.target.value })}>
+            {TENSE_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+          </select>
         </label>
         <label style={dim(m.usesScene)}>Scene
           <select id="scenario" value={form.scenario} disabled={!m.usesScene} onChange={(e) => setForm({ scenario: e.target.value })}>
@@ -154,6 +221,12 @@ export function Setup() {
         </label>
       </div>
       {voiceStatus && <p className="muted voice-status" aria-live="polite">{voiceStatus}</p>}
+      {m.assess && (
+        <div className="level-intro">
+          <p>A short interview with an examiner, about 10 minutes and 12 answers. The questions start easy (A1) and get harder up to B1; when you struggle, they get easier again. There are no corrections, hints or suggestions during the test. Answer in full sentences and say as much as you can. When it's over, tap End to get your level for five skills, with your own sentences as evidence.</p>
+          <LevelHistory tests={levelTests()} />
+        </div>
+      )}
 
       <div className="vocab">
         <div className="vocab-head"><strong>My vocabulary</strong></div>

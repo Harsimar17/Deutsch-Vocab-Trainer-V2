@@ -476,6 +476,16 @@ const MODES = {
     opener: "(Walk over to the learner's desk and start talking.)",
     extra: "",
   },
+  // Sprechstand: a short speaking level test, A1 to B1, like an oral placement interview. The
+  // examiner never corrects or helps; when the call ends, the transcript is marked (see assessLevel).
+  level: {
+    label: "Sprechstand — test my speaking level (A1–B1)",
+    usesScene: false,
+    endable: true,
+    assess: true,
+    opener: "(Start the speaking level test. Greet the learner in one short, friendly sentence, say this is a short conversation to find their speaking level and that they should answer in full sentences, then ask the first, very easy question.)",
+    extra: "",
+  },
   scene: {
     label: "Scene role-play",
     usesScene: true,
@@ -1569,7 +1579,162 @@ const WORD_SCHEMA = {
 
 function personaFor({ scenario, mode }) {
   const m = MODES[mode] ?? MODES.scene;
+  if (m.assess) return EXAMINER;
   return m.usesScene ? SCENARIOS[scenario] ?? SCENARIOS.cafe : PARTNER;
+}
+
+// ---------- Sprechstand: the speaking level test ----------
+const EXAMINER = { character: "Frau Weber", setting: "a friendly, calm examiner running a short oral placement interview" };
+const ASSESS_ANSWERS = 12; // the learner's answers in one test
+const ASSESS_MIN = 4; // fewer than this can't be marked
+// The test's scale stops at B1: B1+ is a strong B1, the most this test can show.
+const ASSESS_SCALE = ["A1-", "A1", "A1+", "A2", "A2+", "B1", "B1+"];
+const ASSESS_KEY = "level_tests"; // this browser's results, newest first
+
+// What the examiner asks at each point of the test: it climbs from A1 to the top of B1, and
+// steps back down when the learner struggles, as in an oral placement interview.
+const ASSESS_STEPS = [
+  { upTo: 2, level: "A1", ask: "very easy A1 questions: name, where they come from, where they live, family, job or studies, what they like. Short main clauses, present tense." },
+  { upTo: 5, level: "A2", ask: "A2 questions: their daily routine, what they did last weekend or on their last holiday (so they use the Perfekt), plans for the coming weeks, what they prefer and why (e.g. city or countryside), describing their flat or town." },
+  { upTo: 9, level: "B1", ask: "B1 questions: tell a real experience as a short story (a trip, a problem, a first day somewhere: what happened, how it ended, how they felt); their opinion on an everyday issue with reasons (weil, deshalb); comparing how something was before and is now; how they solved a problem." },
+  { upTo: ASSESS_ANSWERS, level: "B1", ask: "the hardest B1 questions: hypothetical ones (Was würdest du machen, wenn …?, needing Konjunktiv II), arguing a point and responding to the opposite view, giving a friend advice in a difficult situation, explaining something they know well step by step. Never above B1." },
+];
+
+function assessLines(answers) {
+  if (answers >= ASSESS_ANSWERS) {
+    return [`The test is complete (${answers} answers). Thank the learner warmly in one or two short sentences and say their result comes when they end the call. Ask nothing more, and set conversation_finished to true.`];
+  }
+  const step = ASSESS_STEPS.find((s) => answers < s.upTo) ?? ASSESS_STEPS[ASSESS_STEPS.length - 1];
+  return [
+    "This is a speaking level test (Einstufung) from A1 to B1. You are a friendly examiner, never a teacher: never correct the learner, never explain grammar, never praise or judge their German, never give them words or say an answer for them. React to the content of their answer in a few words (Ah, interessant!), then ask exactly one question.",
+    `The learner has given ${answers} of ${ASSESS_ANSWERS} answers. Ask now: ${step.ask}`,
+    `Speak plain German at ${step.level}, never above B1. Ask open questions (Erzähl mal…, Warum…, Wie war das…) that take several sentences to answer, not yes/no ones (except at the very start).`,
+    "Adapt like a real examiner: if the learner's last answers were very short, broken, or they didn't understand, ask an easier question of the previous kind once, and if they didn't understand, say it again more simply. If they answer well, keep climbing. If an answer is very short, ask for one detail before moving on.",
+    "Never ask the same thing twice; each question is on a new subject or a clearly new angle.",
+    "Leave suggestions empty and every coach field empty (no correction, mistakes, tip or used words): this is a test.",
+  ];
+}
+
+// Words in one learner answer, and the connectors and structures that mark a level.
+const assessWords = (text) => (text.match(/[\p{L}\p{N}][\p{L}\p{N}'’-]*/gu) ?? []);
+const ASSESS_CONNECTORS = ["weil", "dass", "wenn", "ob", "obwohl", "damit", "nachdem", "bevor", "während", "denn", "deshalb", "trotzdem", "sondern", "außerdem", "dann", "zuerst", "danach", "zum Schluss", "würde", "wäre", "hätte", "könnte"];
+
+function assessStats(answers) {
+  const counts = answers.map((a) => assessWords(a).length);
+  const total = counts.reduce((s, n) => s + n, 0);
+  const lower = answers.join(" ").toLowerCase();
+  const used = ASSESS_CONNECTORS.filter((c) => new RegExp(`(^|[^\\p{L}])${c}([^\\p{L}]|$)`, "u").test(lower));
+  return {
+    answers: answers.length,
+    avgWords: answers.length ? Math.round((total / answers.length) * 10) / 10 : 0,
+    longest: counts.length ? Math.max(...counts) : 0,
+    connectors: used,
+  };
+}
+
+const LEVEL_ITEM = {
+  type: "OBJECT",
+  properties: {
+    level: { type: "STRING", enum: ASSESS_SCALE },
+    note: { type: "STRING" },
+    quote: { type: "STRING" },
+  },
+  required: ["level", "note", "quote"],
+};
+const ASSESS_SCHEMA = {
+  type: "OBJECT",
+  properties: {
+    level: { type: "STRING", enum: ASSESS_SCALE },
+    summary: { type: "STRING" },
+    range: LEVEL_ITEM,
+    accuracy: LEVEL_ITEM,
+    fluency: LEVEL_ITEM,
+    coherence: LEVEL_ITEM,
+    interaction: LEVEL_ITEM,
+    strengths: { type: "ARRAY", items: { type: "STRING" } },
+    next_steps: { type: "ARRAY", items: { type: "STRING" } },
+    corrections: {
+      type: "ARRAY",
+      items: { type: "OBJECT", properties: { said: { type: "STRING" }, better: { type: "STRING" } }, required: ["said", "better"] },
+    },
+  },
+  required: ["level", "summary", "range", "accuracy", "fluency", "coherence", "interaction", "strengths", "next_steps", "corrections"],
+};
+export const ASSESS_CRITERIA = [
+  ["range", "Spektrum", "vocabulary and range of structures"],
+  ["accuracy", "Korrektheit", "grammar"],
+  ["fluency", "Flüssigkeit", "how long and how freely you speak"],
+  ["coherence", "Kohärenz", "linking your sentences"],
+  ["interaction", "Interaktion", "keeping the conversation going"],
+];
+
+// Marks a finished test from its transcript, by the CEFR's spoken-language criteria.
+async function assessLevel(transcript, nativeLanguage) {
+  const answers = transcript.filter((t) => t.role === "learner").map((t) => t.text);
+  const stats = assessStats(answers);
+  const lines = transcript.map((t) => `${t.role === "learner" ? "Learner" : "Examiner"}: ${t.text}`).join("\n");
+  const raw = await aiJson({
+    systemInstruction: [
+      "You are an experienced Goethe-Institut examiner. Estimate the learner's SPOKEN German level from the transcript of a short oral placement interview, by the CEFR's qualitative aspects of spoken language use.",
+      `Scale (this test stops at B1): ${ASSESS_SCALE.join(", ")}. A1- = not yet A1; X+ = X reached and working towards the next level; B1+ = a strong, secure B1 (the most this test can show; give it also to anyone above B1).`,
+      "Criteria: range (vocabulary, variety of structures), accuracy (grammar: verb position, endings, cases, tenses), fluency (length of answers, sentences finished or broken off), coherence (linking ideas: weil, dass, deshalb, als, dann, obwohl …), interaction (understanding the questions, answering to the point, adding detail, asking back).",
+      "Judge only what the learner actually said. A level counts as reached only if the learner did it themselves several times, not once by luck; questions they didn't understand, one-word answers and English count against them. The overall level is not an average: it is the level they can hold, usually close to the lower criteria.",
+      "The learner's answers come from speech recognition: ignore punctuation and capital letters, and don't count obvious recognition slips as mistakes. Pronunciation can't be judged and isn't.",
+      `Measured by the app: ${stats.answers} answers, ${stats.avgWords} words per answer on average, longest ${stats.longest} words, linking words and structures used: ${stats.connectors.join(", ") || "none"}.`,
+      `Write summary, every note, strengths and next_steps in ${nativeLanguage}, short and concrete, speaking to the learner as "you". quote: one sentence the learner said that shows that criterion's level, copied exactly. strengths: 2-3. next_steps: 3-4 things missing for the next level on the scale, each naming the structure or skill with a German example (for B1+: what keeps B1 secure). corrections: up to 5 of the learner's most telling mistakes, said = their words exactly, better = the corrected German.`,
+    ].join("\n"),
+    schema: ASSESS_SCHEMA,
+    contents: [{ role: "user", parts: [{ text: `Transcript:\n${lines}` }] }],
+    temperature: 0.2,
+  });
+  const r = raw && typeof raw === "object" ? raw : {};
+  const lvl = (v) => (ASSESS_SCALE.includes(v) ? v : "A1");
+  const str = (v) => (typeof v === "string" ? v.trim() : "");
+  const list = (v) => (Array.isArray(v) ? v : []);
+  if (!ASSESS_SCALE.includes(r.level)) throw new Error("The AI's marking came back incomplete. Tap “Mark again”.");
+  return {
+    level: r.level,
+    summary: str(r.summary),
+    criteria: ASSESS_CRITERIA.map(([key, name, about]) => ({ key, name, about, level: lvl(r[key]?.level), note: str(r[key]?.note), quote: str(r[key]?.quote) })),
+    strengths: list(r.strengths).map(str).filter(Boolean).slice(0, 3),
+    nextSteps: list(r.next_steps).map(str).filter(Boolean).slice(0, 4),
+    corrections: list(r.corrections).filter((c) => c && str(c.said) && str(c.better)).map((c) => ({ said: str(c.said), better: str(c.better) })).slice(0, 5),
+    stats,
+  };
+}
+
+// Results are kept here and, compressed into one line each, in the trainer's record of used
+// material (kind "level-tests", see noteUsed/syncUsed), so the history follows the learner.
+function levelTests() {
+  const local = store.get(ASSESS_KEY, []);
+  const remote = recentlyUsed("level-tests").map((line) => { try { return JSON.parse(line); } catch { return null; } })
+    .filter((t) => t && ASSESS_SCALE.includes(t.level) && Number.isFinite(t.at));
+  const byAt = new Map([...remote, ...local].map((t) => [t.at, t]));
+  return [...byAt.values()].sort((a, b) => b.at - a.at).slice(0, 20);
+}
+
+function saveLevelTest(result) {
+  const entry = { at: Date.now(), level: result.level, c: result.criteria.map((c) => c.level), w: result.stats.avgWords };
+  store.set(ASSESS_KEY, [entry, ...store.get(ASSESS_KEY, [])].slice(0, 20));
+  noteUsed("level-tests", JSON.stringify(entry));
+  // Ending the call started a sync already: send this right after it.
+  (usedSync ?? Promise.resolve()).finally(() => syncUsed());
+}
+
+let assessPending = null; // { transcript, nativeLanguage } of the last test, for "Mark again"
+
+async function markLevelTest() {
+  if (!assessPending) return;
+  const history = levelTests();
+  ui.set({ recap: { kind: "level", loading: true, history } });
+  try {
+    const result = await assessLevel(assessPending.transcript, assessPending.nativeLanguage);
+    saveLevelTest(result);
+    assessPending = null;
+    ui.set({ recap: { kind: "level", result, history: levelTests() } });
+  } catch (error) {
+    ui.set({ recap: { kind: "level", error: error.message, retry: true, history } });
+  }
 }
 
 // What "at the learner's level" means, so the partner doesn't drift above it (or talk down at C1).
@@ -1641,6 +1806,17 @@ const SUBJECTS_NOT_FROM_WORDS = "When a subject runs dry, choose the next one fr
 function turnSystemPrompt({ language, nativeLanguage, level, scenario, mode, tense }, targetWords = [], learnt = false, learnerMessage = "", weakSpots = [], today = null, hints = null) {
   const m = MODES[mode] ?? MODES.scene;
   const persona = personaFor({ scenario, mode });
+  // The level test has its own short prompt: no coach, tense practice, words or weak spots.
+  if (m.assess) {
+    return [
+      `You are ${persona.character}, ${persona.setting}. Speak only ${language}.`,
+      `Learner: ${language} learner, native ${nativeLanguage}, level unknown (the test finds it). Reply in one to three short sentences ending with your one question.`,
+      ...assessLines(hints?.answers ?? 0),
+      "The learner's message comes from speech recognition: ignore missing punctuation and obvious transcription slips.",
+      `Write reply_translation in ${nativeLanguage}; everything else in ${language}.`,
+      `mood: ${MOODS.join("|")}; usually neutral.`,
+    ].join("\n");
+  }
   const t = TENSES[tense];
   // In tense practice, an answer in another tense is a mistake too: it gets a correction,
   // so the learner says it again in the tense being practised.
@@ -2053,6 +2229,9 @@ async function chatTurn(settings, history, message) {
     : mode.roleCard ? { card: settings.roleCard ?? "" }
     : mode.interpreter ? { target: settings.sayThis ?? "", given: sentencesGiven(settings) }
     : mode.joiner ? { target: settings.joinThis ?? "", pool: settings.connectors ?? [] }
+    // The level test: how many answers the learner has given, this one included (the
+    // history's first pair is the opening).
+    : mode.assess ? { answers: message.trim() ? history.length / 2 : 0 }
     : null;
   // Topic words only once the conversation is going (never in the opening reply).
   const wordLines = history.length >= 2 ? topicWordLines(settings) : [];
@@ -2122,9 +2301,14 @@ async function chatTurn(settings, history, message) {
   }
   turn.focusWords = targetWords;
   // Suggested answers would give the drill's word, the interpreter's sentence or the joined one away.
-  if (mode.drill || mode.interpreter || mode.joiner) turn.suggestions = [];
+  if (mode.drill || mode.interpreter || mode.joiner || mode.assess) turn.suggestions = [];
   // In open modes the conversation never ends on its own.
   if (!mode.endable) turn.conversation_finished = false;
+  // The level test ends after its answers, whatever the AI said, and never helps or corrects.
+  if (mode.assess) {
+    turn.conversation_finished = Boolean(message.trim()) && history.length / 2 >= ASSESS_ANSWERS;
+    turn.coach = { understood: true, correction: "", mistakes: [], tip: "", used_words: [] };
+  }
   return { turn, userText };
 }
 
@@ -3284,7 +3468,7 @@ function setSpeaking(on) {
 function updateCallState() {
   let key = "idle";
   let text = state.handsFree ? "Your turn — just talk" : "Your turn";
-  if (state.finished) { key = "ended"; text = "Scene complete"; }
+  if (state.finished) { key = "ended"; text = MODES[state.settings?.request.mode]?.assess ? "Test complete" : "Scene complete"; }
   else if (state.paused) { key = "paused"; text = wakeRecognizer ? "Paused — say “zurück”" : "Paused"; }
   else if (live) {
     key = !live.ready ? "thinking" : live.speaking ? "speaking" : live.muted ? "idle" : "listening";
@@ -4426,7 +4610,9 @@ async function sendTurn(message) {
   const slowHint = setTimeout(() => setStatus("Still thinking… longer replies take a moment."), 6000);
   try {
     // Started together with the AI, so the second check adds no wait.
-    const check = message && grammarCheckOn() ? languageToolCheck(message, state.settings.locale) : null;
+    // The level test never corrects, so it needs no second check.
+    const assessing = Boolean(MODES[state.settings.request.mode]?.assess);
+    const check = message && grammarCheckOn() && !assessing ? languageToolCheck(message, state.settings.locale) : null;
     const { turn, userText } = await chatTurn(state.settings, state.history, message);
     if (message) await addGrammarCheck(turn, message, check);
     state.history.push({ role: "user", content: message || userText });
@@ -4512,7 +4698,7 @@ function presentReply(turn) {
     state.finished = true;
     renderSuggestions([]);
     state.handsFree = false;
-    setStatus("Scene complete! Tap End to start another.");
+    setStatus(MODES[state.settings.request.mode]?.assess ? "Test complete! Tap End to see your level." : "Scene complete! Tap End to start another.");
     setBusy(false);
   }
 }
@@ -4838,7 +5024,7 @@ async function startConversation() {
   const mode = form.mode;
   const usesScene = (MODES[mode] ?? MODES.scene).usesScene;
   // The connector drill is about word order only: no words of the learner's to bring in.
-  const useVocab = form.useVocab && !ui.get().useVocab.disabled && !MODES[mode]?.joiner;
+  const useVocab = form.useVocab && !ui.get().useVocab.disabled && !MODES[mode]?.joiner && !MODES[mode]?.assess;
   // Vocab of the chosen level and the ones below it (the list only goes up to B1).
   const VOCAB_LEVELS = ["A1", "A2", "B1"];
   const upTo = VOCAB_LEVELS.indexOf(form.level);
@@ -4859,7 +5045,7 @@ async function startConversation() {
   } else {
     todayWords = null;
   }
-  if ((liveVoiceOn() || MODES[mode]?.office) && !MODES[mode]?.drill && !liveKey()) {
+  if ((liveVoiceOn() || MODES[mode]?.office) && !MODES[mode]?.drill && !MODES[mode]?.assess && !liveKey()) {
     showVocabStatus(MODES[mode]?.office ? "Büro uses Gemini Live: tap “Change” at the top and add your Gemini (Live) key." : "Gemini 3.8 Live needs its key: tap “Change” at the top and add the Gemini 3.8 Live key, or untick Gemini 3.8 Live.", { scroll: true });
     return;
   }
@@ -4883,12 +5069,13 @@ async function startConversation() {
   state.settings = {
     locale: LANGUAGES.find((l) => l.value === form.language)?.locale ?? "de-DE",
     level: form.level,
-    characterName: MODES[mode]?.office ? "Büro" : usesScene ? (SCENARIOS[scenario] ?? SCENARIOS.cafe).character : PARTNER.character,
+    characterName: MODES[mode]?.office ? "Büro" : MODES[mode]?.assess ? EXAMINER.character : usesScene ? (SCENARIOS[scenario] ?? SCENARIOS.cafe).character : PARTNER.character,
     vocab,
     sayAgain: form.sayAgain,
     // Gemini Live: a real-time voice call (see startLive). Not for the sentence drill, which
     // needs the word chips and schedule of a normal call.
-    live: (liveVoiceOn() || Boolean(MODES[mode]?.office)) && !MODES[mode]?.drill,
+    // Nor for the level test, whose answers are counted and marked turn by turn.
+    live: (liveVoiceOn() || Boolean(MODES[mode]?.office)) && !MODES[mode]?.drill && !MODES[mode]?.assess,
     officeGap: form.officeGap,
     request: {
       language: form.language,
@@ -4896,7 +5083,7 @@ async function startConversation() {
       level: form.level,
       scenario,
       mode,
-      tense: form.tense,
+      tense: MODES[mode]?.assess ? "any" : form.tense,
     },
   };
   // "Discuss a topic": the topic is chosen now, so the header can show it and the opening
@@ -4919,7 +5106,7 @@ async function startConversation() {
   }
   // The learnt words that fit this conversation, in the side panel: a quick list now, the AI's
   // pick in the background (never waited for). The Büro picks them per visit.
-  if (!MODES[mode]?.office) prepareTopicWords(state.settings);
+  if (!MODES[mode]?.office && !MODES[mode]?.assess) prepareTopicWords(state.settings);
   else renderTopicWords();
   bumpStreak();
   renderStats();
@@ -5227,6 +5414,11 @@ function heardDelete() {
 
 // Quit the current conversation and return to the start screen.
 function endCall() {
+  // A level test: its answers are marked once the call is closed (see markLevelTest).
+  const test = MODES[state.settings?.request?.mode]?.assess
+    // From the examiner's opening question on (the first entry is the app's instruction).
+    ? { transcript: state.history.slice(1).map((m) => ({ role: m.role === "assistant" ? "examiner" : "learner", text: m.content })), nativeLanguage: state.settings.request.nativeLanguage }
+    : null;
   officeStop();
   stopLive();
   noteLiveSubjects(); // what a live free chat was about, for the next calls
@@ -5251,6 +5443,16 @@ function endCall() {
   setStatus("");
   renderStats();
   renderRecap();
+  if (test) {
+    const answered = test.transcript.filter((t) => t.role === "learner").length;
+    if (answered >= ASSESS_MIN) {
+      assessPending = test;
+      markLevelTest();
+    } else {
+      assessPending = null;
+      ui.set({ recap: { kind: "level", error: `Too few answers to find your level: answer at least ${ASSESS_MIN} questions (the full test has ${ASSESS_ANSWERS}).`, history: levelTests() } });
+    }
+  }
   todayWords = null;
   callLog = [];
   chatId = null; // the chat stays saved in the list
@@ -5355,7 +5557,7 @@ export {
   openLookup, submitLookup, closeExplorer, listenWord, saveExplorerWord, useSuggestion, submitComposer, sendTap,
   textFocus, textBlur, insertUmlaut, toggleUmlautShift, onTextInput, onTextBeforeInput, onTextKeyDown,
   setAutoSend, micClick, togglePause, toggleCoach, drillSay, drillHear, skipDrill, heardEdit, heardDelete, endCall,
-  MODES, TENSES, PROVIDERS,
+  MODES, TENSES, PROVIDERS, markLevelTest, levelTests,
   // the Prüfung tab writes and marks its exam with the learner's AI, and on Gemini its examiners speak with Gemini's voices
   aiJson, providerReady, getProvider, geminiTts, geminiTtsBlocked,
 };

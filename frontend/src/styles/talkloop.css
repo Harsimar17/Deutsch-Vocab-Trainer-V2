@@ -366,6 +366,14 @@ body.in-call { overflow: hidden; }
 .talkloop .recap { margin-bottom: 16px; padding: 12px 14px; border-radius: 12px; background: var(--accent-soft); }
 .talkloop .recap h3 { margin: 0 0 6px; font-size: 1rem; }
 .talkloop .recap p { margin: 4px 0; overflow-wrap: anywhere; }
+.talkloop .recap ul { margin: 4px 0 8px; padding-left: 20px; }
+.talkloop .recap li { margin: 3px 0; overflow-wrap: anywhere; }
+.talkloop .level-badge { display: flex; align-items: baseline; flex-wrap: wrap; gap: 8px; }
+.talkloop .level-big { font-size: 2rem; font-weight: 700; color: var(--accent); line-height: 1.1; }
+.talkloop .level-criteria { list-style: none; padding-left: 0 !important; }
+.talkloop .level-criteria li { margin: 8px 0; }
+.talkloop .level-intro { margin: 8px 0 4px; padding: 10px 12px; border-radius: 12px; background: var(--accent-soft); }
+.talkloop .level-intro p { margin: 4px 0; }
 @media (max-width: 560px) {
 .talkloop { padding: 20px 16px 40px; }
 .talkloop h1 { font-size: 1.5rem; }
