@@ -90,9 +90,10 @@ then the rest. If you have a B1 exam soon, do **Phases 5, 6 and 15** earlier.
    - **Scene role-play:** real situations like the doctor, the train station or a café.
    - **Sentence drill:** you make sentences with the words you learnt.
    - **Sprechstand:** a 10-minute speaking test that tells you your level, from A1 to B1. An
-     examiner asks 12 questions that get harder as you answer well. There is no help during
-     the test; tap **End** afterwards to see your level for five skills, with your own sentences
-     as evidence and what to learn next. Your earlier results are listed, so you can see your progress.
+     examiner asks questions that get harder as you answer well. There is no help during
+     the test. In a live voice call she judges your level from your voice and ends the test
+     herself once she's sure (after 8 to 15 answers); tap **End** to see your level for five
+     skills, with what you said as evidence and what to learn next. Your earlier results are listed, so you can see your progress.
 4. Tap **Start** and allow the microphone. Then just talk; after a short pause your
    answer is sent by itself.
 
@@ -327,11 +328,15 @@ shows what was said. The schedule is kept here (`POST /api/talkloop/spoken`).
 like an oral placement interview. An examiner (Frau Weber) asks 12 questions: A1 first, then A2, then B1,
 the last ones the hardest B1 (Konjunktiv II, arguing, advice), stepping back down when the learner
 struggles (`ASSESS_STEPS` in `engine.js`). There are no corrections, tips, suggestions, vocabulary or
-LanguageTool check during the test. With *Live voice call* ticked it runs as a Gemini Live call: the
-examiner gets the whole question plan at once (`assessLivePrompt`) and the app counts the spoken answers
-(`liveAssessAnswer`); otherwise each turn is steered as above, and with Gemini as the AI the examiner
-speaks with Gemini's voice (Kore unless another is chosen). After the 12th answer the call
-is complete; ending it (with at least 4 answers) has the learner's AI mark the transcript by the CEFR's
+LanguageTool check during the test. With *Live voice call* ticked it runs as a Gemini Live call, and the
+examiner, who hears the learner's own voice, also judges the level: she gets the whole question plan at
+once (`assessLivePrompt`), is told the answer count after each turn, ends the test herself once she is
+sure (after 8 to 15 answers) and hands her verdict to the app with the `report_level` function call
+(`ASSESS_TOOLS`, `takeVerdict`), so a word the transcript missed doesn't decide the result. Tapping End
+before that asks her for the verdict first (up to 25 s, then the transcript is marked instead).
+Without the live call the test has 12 answers, each turn is steered as above, and with Gemini as the AI
+the examiner speaks with Gemini's voice (Kore unless another is chosen). Without the examiner's verdict
+(no live call, or she gave none), ending the call with at least 4 answers has the learner's AI mark the transcript by the CEFR's
 spoken criteria (Spektrum, Korrektheit, Flüssigkeit, Kohärenz, Interaktion) on the scale A1- … B1+ (B1+ =
 a strong B1, the most the test shows), with a quoted sentence per criterion, strengths, next steps and
 corrections (`assessLevel`). The app also measures answer length and linking words. Each result is kept
