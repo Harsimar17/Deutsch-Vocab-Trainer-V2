@@ -1600,17 +1600,50 @@ const ASSESS_STEPS = [
   { upTo: ASSESS_ANSWERS, level: "B1", ask: "the hardest B1 questions: hypothetical ones (Was würdest du machen, wenn …?, needing Konjunktiv II), arguing a point and responding to the opposite view, giving a friend advice in a difficult situation, explaining something they know well step by step. Never above B1." },
 ];
 
+const ASSESS_ROLE = "This is a speaking level test (Einstufung) from A1 to B1. You are a friendly examiner, never a teacher: never correct the learner, never explain grammar, never praise or judge their German, never give them words or say an answer for them. React to the content of their answer in a few words (Ah, interessant!), then ask exactly one question.";
+const ASSESS_ADAPT = "Adapt like a real examiner: if the learner's last answers were very short, broken, or they didn't understand, ask an easier question of the previous kind once, and if they didn't understand, say it again more simply. If they answer well, keep climbing. If an answer is very short, ask for one detail before moving on.";
+const ASSESS_FRESH = "Never ask the same thing twice; each question is on a new subject or a clearly new angle. Ask open questions (Erzähl mal…, Warum…, Wie war das…) that take several sentences to answer, not yes/no ones (except at the very start). Never speak above B1.";
+
+// The live call's examiner gets the whole plan at once: its questions can't be steered turn by turn.
+function assessLivePrompt(settings, recap = []) {
+  const { language, nativeLanguage } = settings.request;
+  const done = settings.assessAnswers ?? 0;
+  const plan = ASSESS_STEPS.map((step, i) => `questions ${i ? ASSESS_STEPS[i - 1].upTo + 1 : 1}–${step.upTo}: ${step.ask}`).join(" ");
+  return [
+    `You are ${EXAMINER.character}, ${EXAMINER.setting}. This is a live voice call: speak only ${language}, in short, clear, natural sentences, and let the learner do the talking. Learner: native ${nativeLanguage}; their level is unknown, the test finds it.`,
+    ASSESS_ROLE,
+    `Open with one short, friendly greeting: this is a short conversation of ${ASSESS_ANSWERS} questions to find their speaking level, and they should answer in full sentences. The ${ASSESS_ANSWERS} questions climb in this order (speak at the level of the question you are asking): ${plan}`,
+    ASSESS_ADAPT,
+    ASSESS_FRESH,
+    `Count the learner's answers. After their ${ASSESS_ANSWERS}th answer, thank them warmly in one or two sentences, say their result comes when they end the call, and ask nothing more.`,
+    "The learner may pause to think: wait for them. Their words reach you through a microphone: ignore small pronunciation slips.",
+    "A message in brackets starting \"(Coach, not the learner:\" comes from the learning app: do what it says, in your own voice, and never mention a coach or an app.",
+    ...(done ? [`The learner has given ${done} of ${ASSESS_ANSWERS} answers so far.`] : []),
+    ...(recap.length ? [`The call was cut off and has just reconnected. The end of it so far:\n${recap.join("\n")}\nCarry on from there in one short line, without greeting again.`] : []),
+  ].join("\n");
+}
+
+// A spoken answer in the live test: counted here (no coach, no corrections), and the test
+// closes after the last one.
+function liveAssessAnswer() {
+  const n = (state.settings.assessAnswers = (state.settings.assessAnswers ?? 0) + 1);
+  if (n < ASSESS_ANSWERS || state.finished) return;
+  state.finished = true;
+  setStatus("Test complete! Tap End to see your level.");
+  updateCallState();
+}
+
 function assessLines(answers) {
   if (answers >= ASSESS_ANSWERS) {
     return [`The test is complete (${answers} answers). Thank the learner warmly in one or two short sentences and say their result comes when they end the call. Ask nothing more, and set conversation_finished to true.`];
   }
   const step = ASSESS_STEPS.find((s) => answers < s.upTo) ?? ASSESS_STEPS[ASSESS_STEPS.length - 1];
   return [
-    "This is a speaking level test (Einstufung) from A1 to B1. You are a friendly examiner, never a teacher: never correct the learner, never explain grammar, never praise or judge their German, never give them words or say an answer for them. React to the content of their answer in a few words (Ah, interessant!), then ask exactly one question.",
+    ASSESS_ROLE,
     `The learner has given ${answers} of ${ASSESS_ANSWERS} answers. Ask now: ${step.ask}`,
-    `Speak plain German at ${step.level}, never above B1. Ask open questions (Erzähl mal…, Warum…, Wie war das…) that take several sentences to answer, not yes/no ones (except at the very start).`,
-    "Adapt like a real examiner: if the learner's last answers were very short, broken, or they didn't understand, ask an easier question of the previous kind once, and if they didn't understand, say it again more simply. If they answer well, keep climbing. If an answer is very short, ask for one detail before moving on.",
-    "Never ask the same thing twice; each question is on a new subject or a clearly new angle.",
+    `Speak plain German at ${step.level}.`,
+    ASSESS_ADAPT,
+    ASSESS_FRESH,
     "Leave suggestions empty and every coach field empty (no correction, mistakes, tip or used words): this is a test.",
   ];
 }
@@ -2370,7 +2403,10 @@ function geminiTtsBlocked() {
 // The Gemini voice chosen on the setup screen; "" keeps the standard ones (Kore, Puck live).
 const geminiVoiceChoice = () => store.get("gemini_voice", "");
 // A chosen Gemini voice speaks the replies itself (before Piper) while a key and quota last.
-const geminiVoiceFirst = () => Boolean(geminiVoiceChoice()) && Boolean(getKey()) && !geminiTtsBlocked();
+// Without the live call, a level test with Gemini as the AI has the examiner speak in Gemini's
+// voice too, not the on-device one.
+const examinerOnGemini = () => Boolean(MODES[state.settings?.request?.mode]?.assess) && getProvider() === "gemini";
+const geminiVoiceFirst = () => (Boolean(geminiVoiceChoice()) || examinerOnGemini()) && Boolean(getKey()) && !geminiTtsBlocked();
 
 async function geminiTts(text, voice = geminiVoiceChoice() || TTS_VOICE) {
   const key = getKey();
@@ -2832,7 +2868,7 @@ async function speak(text, wordSpans, onDone, mood = "neutral") {
   //    Skipped when the learner picked a Gemini voice: that one speaks first.
   let piperNote = "";
   if (geminiVoiceFirst()) {
-    piperNote = `${geminiVoiceChoice()} chosen`;
+    piperNote = `${geminiVoiceChoice() || TTS_VOICE} chosen`;
   } else if (hasPiperVoice(locale)) {
     if (!piperLoaded(locale)) {
       const loading = preloadPiper(locale).catch(() => null);
@@ -3756,6 +3792,7 @@ const LIVE_DRILLS = {
 function liveSystemPrompt(settings, recap = []) {
   const { language, nativeLanguage, level, scenario, mode, tense } = settings.request;
   const m = MODES[mode] ?? MODES.scene;
+  if (m.assess) return assessLivePrompt(settings, recap);
   const persona = personaFor({ scenario, mode });
   const drill = LIVE_DRILLS[mode]?.(settings.request, settings);
   const extra = drill?.extra ?? m.extra
@@ -3967,7 +4004,8 @@ function liveFlushLearner() {
   markTopicWords(said);
   live.learnerTurns = (live.learnerTurns ?? 0) + 1;
   if (live.learnerTurns % LIVE_SUBJECTS_EVERY === 0) noteLiveSubjects();
-  if (state.drill?.live) liveDrillAttempt(said);
+  if (MODES[state.settings.request.mode]?.assess) liveAssessAnswer();
+  else if (state.drill?.live) liveDrillAttempt(said);
   else liveCoach(said, live.lastReply ?? "");
 }
 
@@ -4162,7 +4200,7 @@ async function startLive() {
     ws.onopen = () => liveSend({
       setup: {
         model,
-        generationConfig: { responseModalities: ["AUDIO"], speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: office ? state.settings.colleague?.voice ?? "Puck" : geminiVoiceChoice() || "Puck" } } } },
+        generationConfig: { responseModalities: ["AUDIO"], speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: office ? state.settings.colleague?.voice ?? "Puck" : geminiVoiceChoice() || (MODES[state.settings.request.mode]?.assess ? "Kore" : "Puck") } } } },
         systemInstruction: { parts: [{ text: office ? officeSystemPrompt(state.settings, recap) : liveSystemPrompt(state.settings, recap) }] },
         ...(office ? { tools: OFFICE_TOOLS } : {}),
         inputAudioTranscription: {},
@@ -4252,7 +4290,8 @@ function liveSendText(text) {
   state.history.push({ role: "user", content: text });
   liveStopVoice();
   liveSend({ clientContent: { turns: [{ role: "user", parts: [{ text }] }], turnComplete: true } });
-  if (state.drill?.live) liveDrillAttempt(text);
+  if (MODES[state.settings.request.mode]?.assess) liveAssessAnswer();
+  else if (state.drill?.live) liveDrillAttempt(text);
   else liveCoach(text, live.lastReply);
 }
 
@@ -5045,7 +5084,7 @@ async function startConversation() {
   } else {
     todayWords = null;
   }
-  if ((liveVoiceOn() || MODES[mode]?.office) && !MODES[mode]?.drill && !MODES[mode]?.assess && !liveKey()) {
+  if ((liveVoiceOn() || MODES[mode]?.office) && !MODES[mode]?.drill && !liveKey()) {
     showVocabStatus(MODES[mode]?.office ? "Büro uses Gemini Live: tap “Change” at the top and add your Gemini (Live) key." : "Gemini 3.8 Live needs its key: tap “Change” at the top and add the Gemini 3.8 Live key, or untick Gemini 3.8 Live.", { scroll: true });
     return;
   }
@@ -5074,8 +5113,7 @@ async function startConversation() {
     sayAgain: form.sayAgain,
     // Gemini Live: a real-time voice call (see startLive). Not for the sentence drill, which
     // needs the word chips and schedule of a normal call.
-    // Nor for the level test, whose answers are counted and marked turn by turn.
-    live: (liveVoiceOn() || Boolean(MODES[mode]?.office)) && !MODES[mode]?.drill && !MODES[mode]?.assess,
+    live: (liveVoiceOn() || Boolean(MODES[mode]?.office)) && !MODES[mode]?.drill,
     officeGap: form.officeGap,
     request: {
       language: form.language,
@@ -5416,8 +5454,13 @@ function heardDelete() {
 function endCall() {
   // A level test: its answers are marked once the call is closed (see markLevelTest).
   const test = MODES[state.settings?.request?.mode]?.assess
-    // From the examiner's opening question on (the first entry is the app's instruction).
-    ? { transcript: state.history.slice(1).map((m) => ({ role: m.role === "assistant" ? "examiner" : "learner", text: m.content })), nativeLanguage: state.settings.request.nativeLanguage }
+    // Everything said, without the app's own instructions (the opener is one, in brackets).
+    ? {
+      transcript: state.history
+        .filter((m) => m.content?.trim() && !(m.role === "user" && m.content.trim().startsWith("(")))
+        .map((m) => ({ role: m.role === "assistant" ? "examiner" : "learner", text: m.content.trim() })),
+      nativeLanguage: state.settings.request.nativeLanguage,
+    }
     : null;
   officeStop();
   stopLive();

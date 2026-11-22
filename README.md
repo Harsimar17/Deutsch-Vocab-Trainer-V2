@@ -327,8 +327,10 @@ shows what was said. The schedule is kept here (`POST /api/talkloop/spoken`).
 like an oral placement interview. An examiner (Frau Weber) asks 12 questions: A1 first, then A2, then B1,
 the last ones the hardest B1 (Konjunktiv II, arguing, advice), stepping back down when the learner
 struggles (`ASSESS_STEPS` in `engine.js`). There are no corrections, tips, suggestions, vocabulary or
-LanguageTool check during the test, and the Gemini Live call is not used (the answers are counted turn
-by turn); the chosen Gemini voice reads the questions as in other modes. After the 12th answer the call
+LanguageTool check during the test. With *Live voice call* ticked it runs as a Gemini Live call: the
+examiner gets the whole question plan at once (`assessLivePrompt`) and the app counts the spoken answers
+(`liveAssessAnswer`); otherwise each turn is steered as above, and with Gemini as the AI the examiner
+speaks with Gemini's voice (Kore unless another is chosen). After the 12th answer the call
 is complete; ending it (with at least 4 answers) has the learner's AI mark the transcript by the CEFR's
 spoken criteria (Spektrum, Korrektheit, Flüssigkeit, Kohärenz, Interaktion) on the scale A1- … B1+ (B1+ =
 a strong B1, the most the test shows), with a quoted sentence per criterion, strengths, next steps and

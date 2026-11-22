@@ -223,7 +223,7 @@ export function Setup() {
       {voiceStatus && <p className="muted voice-status" aria-live="polite">{voiceStatus}</p>}
       {m.assess && (
         <div className="level-intro">
-          <p>A short interview with an examiner, about 10 minutes and 12 answers. The questions start easy (A1) and get harder up to B1; when you struggle, they get easier again. There are no corrections, hints or suggestions during the test. Answer in full sentences and say as much as you can. When it's over, tap End to get your level for five skills, with your own sentences as evidence.</p>
+          <p>A short interview with an examiner, about 10 minutes and 12 answers. The questions start easy (A1) and get harder up to B1; when you struggle, they get easier again. There are no corrections, hints or suggestions during the test. With the live voice call ticked, it runs as a Gemini Live call. Answer in full sentences and say as much as you can. When it's over, tap End to get your level for five skills, with your own sentences as evidence.</p>
           <LevelHistory tests={levelTests()} />
         </div>
       )}
