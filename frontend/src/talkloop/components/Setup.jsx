@@ -53,7 +53,12 @@ function LevelResult({ recap }) {
           <ul>{r.corrections.map((c) => <li key={c.said}><s>{c.said}</s> → {c.better}</li>)}</ul>
         </>
       )}
-      <p className="muted">Measured: {r.stats.answers} answers, {r.stats.avgWords} words per answer, longest {r.stats.longest}. Pronunciation isn't judged, and speech recognition can hide small mistakes, so take it as an estimate.</p>
+      <p className="muted">
+        {r.by === "examiner"
+          ? "Judged by Frau Weber from your voice during the call, not from the written transcript. "
+          : "Marked from the written transcript of the call, so a word the speech recognition missed can count against you. "}
+        {r.stats.answers} answers, about {r.stats.avgWords} words each. Pronunciation isn't judged; take it as an estimate.
+      </p>
       <LevelHistory tests={recap.history} />
     </div>
   );
@@ -223,7 +228,7 @@ export function Setup() {
       {voiceStatus && <p className="muted voice-status" aria-live="polite">{voiceStatus}</p>}
       {m.assess && (
         <div className="level-intro">
-          <p>A short interview with an examiner, about 10 minutes and 12 answers. The questions start easy (A1) and get harder up to B1; when you struggle, they get easier again. There are no corrections, hints or suggestions during the test. With the live voice call ticked, it runs as a Gemini Live call. Answer in full sentences and say as much as you can. When it's over, tap End to get your level for five skills, with your own sentences as evidence.</p>
+          <p>A short interview with an examiner. The questions start easy (A1) and get harder up to B1; when you struggle, they get easier again. There are no corrections, hints or suggestions during the test. Answer in full sentences and say as much as you can. With the live voice call ticked, Frau Weber judges your level from your voice as you talk and ends the test herself once she's sure (after 8 to 15 answers); tap End to see her verdict for five skills. Without it, the test has 12 answers and is marked from the written transcript when you tap End.</p>
           <LevelHistory tests={levelTests()} />
         </div>
       )}

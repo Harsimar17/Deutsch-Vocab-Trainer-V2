@@ -1604,7 +1604,48 @@ const ASSESS_ROLE = "This is a speaking level test (Einstufung) from A1 to B1. Y
 const ASSESS_ADAPT = "Adapt like a real examiner: if the learner's last answers were very short, broken, or they didn't understand, ask an easier question of the previous kind once, and if they didn't understand, say it again more simply. If they answer well, keep climbing. If an answer is very short, ask for one detail before moving on.";
 const ASSESS_FRESH = "Never ask the same thing twice; each question is on a new subject or a clearly new angle. Ask open questions (Erzähl mal…, Warum…, Wie war das…) that take several sentences to answer, not yes/no ones (except at the very start). Never speak above B1.";
 
-// The live call's examiner gets the whole plan at once: its questions can't be steered turn by turn.
+// In a live call the examiner hears the learner's own voice, so she judges the level herself as
+// the call goes, decides when she is sure, and hands the app her verdict with report_level. The
+// written transcript (which can miss or mishear words) is not what decides the result.
+const ASSESS_LIVE_MIN = 8; // answers before she may decide
+const ASSESS_LIVE_MAX = 15; // answers by which she must
+const ASSESS_ITEM_DECL = (about) => ({
+  type: "OBJECT",
+  description: about,
+  properties: {
+    level: { type: "STRING", enum: ASSESS_SCALE },
+    note: { type: "STRING", description: "One or two short sentences in the learner's native language, to the learner as \"you\", on what you heard." },
+    quote: { type: "STRING", description: "Something the learner said that shows this level, as you heard it." },
+  },
+  required: ["level", "note"],
+});
+const ASSESS_TOOLS = [{
+  functionDeclarations: [{
+    name: "report_level",
+    description: "Give your verdict on the learner's speaking level. Call it once, after you have thanked the learner and told them their result is on their screen.",
+    parameters: {
+      type: "OBJECT",
+      properties: {
+        level: { type: "STRING", enum: ASSESS_SCALE, description: "The level the learner can hold steadily." },
+        summary: { type: "STRING", description: "Two or three sentences in the learner's native language, to the learner as \"you\"." },
+        range: ASSESS_ITEM_DECL("Spektrum: vocabulary and variety of structures."),
+        accuracy: ASSESS_ITEM_DECL("Korrektheit: grammar (verb position, endings, cases, tenses)."),
+        fluency: ASSESS_ITEM_DECL("Flüssigkeit: length of answers, pauses and hesitation, sentences finished or broken off."),
+        coherence: ASSESS_ITEM_DECL("Kohärenz: linking ideas (weil, dann, deshalb, als, obwohl …)."),
+        interaction: ASSESS_ITEM_DECL("Interaktion: understanding the questions, answering to the point, adding detail, asking back."),
+        strengths: { type: "ARRAY", items: { type: "STRING" }, description: "2-3 things the learner does well, in their native language." },
+        next_steps: { type: "ARRAY", items: { type: "STRING" }, description: "3-4 things missing for the next level on the scale, each with a German example, in their native language." },
+        corrections: {
+          type: "ARRAY",
+          description: "Up to 5 of the learner's most telling mistakes.",
+          items: { type: "OBJECT", properties: { said: { type: "STRING" }, better: { type: "STRING" } }, required: ["said", "better"] },
+        },
+      },
+      required: ["level", "summary", "range", "accuracy", "fluency", "coherence", "interaction", "strengths", "next_steps", "corrections"],
+    },
+  }],
+}];
+
 function assessLivePrompt(settings, recap = []) {
   const { language, nativeLanguage } = settings.request;
   const done = settings.assessAnswers ?? 0;
@@ -1612,10 +1653,11 @@ function assessLivePrompt(settings, recap = []) {
   return [
     `You are ${EXAMINER.character}, ${EXAMINER.setting}. This is a live voice call: speak only ${language}, in short, clear, natural sentences, and let the learner do the talking. Learner: native ${nativeLanguage}; their level is unknown, the test finds it.`,
     ASSESS_ROLE,
-    `Open with one short, friendly greeting: this is a short conversation of ${ASSESS_ANSWERS} questions to find their speaking level, and they should answer in full sentences. The ${ASSESS_ANSWERS} questions climb in this order (speak at the level of the question you are asking): ${plan}`,
+    `Open with one short, friendly greeting: this is a short conversation to find their speaking level, and they should answer in full sentences. Your questions climb roughly in this order (speak at the level of the question you are asking): ${plan} Move faster or slower than this plan, as the learner's answers show you.`,
     ASSESS_ADAPT,
     ASSESS_FRESH,
-    `Count the learner's answers. After their ${ASSESS_ANSWERS}th answer, thank them warmly in one or two sentences, say their result comes when they end the call, and ask nothing more.`,
+    `You judge the level yourself, from what you hear the learner say, all through the call: their words, grammar, how freely they speak (pauses, hesitation, broken-off or self-corrected sentences), how they link ideas and whether they understand and answer to the point. Not pronunciation. Scale (it stops at B1): ${ASSESS_SCALE.join(", ")}; A1- = not yet A1; X+ = X reached and working towards the next level; B1+ = a strong, secure B1 (also for anyone above B1). A level counts only if they managed it several times, not once by luck; the overall level is the one they can hold, near their weaker skills, not an average.`,
+    `You decide when the test ends: as soon as you are sure of their level, but never before their ${ASSESS_LIVE_MIN}th answer and at the latest after their ${ASSESS_LIVE_MAX}th. Before you are sure, make sure you have tried the next level up, so you know where they stop. Then thank them warmly in one or two sentences, say their result is now on their screen, ask nothing more, and call report_level with your verdict.`,
     "The learner may pause to think: wait for them. Their words reach you through a microphone: ignore small pronunciation slips.",
     "A message in brackets starting \"(Coach, not the learner:\" comes from the learning app: do what it says, in your own voice, and never mention a coach or an app.",
     ...(done ? [`The learner has given ${done} of ${ASSESS_ANSWERS} answers so far.`] : []),
@@ -1623,14 +1665,41 @@ function assessLivePrompt(settings, recap = []) {
   ].join("\n");
 }
 
-// A spoken answer in the live test: counted here (no coach, no corrections), and the test
-// closes after the last one.
+// A spoken answer in the live test: only counted (no coach, no corrections). The examiner is
+// told the count after her reply (see liveMessage), so she knows when she may decide.
 function liveAssessAnswer() {
-  const n = (state.settings.assessAnswers = (state.settings.assessAnswers ?? 0) + 1);
-  if (n < ASSESS_ANSWERS || state.finished) return;
+  state.settings.assessAnswers = (state.settings.assessAnswers ?? 0) + 1;
+}
+
+// The count, as context for the examiner (no reply is asked for).
+function assessCountNote() {
+  const n = state.settings.assessAnswers ?? 0;
+  if (!n || state.settings.verdict) return null;
+  const when = n < ASSESS_LIVE_MIN ? `Don't decide yet (at least ${ASSESS_LIVE_MIN}).`
+    : n < ASSESS_LIVE_MAX ? "You may end the test once you are sure of the level."
+    : "That was the last answer: end the test now, as instructed, and call report_level.";
+  return `(Coach, not the learner: the learner has given ${n} answers. ${when})`;
+}
+
+// The examiner's report_level call: her verdict becomes the result.
+function takeVerdict(call) {
+  liveSend({ toolResponse: { functionResponses: [{ id: call.id, name: call.name, response: { result: "Saved: the learner sees it now. Say nothing more." } }] } });
+  const answers = state.history.filter((m) => m.role === "user" && !m.content.trim().startsWith("(")).map((m) => m.content);
+  const result = assessResult(call.args, assessStats(answers), "examiner");
+  if (!result) {
+    debugLog("report_level came without a level");
+    return;
+  }
+  state.settings.verdict = result;
+  saveCall();
   state.finished = true;
   setStatus("Test complete! Tap End to see your level.");
   updateCallState();
+  // The learner already tapped End and was waiting for her: close the call now.
+  if (verdictWait > 0) {
+    clearTimeout(verdictWait);
+    setTimeout(endCall, 2500); // her goodbye is short: let it finish
+  }
 }
 
 function assessLines(answers) {
@@ -1720,12 +1789,21 @@ async function assessLevel(transcript, nativeLanguage) {
     contents: [{ role: "user", parts: [{ text: `Transcript:\n${lines}` }] }],
     temperature: 0.2,
   });
+  const result = assessResult(raw, stats, "transcript");
+  if (!result) throw new Error("The AI's marking came back incomplete. Tap “Mark again”.");
+  return result;
+}
+
+// A verdict (the examiner's report_level call, or the transcript marking) as the result card
+// shows it; null if it has no level.
+function assessResult(raw, stats, by) {
   const r = raw && typeof raw === "object" ? raw : {};
   const lvl = (v) => (ASSESS_SCALE.includes(v) ? v : "A1");
   const str = (v) => (typeof v === "string" ? v.trim() : "");
   const list = (v) => (Array.isArray(v) ? v : []);
-  if (!ASSESS_SCALE.includes(r.level)) throw new Error("The AI's marking came back incomplete. Tap “Mark again”.");
+  if (!ASSESS_SCALE.includes(r.level)) return null;
   return {
+    by,
     level: r.level,
     summary: str(r.summary),
     criteria: ASSESS_CRITERIA.map(([key, name, about]) => ({ key, name, about, level: lvl(r[key]?.level), note: str(r[key]?.note), quote: str(r[key]?.quote) })),
@@ -1754,6 +1832,7 @@ function saveLevelTest(result) {
   (usedSync ?? Promise.resolve()).finally(() => syncUsed());
 }
 
+let verdictWait = 0; // while End waits for the live examiner's verdict: its timer (-1 once timed out)
 let assessPending = null; // { transcript, nativeLanguage } of the last test, for "Mark again"
 
 async function markLevelTest() {
@@ -4080,6 +4159,12 @@ function liveMessage(msg) {
     debugLog(`live call ends in ${msg.goAway.timeLeft ?? "?"}`);
     live.goingAway = true;
   }
+  // The examiner's verdict on the level test.
+  const verdict = msg.toolCall?.functionCalls?.find((f) => f.name === "report_level");
+  if (verdict) {
+    takeVerdict(verdict);
+    return;
+  }
   // The Büro colleague says goodbye and walks off.
   const leave = msg.toolCall?.functionCalls?.find((f) => f.name === "leave");
   if (leave) {
@@ -4112,6 +4197,12 @@ function liveMessage(msg) {
     if (live.wordsNote) {
       liveSend({ clientContent: { turns: [{ role: "user", parts: [{ text: live.wordsNote }] }], turnComplete: false } });
       live.wordsNote = null;
+    }
+    // The level test: how many answers so far, so the examiner knows when she may decide.
+    const count = MODES[state.settings.request.mode]?.assess ? assessCountNote() : null;
+    if (count && count !== live.countNote) {
+      liveSend({ clientContent: { turns: [{ role: "user", parts: [{ text: count }] }], turnComplete: false } });
+      live.countNote = count;
     }
     if (live.leaveAfterTurn) officeLeave(live.leaveAfterTurn); // waits for the goodbye to finish playing
   }
@@ -4202,7 +4293,7 @@ async function startLive() {
         model,
         generationConfig: { responseModalities: ["AUDIO"], speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: office ? state.settings.colleague?.voice ?? "Puck" : geminiVoiceChoice() || (MODES[state.settings.request.mode]?.assess ? "Kore" : "Puck") } } } },
         systemInstruction: { parts: [{ text: office ? officeSystemPrompt(state.settings, recap) : liveSystemPrompt(state.settings, recap) }] },
-        ...(office ? { tools: OFFICE_TOOLS } : {}),
+        ...(office ? { tools: OFFICE_TOOLS } : MODES[state.settings.request.mode]?.assess ? { tools: ASSESS_TOOLS } : {}),
         inputAudioTranscription: {},
         outputAudioTranscription: {},
         // Handles to carry the call on after a dropped connection, and no 15-minute limit on a call.
@@ -5452,8 +5543,21 @@ function heardDelete() {
 
 // Quit the current conversation and return to the start screen.
 function endCall() {
-  // A level test: its answers are marked once the call is closed (see markLevelTest).
-  const test = MODES[state.settings?.request?.mode]?.assess
+  const assessing = Boolean(MODES[state.settings?.request?.mode]?.assess);
+  // A live level test ended before the examiner's verdict: she is asked for it now, and the
+  // call closes once it comes (takeVerdict), or after 25 s with the transcript marked instead.
+  const spoken = (state.history ?? []).filter((m) => m.role === "user" && !m.content.trim().startsWith("(")).length;
+  if (assessing && live?.ready && !state.settings.verdict && !verdictWait && spoken >= ASSESS_MIN) {
+    liveNote(`The learner is ending the test now, after ${spoken} answers. Say goodbye in one short sentence, then call report_level at once with your verdict from everything you have heard.`);
+    setStatus(`${EXAMINER.character} is writing your result…`);
+    verdictWait = setTimeout(() => { verdictWait = -1; endCall(); }, 25_000);
+    return;
+  }
+  if (verdictWait > 0) clearTimeout(verdictWait);
+  verdictWait = 0;
+  const verdict = assessing ? state.settings.verdict ?? null : null;
+  // A level test without the examiner's verdict: its answers are marked once the call is closed (see markLevelTest).
+  const test = assessing && !verdict
     // Everything said, without the app's own instructions (the opener is one, in brackets).
     ? {
       transcript: state.history
@@ -5486,7 +5590,11 @@ function endCall() {
   setStatus("");
   renderStats();
   renderRecap();
-  if (test) {
+  if (verdict) {
+    assessPending = null;
+    saveLevelTest(verdict);
+    ui.set({ recap: { kind: "level", result: verdict, history: levelTests() } });
+  } else if (test) {
     const answered = test.transcript.filter((t) => t.role === "learner").length;
     if (answered >= ASSESS_MIN) {
       assessPending = test;
