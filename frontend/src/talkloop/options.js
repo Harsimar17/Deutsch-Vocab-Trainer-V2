@@ -25,6 +25,7 @@ export const MODE_OPTIONS = [
   { value: "connectors", label: "Konnektoren — join two sentences" },
   { value: "rolecard", label: "Rollenkarte — play a character" },
   { value: "office", label: "Büro — colleagues drop by while I work" },
+  { value: "level", label: "Sprechstand — test my speaking level (A1–B1)" },
 ];
 
 export const OFFICE_GAPS = [

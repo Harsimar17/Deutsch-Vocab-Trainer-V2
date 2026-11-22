@@ -89,6 +89,10 @@ then the rest. If you have a B1 exam soon, do **Phases 5, 6 and 15** earlier.
    - **Discuss a topic:** you give your opinion and reasons. Good practice for B1.
    - **Scene role-play:** real situations like the doctor, the train station or a café.
    - **Sentence drill:** you make sentences with the words you learnt.
+   - **Sprechstand:** a 10-minute speaking test that tells you your level, from A1 to B1. An
+     examiner asks 12 questions that get harder as you answer well. There is no help during
+     the test; tap **End** afterwards to see your level for five skills, with your own sentences
+     as evidence and what to learn next. Your earlier results are listed, so you can see your progress.
 4. Tap **Start** and allow the microphone. Then just talk; after a short pause your
    answer is sent by itself.
 
@@ -318,6 +322,19 @@ coach reports which ones the learner used and whether correctly. Said correctly 
 day, a word moves up a stage and comes back after 1, 3, 7 and 21 days; at stage 4 it is
 automatic. A wrong use or a peek sends it back to stage 1. After the call a short recap
 shows what was said. The schedule is kept here (`POST /api/talkloop/spoken`).
+
+**Sprechstand** (mode *Sprechstand — test my speaking level*): a speaking level test from A1 to B1,
+like an oral placement interview. An examiner (Frau Weber) asks 12 questions: A1 first, then A2, then B1,
+the last ones the hardest B1 (Konjunktiv II, arguing, advice), stepping back down when the learner
+struggles (`ASSESS_STEPS` in `engine.js`). There are no corrections, tips, suggestions, vocabulary or
+LanguageTool check during the test, and the Gemini Live call is not used (the answers are counted turn
+by turn); the chosen Gemini voice reads the questions as in other modes. After the 12th answer the call
+is complete; ending it (with at least 4 answers) has the learner's AI mark the transcript by the CEFR's
+spoken criteria (Spektrum, Korrektheit, Flüssigkeit, Kohärenz, Interaktion) on the scale A1- … B1+ (B1+ =
+a strong B1, the most the test shows), with a quoted sentence per criterion, strengths, next steps and
+corrections (`assessLevel`). The app also measures answer length and linking words. Each result is kept
+in the browser and, as one line of kind `level-tests`, in the record of used material
+(`POST /api/talkloop/used`), so the history follows the learner.
 
 **Sentence drill** (mode *Sentence drill — my learnt words*): sentence making instead
 of a chat, played out as one realistic everyday situation (moving flat, a day at work…)
