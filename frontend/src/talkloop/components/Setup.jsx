@@ -92,6 +92,19 @@ function Recap({ recap }) {
           {line("Not reached", recap.missed)}
           {recap.topic && line(`Topic words used ${recap.topic.used.length}/${recap.topic.total} ✓`, recap.topic.used.length ? recap.topic.used : ["none yet"])}
           {recap.topic && line("Topic words for next time", recap.topic.unused)}
+          {recap.fixes?.length > 0 && (
+            <div className="call-fixes">
+              <p><strong>Grammar to fix ({recap.fixes.length})</strong></p>
+              <ul>
+                {recap.fixes.map((f) => (
+                  <li key={f.said}>
+                    <s className="muted">{f.said}</s> → <strong>{f.better}</strong>
+                    {f.tip && <span className="muted"> · {f.tip}</span>}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
           <p className="muted">{recap.automatic} word{recap.automatic === 1 ? "" : "s"} automatic so far. Words come back after 1, 3, 7 and 21 days.</p>
         </>
       )}
@@ -246,6 +259,10 @@ export function Setup() {
       <label className="check say-again">
         <input type="checkbox" checked={form.sayAgain} onChange={(e) => setForm({ sayAgain: e.target.checked })} />
         Repeat each corrected sentence before moving on
+      </label>
+      <label className="check say-again">
+        <input type="checkbox" checked={form.tutor} onChange={(e) => setForm({ tutor: e.target.checked })} />
+        Tutor: correct my grammar out loud <span className="muted">(live voice: the partner says “Kleine Korrektur: …” and why, instead of only using the right form)</span>
       </label>
       <label className="check say-again">
         <input type="checkbox" checked={form.liveVoice} onChange={(e) => setForm({ liveVoice: e.target.checked })} />

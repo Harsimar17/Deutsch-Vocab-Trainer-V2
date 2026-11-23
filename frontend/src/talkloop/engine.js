@@ -1342,12 +1342,13 @@ function renderRecap() {
     return;
   }
   const topic = topicWordsRecap();
-  if (!said.length && !tried.length && !topic) {
+  const fixes = state.callFixes ?? [];
+  if (!said.length && !tried.length && !topic && !fixes.length) {
     ui.set({ recap: null });
     return;
   }
   const automatic = Object.values(store.get("spoken", {})).filter((s) => s.stage >= 4).length;
-  ui.set({ recap: { kind: "words", said, tried, missed, automatic, topic } });
+  ui.set({ recap: { kind: "words", said, tried, missed, automatic, topic, fixes } });
 }
 
 function renderSentenceRecap(box, right, again) {
@@ -3868,6 +3869,24 @@ const LIVE_DRILLS = {
   }),
 };
 
+// Tutor: the partner corrects grammar out loud, like a teacher in a conversation class, instead
+// of only recasting it the way a native speaker (and most AI partners) would. A learner whose
+// mistakes are only recast rarely notices them; hearing "Kleine Korrektur: …" does stick.
+function tutorLines(settings, { colleague = false } = {}) {
+  const { level, language } = settings.request;
+  const german = language === "German";
+  const repeat = settings.sayAgain
+    ? " Then ask them to say the correct sentence once more and wait. When they repeat it, judge it: right (ignore small pronunciation slips) → praise it in two or three words and go on; still wrong → say what's wrong in a few words and the correct sentence again, once. After two misses, just carry on."
+    : " Then answer what they said and carry on.";
+  return [
+    `You are also the learner's ${language} tutor${colleague ? ", in a friendly, colleague-like way" : ""}. Listen closely to every sentence they say and check its grammar. ${german
+      ? `Typical ${level} mistakes to catch, even small ones: article and gender (der/die/das), case after verbs and prepositions (den/dem, einen/einem, mit + Dativ, für + Akkusativ), adjective endings, verb in second position, verb at the end after weil/dass/wenn/ob, separable verbs, verb endings, Perfekt with haben or sein, past participles, nicht or kein, plurals, word choice.`
+      : `Catch the typical ${level} mistakes, even small ones: gender and articles, verb forms and tenses, word order, prepositions, agreement, word choice.`}`,
+    `If their sentence has a real mistake (not pronunciation, and not an obvious mishearing of their speech), correct it out loud before you answer: say ${german ? "\"Kleine Korrektur:\"" : "a short lead-in like \"Small correction:\" in " + language} and the whole correct sentence, then in one short, simple ${language} sentence at their level why${german ? " (e.g. \"Nach weil steht das Verb am Ende.\" or \"mit plus Dativ: mit dem Bus\")" : ""}. Correct at most the two most important mistakes per sentence, never give a grammar lecture.${repeat}`,
+    "If the sentence is correct, don't say so every time: just answer naturally, and only now and then praise a sentence that was hard to get right.",
+  ];
+}
+
 function liveSystemPrompt(settings, recap = []) {
   const { language, nativeLanguage, level, scenario, mode, tense } = settings.request;
   const m = MODES[mode] ?? MODES.scene;
@@ -3890,7 +3909,9 @@ function liveSystemPrompt(settings, recap = []) {
     "The learner may pause to think: wait for them.",
     "A message in brackets starting \"(Coach, not the learner:\" comes from the learning app: do what it says, in your own voice and in character, and never mention a coach or an app.",
     // A drill says its corrections out loud; a conversation only recasts, like a native speaker would.
-    ...(settings.sayAgain
+    ...(settings.tutor
+      ? tutorLines(settings)
+      : settings.sayAgain
       // Say it again: Gemini runs it in its one reply, so a correction never costs a second answer.
       ? ["If their sentence has a real grammar or word-choice mistake (not pronunciation), don't answer it yet: say the correct sentence and briefly ask them to say it once more. When they repeat it, judge it yourself: if it's right (ignore small pronunciation slips), praise it in two or three words and answer it as you normally would; if not, say what's still wrong in a few words, say the correct sentence again and let them try once more. After two misses, just carry on."]
       : drill ? [] : ["If they make a mistake, repeat the right form naturally in your answer, like a friendly native speaker would, without a grammar lesson: the app shows written corrections itself."]),
@@ -4077,6 +4098,8 @@ function liveFlushLearner() {
   const said = live?.heard.trim();
   if (!said) return;
   live.heard = "";
+  live.lastSaid = said;
+  live.turnOpen = true; // Gemini is answering it (this runs on its first words)
   setStatus("");
   addLearnerMessage(said);
   state.history.push({ role: "user", content: said });
@@ -4193,6 +4216,8 @@ function liveMessage(msg) {
   if (c.turnComplete) {
     liveFlushLearner();
     liveFlushReply();
+    live.turnOpen = false;
+    sendTutorFix(); // a mistake the coach found that this reply didn't correct
     // The AI's word pick, as context only (turnComplete false: no reply is asked for).
     if (live.wordsNote) {
       liveSend({ clientContent: { turns: [{ role: "user", parts: [{ text: live.wordsNote }] }], turnComplete: false } });
@@ -4240,11 +4265,52 @@ async function liveCoach(said, partner) {
       const types = turn.coach.mistakes.filter((x) => MISTAKE_TYPES[x]);
       recordMistakes(language, types.length ? [...new Set(types)] : ["other"], said, turn.coach.correction);
       renderMistakes();
+      noteCallFix(said, turn.coach.correction, turn.coach.tip);
       if (state.settings.sayAgain && !state.drill && drillable(turn.coach.correction, said)) startLiveDrill(said, turn.coach.correction);
+      queueTutorFix(said, turn.coach.correction);
     }
   } catch (error) {
     debugLog(`live coach: ${error.message}`);
   }
+}
+
+// Tutor: Gemini Live's ear for grammar is loose; the written coach (with LanguageTool) catches
+// more. A mistake the coach found that Gemini's reply to that sentence didn't correct is handed
+// to Gemini once that reply is over, so the learner still hears the correction.
+function queueTutorFix(said, correction) {
+  if (!live?.ready || !state.settings.tutor || MODES[state.settings.request.mode]?.assess) return;
+  if (said !== live.lastSaid) return; // an older sentence: they have moved on
+  live.tutorFix = { said, correction };
+  if (!live.turnOpen) sendTutorFix(); // Gemini already finished its reply
+}
+
+const SAID_A_CORRECTION = /korrektur|richtig (ist|heißt)|man sagt|correc|correz|correç/i;
+
+// Did Gemini's reply correct it already? It said it was correcting, said the whole corrected
+// sentence, or used every word the fix changed (a word-order fix changes none, so it needs one
+// of the first two).
+function correctedIn(reply, correction, said) {
+  if (SAID_A_CORRECTION.test(reply) || drillWords(reply).join(" ").includes(drillWords(correction).join(" "))) return true;
+  const changed = drillMatch(said, correction, said).missing; // the fix's words the learner didn't say
+  return changed.length > 0 && !drillMatch(reply, correction, said).missing.length;
+}
+
+function sendTutorFix() {
+  const fix = live?.tutorFix;
+  if (!fix) return;
+  live.tutorFix = null;
+  if (fix.said !== live.lastSaid || live.heard.trim() || state.drill?.live && state.drill.said !== fix.said) return;
+  if (correctedIn(live.lastReply ?? "", fix.correction, fix.said)) return;
+  const next = state.settings.sayAgain
+    ? "then ask them to say it once more and wait"
+    : "then carry on from where you were, without asking your last question again";
+  liveSend({ clientContent: { turns: [{ role: "user", parts: [{ text: `(Coach, not the learner: their last sentence ${JSON.stringify(fix.said)} had a mistake you didn't correct. As their tutor, correct it out loud now: the correct sentence is ${JSON.stringify(fix.correction)}. Say it, and why in a few simple words, ${next}.)` }] }], turnComplete: true } });
+}
+
+// Every correction of this call, for the recap when it ends.
+function noteCallFix(said, better, tip = "") {
+  if (!said || !better) return;
+  state.callFixes = [...(state.callFixes ?? []).filter((f) => f.said !== said), { said, better, tip }].slice(-30);
 }
 
 let liveRetries = 0; // reconnects in a row that didn't get the call going again
@@ -4381,6 +4447,8 @@ function liveSendText(text) {
   state.history.push({ role: "user", content: text });
   liveStopVoice();
   liveSend({ clientContent: { turns: [{ role: "user", parts: [{ text }] }], turnComplete: true } });
+  live.lastSaid = text;
+  live.turnOpen = true;
   if (MODES[state.settings.request.mode]?.assess) liveAssessAnswer();
   else if (state.drill?.live) liveDrillAttempt(text);
   else liveCoach(text, live.lastReply);
@@ -4611,7 +4679,9 @@ function officeSystemPrompt(settings, recap = []) {
     "Let the learner do a good share of the talking: ask them things, react to what they say, and invent realistic details about your work, the project and the office when needed. If you don't know something about the learner (their job, their project), ask or assume something plausible and stay consistent with it.",
     "This is a short interruption, as in real life: two to four minutes. Once your matter is sorted, say a natural goodbye (e.g. \"Gut, dann lass ich dich mal weiterarbeiten!\") and then call leave. Never call leave before you have said goodbye.",
     "The learner may pause to think: wait for them.",
-    "If they make a mistake, repeat the right form naturally in your answer, like a native colleague would, without a grammar lesson: the app shows written corrections itself.",
+    ...(settings.tutor
+      ? tutorLines(settings, { colleague: true })
+      : ["If they make a mistake, repeat the right form naturally in your answer, like a native colleague would, without a grammar lesson: the app shows written corrections itself."]),
     "A message in brackets starting \"(Coach, not the learner:\" comes from the learning app: do what it says, in your own voice and in character, and never mention a coach or an app.",
   ];
   const memory = officeMemory().slice(-4);
@@ -4772,6 +4842,7 @@ async function sendTurn(message) {
         const types = (turn.coach.mistakes ?? []).filter((t) => MISTAKE_TYPES[t]);
         recordMistakes(state.settings.request.language, types.length ? [...new Set(types)] : ["other"], message, turn.coach.correction);
         renderMistakes();
+        noteCallFix(message, turn.coach.correction, turn.coach.tip);
       }
     }
     // The word the reply asks for: its chip is highlighted.
@@ -5202,6 +5273,7 @@ async function startConversation() {
     characterName: MODES[mode]?.office ? "Büro" : MODES[mode]?.assess ? EXAMINER.character : usesScene ? (SCENARIOS[scenario] ?? SCENARIOS.cafe).character : PARTNER.character,
     vocab,
     sayAgain: form.sayAgain,
+    tutor: form.tutor,
     // Gemini Live: a real-time voice call (see startLive). Not for the sentence drill, which
     // needs the word chips and schedule of a normal call.
     live: (liveVoiceOn() || Boolean(MODES[mode]?.office)) && !MODES[mode]?.drill,
@@ -5332,6 +5404,7 @@ function setForm(patch) {
   if ("connector" in patch) store.set("connector", patch.connector);
   if ("officeGap" in patch) store.set("office_gap", patch.officeGap);
   if ("sayAgain" in patch) store.set("say_again", patch.sayAgain);
+  if ("tutor" in patch) store.set("tutor_voice", patch.tutor);
   if ("liveVoice" in patch) store.set("live_voice", patch.liveVoice);
   if ("geminiVoice" in patch && patch.geminiVoice !== before.geminiVoice) {
     store.set("gemini_voice", patch.geminiVoice);
@@ -5590,6 +5663,7 @@ function endCall() {
   setStatus("");
   renderStats();
   renderRecap();
+  state.callFixes = [];
   if (verdict) {
     assessPending = null;
     saveLevelTest(verdict);
@@ -5636,6 +5710,7 @@ function initTalkloop() {
       connector: store.get("connector", "mix"),
       officeGap: store.get("office_gap", "normal"),
       sayAgain: store.get("say_again", true),
+      tutor: store.get("tutor_voice", true),
       liveVoice: liveVoiceOn(),
       geminiVoice: geminiVoiceChoice(),
       grammarCheck: grammarCheckOn(),
