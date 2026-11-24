@@ -7,6 +7,8 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
+import java.util.function.BiConsumer;
+import java.util.function.Function;
 import java.util.regex.Pattern;
 
 import com.vocabtrainer.model.Card;
@@ -33,6 +35,7 @@ public class TalkloopService {
     private static final Pattern LANGUAGE = Pattern.compile("[\\p{L} ]{1,40}");
     private static final Pattern MISTAKE_TYPE = Pattern.compile("[a-z_]{1,40}");
     private static final int MAX_SPOKEN_WORDS = 5000;
+    private static final int MAX_GRAMMAR_POINTS = 200;
     private static final int MAX_WORD = 100;
     private static final Pattern DAY = Pattern.compile("\\d{4}-\\d{2}-\\d{2}");
     private static final int MAX_SENTENCES = 2000;
@@ -229,32 +232,47 @@ public class TalkloopService {
      * the learner's day (yyyy-mm-dd) it was last said correctly. Per word the newest
      * updatedAt wins. Malformed words are skipped.
      */
-    @SuppressWarnings("unchecked")
     public Map<String, Object> syncSpoken(Ctx ctx, Map<String, Object> body) {
-        if (!(body.get("words") instanceof Map<?, ?> incoming)) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "words: expected an object");
+        return mergeSchedule(ctx, body, "words", MAX_SPOKEN_WORDS, repo::findTalkloopSpoken, repo::saveTalkloopSpoken);
+    }
+
+    /**
+     * Talkloop's grammar schedule ("today's grammar": weil, Perfekt, Konjunktiv II…), merged
+     * like the speaking schedule and in the same shape: {points: {key: {stage, due, uses,
+     * lastDay, updatedAt}}}, the key being the structure's id (e.g. "weil").
+     */
+    public Map<String, Object> syncGrammar(Ctx ctx, Map<String, Object> body) {
+        return mergeSchedule(ctx, body, "points", MAX_GRAMMAR_POINTS, repo::findTalkloopGrammar, repo::saveTalkloopGrammar);
+    }
+
+    /** Merges one device's entries of a schedule into the stored one; per key the newest updatedAt wins. */
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> mergeSchedule(Ctx ctx, Map<String, Object> body, String field, int max,
+            Function<Ctx, Map<String, Object>> find, BiConsumer<Ctx, Map<String, Object>> save) {
+        if (!(body.get(field) instanceof Map<?, ?> incoming)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, field + ": expected an object");
         }
         synchronized (syncLocks[Math.floorMod(ctx.uid().hashCode(), syncLocks.length)]) {
-            Map<String, Object> stored = repo.findTalkloopSpoken(ctx);
-            Map<String, Object> words = new TreeMap<>(
-                    stored != null && stored.get("words") instanceof Map<?, ?> m ? (Map<String, Object>) m : Map.of());
+            Map<String, Object> stored = find.apply(ctx);
+            Map<String, Object> entries = new TreeMap<>(
+                    stored != null && stored.get(field) instanceof Map<?, ?> m ? (Map<String, Object>) m : Map.of());
             boolean changed = false;
             for (Map.Entry<?, ?> e : incoming.entrySet()) {
                 Map<String, Object> sent = spokenWord(e.getValue());
-                if (!(e.getKey() instanceof String de) || de.isBlank() || de.length() > MAX_WORD || sent == null
-                        || (!words.containsKey(de) && words.size() >= MAX_SPOKEN_WORDS)) {
+                if (!(e.getKey() instanceof String key) || key.isBlank() || key.length() > MAX_WORD || sent == null
+                        || (!entries.containsKey(key) && entries.size() >= max)) {
                     continue;
                 }
-                long have = words.get(de) instanceof Map<?, ?> h ? Srs.num(h.get("updatedAt"), 0) : -1;
+                long have = entries.get(key) instanceof Map<?, ?> h ? Srs.num(h.get("updatedAt"), 0) : -1;
                 if ((long) sent.get("updatedAt") > have) {
-                    words.put(de, sent);
+                    entries.put(key, sent);
                     changed = true;
                 }
             }
             if (changed) { // a device that only pulls costs no write
-                repo.saveTalkloopSpoken(ctx, Map.of("words", words));
+                save.accept(ctx, Map.of(field, entries));
             }
-            return Map.of("words", words);
+            return Map.of(field, entries);
         }
     }
 

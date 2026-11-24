@@ -312,6 +312,18 @@ public class ProgressRepository {
         commit(ctx.token(), List.of(update(progressName(ctx) + "/talkloop/spoken", data, null)));
     }
 
+    // Talkloop's grammar schedule (which structures came out right in calls, and when they
+    // are due again), in the speaking schedule's shape.
+
+    public Map<String, Object> findTalkloopGrammar(Ctx ctx) {
+        Map<String, Object> doc = getDocument(ctx.token(), progressName(ctx) + "/talkloop/grammar");
+        return doc == null ? null : fieldsOf(doc);
+    }
+
+    public void saveTalkloopGrammar(Ctx ctx, Map<String, Object> data) {
+        commit(ctx.token(), List.of(update(progressName(ctx) + "/talkloop/grammar", data, null)));
+    }
+
     // Talkloop's Dolmetscher sentence deck (each sentence given, its right version and when
     // it is due again), next to the speaking schedule.
 

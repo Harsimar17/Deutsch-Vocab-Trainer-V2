@@ -99,6 +99,9 @@ then the rest. If you have a B1 exam soon, do **Phases 5, 6 and 15** earlier.
 
 While you talk:
 - If you made a mistake, the correction appears with **Say it again**. Say the correct sentence out loud.
+- With **Today's grammar** ticked, the AI quietly steers the talk so you need a few
+  grammar points (like *weil*, *Perfekt* or *Konjunktiv II*). It never tells you which;
+  after the call you see how you did, and the ones you avoided come back next time.
 - Stuck? Tap one of the **suggestions** above the text box.
 - Tap any word in the AI's answer to see what it means.
 - Don't know a word? Tap **🔍** next to *Send* and type it in English or German.
@@ -235,6 +238,7 @@ it was issued, so a session ends after 24 h without a request. Send
 | `GET /api/talkloop/words` (with the link as `Bearer`, not a session) | learnt words (every card with a schedule), least secure first → `{count, words: [{de, en, cat, lvl, example, box, lapses, last}]}` |
 | `POST /api/talkloop/mistakes` (with the link) `{languages: {German: {resetAt, entries: [{type, at, said, fix}]}}}` | Talkloop's mistake log: merges what a device recorded since its last sync (newest `resetAt` wins and drops older entries; duplicates removed; newest 300 per language kept) → the whole log in the same shape. Stored in `scores/{uid}/talkloop/mistakes` |
 | `POST /api/talkloop/spoken` (with the link) `{words: {"die Haltestelle": {stage, due, uses, lastDay, updatedAt}}}` | Talkloop's speaking schedule: merges what a device changed since its last sync (per word the newest `updatedAt` wins) → the whole schedule. Stored in `scores/{uid}/talkloop/spoken` |
+| `POST /api/talkloop/grammar` (with the link) `{points: {"weil": {stage, due, uses, lastDay, updatedAt}}}` | Talkloop's grammar schedule (*Today's grammar*), merged the same way → the whole schedule. Stored in `scores/{uid}/talkloop/grammar` |
 | `POST /mcp/{link}?tz=<IANA zone>` (the Talkloop link in the address) | Talkloop for ChatGPT: a Model Context Protocol server (stateless Streamable HTTP, plain JSON answers) with the tools `start_talkloop` and `talkloop_turn` for ChatGPT, three more for the screen, and the Talkloop screen as an MCP App; see *Talkloop in ChatGPT* below |
 | `GET /talkloop-screen/{id}` (public, any origin) | what the Talkloop screen in ChatGPT shows for one practice |
 | `POST /api/talkloop/cloudflare` (with the link, + `X-Cloudflare-Account`, `X-Cloudflare-Token`) `{messages, response_format?, temperature?, max_tokens?, reasoning_effort?}` | Talkloop's Cloudflare Workers AI backup: forwards the chat request to `@cf/openai/gpt-oss-120b` with the learner's own account and token (never stored), as Cloudflare refuses calls from web pages; Cloudflare's answer and status come back as they are |
@@ -323,6 +327,19 @@ coach reports which ones the learner used and whether correctly. Said correctly 
 day, a word moves up a stage and comes back after 1, 3, 7 and 21 days; at stage 4 it is
 automatic. A wrong use or a peek sends it back to stage 1. After the call a short recap
 shows what was said. The schedule is kept here (`POST /api/talkloop/spoken`).
+
+**Today's grammar.** So grammar becomes automatic too, *Today's grammar* (on the setup
+screen, German conversations only, also in a live call) picks 3 structures per call from
+`frontend/src/talkloop/grammar.js` (A1: verb second, modal verbs, separable verbs; A2: Perfekt,
+weil, dass, wenn, the dative after mit/bei/…, comparing; B1: obwohl, deshalb/trotzdem,
+Konjunktiv II, relative clauses, um … zu/damit, Präteritum, als, indirect questions), up to
+the learner's level: due ones first, then new ones that the mistake log's recurring mistakes
+point to. The partner asks questions whose most natural answer needs them and uses them
+itself, but never names them; the coach reports each use and whether it was right (a use is
+only counted if the sentence has the structure's words). After the call the recap lists
+them, and each moves on a schedule like today's words: used well (twice, or once the first
+time), up a stage, back after 1, 3, 7 and 21 days; used wrongly more than rightly, back to
+stage 1; not used at all, back in the next call. Kept here (`POST /api/talkloop/grammar`).
 
 **Sprechstand** (mode *Sprechstand — test my speaking level*): a speaking level test from A1 to B1,
 like an oral placement interview. An examiner (Frau Weber) asks 12 questions: A1 first, then A2, then B1,

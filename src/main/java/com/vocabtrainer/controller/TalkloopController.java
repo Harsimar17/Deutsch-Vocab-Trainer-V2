@@ -110,6 +110,12 @@ public class TalkloopController {
         return talkloop.syncSpoken(ctx, body);
     }
 
+    /** Merges a device's grammar schedule ("today's grammar") and returns the whole schedule. Needs the link too. */
+    @PostMapping("/grammar")
+    public Map<String, Object> grammar(Ctx ctx, @RequestBody Map<String, Object> body) {
+        return talkloop.syncGrammar(ctx, body);
+    }
+
     /** Merges what a device's calls have had lately (per mode) and returns all of it. Needs the link too. */
     @PostMapping("/used")
     public Map<String, Object> used(Ctx ctx, @RequestBody Map<String, Object> body) {

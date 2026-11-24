@@ -1,7 +1,7 @@
 import React, { useEffect, useRef } from "react";
 import { StarButton, Pull, Blur } from "../../bits/fx.jsx";
 import { useUi } from "../ui.js";
-import { setForm, startConversation, changeKey, chooseAi, openChat, deleteChat, topicChats, MODES, markLevelTest, levelTests } from "../engine.js";
+import { setForm, startConversation, changeKey, chooseAi, openChat, deleteChat, topicChats, MODES, markLevelTest, levelTests, grammarPreview, grammarFits } from "../engine.js";
 import { LANGUAGES, NATIVE_LANGUAGES, LEVELS, MODE_OPTIONS, OFFICE_GAPS, TENSE_OPTIONS, SCENE_OPTIONS, GEMINI_VOICE_OPTIONS } from "../options.js";
 
 const day = (at) => new Date(at).toLocaleDateString([], { day: "numeric", month: "short" });
@@ -64,6 +64,26 @@ function LevelResult({ recap }) {
   );
 }
 
+// Today's grammar after a call: how often each structure came out, right and wrong.
+function GrammarRecap({ grammar }) {
+  return (
+    <div className="grammar-recap">
+      <p><strong>Today's grammar</strong></p>
+      <ul>
+        {grammar.items.map((g) => (
+          <li key={g.key}>
+            {g.name}:{" "}
+            {g.correct + g.wrong === 0
+              ? <span className="muted">not used yet, so it comes back next call</span>
+              : <>{g.correct} ✓{g.wrong > 0 && <> · {g.wrong} to fix</>}</>}
+          </li>
+        ))}
+      </ul>
+      <p className="muted">{grammar.automatic} structure{grammar.automatic === 1 ? "" : "s"} automatic so far. One used well comes back after 1, 3, 7 and 21 days; one avoided or used wrongly comes back next call.</p>
+    </div>
+  );
+}
+
 // After a call: what was said, tried and not reached.
 function Recap({ recap }) {
   if (!recap) return null;
@@ -105,6 +125,7 @@ function Recap({ recap }) {
               </ul>
             </div>
           )}
+          {recap.grammar && <GrammarRecap grammar={recap.grammar} />}
           <p className="muted">{recap.automatic} word{recap.automatic === 1 ? "" : "s"} automatic so far. Words come back after 1, 3, 7 and 21 days.</p>
         </>
       )}
@@ -263,6 +284,15 @@ export function Setup() {
       <label className="check say-again">
         <input type="checkbox" checked={form.tutor} onChange={(e) => setForm({ tutor: e.target.checked })} />
         Tutor: correct my grammar out loud <span className="muted">(live voice: the partner says “Kleine Korrektur: …” and why, instead of only using the right form)</span>
+      </label>
+      <label className="check say-again" style={dim(grammarFits(form.mode, form.language))}>
+        <input type="checkbox" checked={form.grammarFocus} disabled={!grammarFits(form.mode, form.language)} onChange={(e) => setForm({ grammarFocus: e.target.checked })} />
+        Today's grammar: work grammar into the talk without telling me{" "}
+        <span className="muted">
+          {grammarFits(form.mode, form.language)
+            ? `(next: ${grammarPreview(form.level).join(" · ")}; the partner asks questions that need them, the recap shows how you did)`
+            : "(German conversations only, not the test or drills)"}
+        </span>
       </label>
       <label className="check say-again">
         <input type="checkbox" checked={form.liveVoice} onChange={(e) => setForm({ liveVoice: e.target.checked })} />

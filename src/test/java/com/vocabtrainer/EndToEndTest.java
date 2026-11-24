@@ -681,6 +681,30 @@ class EndToEndTest {
 
     @Test
     @SuppressWarnings("unchecked")
+    void talkloopSyncsItsGrammarScheduleAcrossDevices() throws Exception {
+        String t = login(BEN, "ben-test-pw");
+        String link = (String) ok(post("/api/talkloop/link"), t, null).get("token");
+        long now = System.currentTimeMillis();
+
+        // One device moves "weil" up; another sends an older "weil" and a newer "obwohl".
+        ok(post("/api/talkloop/grammar"), link, Map.of("points", Map.of(
+                "weil", Map.of("stage", 2, "due", now + 3 * 86_400_000L, "uses", 4, "lastDay", "2026-11-24", "updatedAt", now - 5000))));
+        Map<String, Object> points = (Map<String, Object>) ok(post("/api/talkloop/grammar"), link, Map.of("points", Map.of(
+                "weil", Map.of("stage", 1, "updatedAt", now - 9000),
+                "obwohl", Map.of("stage", 0, "due", now, "updatedAt", now - 1000),
+                "bad", Map.of("stage", 9, "updatedAt", now)))).get("points");
+        assertEquals(2, ((Number) ((Map<String, Object>) points.get("weil")).get("stage")).intValue());
+        assertEquals(0, ((Number) ((Map<String, Object>) points.get("obwohl")).get("stage")).intValue());
+        assertNull(points.get("bad"));
+
+        // Kept apart from the word schedule; only the link may use it; a wrong shape is refused.
+        assertNull(((Map<String, Object>) ok(post("/api/talkloop/spoken"), link, Map.of("words", Map.of())).get("words")).get("weil"));
+        assertEquals(401, status(post("/api/talkloop/grammar"), t, Map.of("points", Map.of())));
+        assertEquals(400, status(post("/api/talkloop/grammar"), link, Map.of("points", List.of())));
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
     void talkloopKeepsWhatCallsHadLatelyAcrossDevices() throws Exception {
         String t = login(BEN, "ben-test-pw");
         String link = (String) ok(post("/api/talkloop/link"), t, null).get("token");

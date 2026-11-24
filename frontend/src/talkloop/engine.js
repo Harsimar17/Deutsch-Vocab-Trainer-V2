@@ -2,6 +2,7 @@
 import { hasPiperVoice, piperLoaded, piperReady, loadPiperVoice, piperSpeak, MOODS } from "@static/talkloop/piper.js";
 import { ui, addMessage, updateMessage, clearTranscript, WordTrack, NO_WORDS, refs } from "./ui.js";
 import { LANGUAGES, SCENE_OPTIONS, PROVIDERS } from "./options.js";
+import { GRAMMAR_USES_SCHEMA, grammarPoint, pickGrammar, recordGrammarUses, settleGrammar, grammarPromptLines, grammarLiveNote, grammarCoachLine } from "./grammar.js";
 
 // The locale of the language picked on the setup screen.
 const selectedLocale = () => LANGUAGES.find((l) => l.value === ui.get().form.language)?.locale;
@@ -1330,7 +1331,7 @@ function peekTodayWord(de) {
 }
 
 // After a call: what was said, tried and not reached, under "Start a conversation".
-function renderRecap() {
+function renderRecap(grammar = null) {
   const status = todayWords?.status ?? {};
   const said = Object.entries(status).filter(([, s]) => s.correct && !s.peeked).map(([de]) => de);
   const tried = Object.entries(status).filter(([de]) => !said.includes(de)).map(([de]) => de);
@@ -1343,12 +1344,12 @@ function renderRecap() {
   }
   const topic = topicWordsRecap();
   const fixes = state.callFixes ?? [];
-  if (!said.length && !tried.length && !topic && !fixes.length) {
+  if (!said.length && !tried.length && !topic && !fixes.length && !grammar) {
     ui.set({ recap: null });
     return;
   }
   const automatic = Object.values(store.get("spoken", {})).filter((s) => s.stage >= 4).length;
-  ui.set({ recap: { kind: "words", said, tried, missed, automatic, topic, fixes } });
+  ui.set({ recap: { kind: "words", said, tried, missed, automatic, topic, fixes, grammar } });
 }
 
 function renderSentenceRecap(box, right, again) {
@@ -1389,6 +1390,57 @@ function syncSchedule(name, field, { keepalive = false } = {}) {
 }
 const syncSpoken = (options) => syncSchedule("spoken", "words", options);
 const syncSentences = (options) => syncSchedule("sentences", "sentences", options);
+const syncGrammar = (options) => syncSchedule("grammar", "points", options);
+
+// ---------- today's grammar ----------
+// A few structures (weil, Perfekt, Konjunktiv II…) per call, drawn out by the partner without
+// naming them and judged by the coach; the list and rules are in grammar.js. Kept per
+// structure in this browser ("grammar": {key: {stage, due, uses, lastDay, updatedAt}}, the
+// speaking schedule's shape) and synced with the trainer.
+let todayGrammar = null; // { keys, status: {key: {correct, wrong}} } during a call
+
+const grammarFocusOn = () => store.get("grammar_focus", true);
+
+// Conversations only: not the level test or the drills, which have a task of their own.
+function grammarFits(mode, language) {
+  const m = MODES[mode];
+  return language === "German" && Boolean(m) && !m.assess && !m.drill && !m.joiner && !m.interpreter;
+}
+
+function startTodayGrammar(level, language) {
+  const weak = rankedMistakes(language).map((t) => t.type);
+  const keys = pickGrammar(level, store.get("grammar", {}), weak);
+  todayGrammar = keys.length ? { keys, status: {} } : null;
+}
+
+// What the setup screen shows under the option: the structures the next call would take.
+function grammarPreview(level) {
+  const weak = rankedMistakes("German").map((t) => t.type);
+  return pickGrammar(level, store.get("grammar", {}), weak).map((k) => grammarPoint(k)?.name.split(" (")[0]);
+}
+
+// The coach's report on one learner message. True if anything was counted.
+function recordGrammar(uses, message) {
+  if (!todayGrammar) return false;
+  const changed = recordGrammarUses(todayGrammar.status, todayGrammar.keys, uses, message, normalizeSpeech);
+  if (changed) saveCall(); // the reply was saved before the coach's report came in: a reload keeps it too
+  return changed;
+}
+
+// At the end of a call that had at least one answer: the schedule moves on. Returns what the
+// recap shows.
+function settleTodayGrammar(answered) {
+  if (!todayGrammar) return null;
+  const { keys, status } = todayGrammar;
+  if (!answered) return null;
+  const plan = store.get("grammar", {});
+  Object.assign(plan, settleGrammar(keys, status, plan, localDay()));
+  store.set("grammar", plan);
+  return {
+    items: keys.map((key) => ({ key, name: grammarPoint(key)?.name ?? key, correct: status[key]?.correct ?? 0, wrong: status[key]?.wrong ?? 0 })),
+    automatic: Object.values(plan).filter((s) => s.stage >= 4).length,
+  };
+}
 
 // ---------- what calls have had lately ----------
 // Left to itself the AI picks the same situation, scene opening or subject call after call. So
@@ -1541,9 +1593,11 @@ const TURN_SCHEMA = {
             required: ["word", "correct"],
           },
         },
+        // Which of today's grammar structures it uses, and whether rightly (see grammar.js).
+        used_grammar: GRAMMAR_USES_SCHEMA,
       },
-      required: ["understood", "correction", "mistakes", "tip", "used_words"],
-      propertyOrdering: ["understood", "correction", "mistakes", "tip", "used_words"],
+      required: ["understood", "correction", "mistakes", "tip", "used_words", "used_grammar"],
+      propertyOrdering: ["understood", "correction", "mistakes", "tip", "used_words", "used_grammar"],
     },
     // How the reply is spoken (the open-source German voice has a recording per mood).
     // Before the reply, so the voice can start on it while the rest is still being written.
@@ -1950,7 +2004,7 @@ function turnSystemPrompt({ language, nativeLanguage, level, scenario, mode, ten
     `Write reply_translation and coach.tip in ${nativeLanguage}; everything else in ${language}. suggestions: 2-3 short answers the learner could give.`,
     learnerMessage
       ? `Fill coach first. It judges only the learner's last message: ${JSON.stringify(learnerMessage)}. coach.correction: only if it has a real grammar or word-choice mistake${tenseMistake}, the faulty sentence(s) rewritten correctly, no explanation; then coach.mistakes lists each kind it fixes (${PROMPT_MISTAKES}); otherwise leave both empty. coach.tip: one short sentence praising or explaining something literally in that message (never credit words or grammar it doesn't contain), or empty.`
-      : "No learner message yet: leave coach.correction, coach.mistakes, coach.tip and coach.used_words empty.",
+      : "No learner message yet: leave coach.correction, coach.mistakes, coach.tip, coach.used_words and coach.used_grammar empty.",
     "Your reply is read aloud: sound like a real person, with short interjections (Oh!, Ach wirklich?, Super!) and ! or ? where you mean them.",
     `mood: ${MOODS.join("|")}; amused for fun replies, surprised for amazement, angry only if the role calls for it, sleepy, whisper for secrets, else neutral.`,
   ];
@@ -2029,6 +2083,10 @@ function turnSystemPrompt({ language, nativeLanguage, level, scenario, mode, ten
     }
     lines.push(`subject: what the question in your reply is about, in two to four English words (e.g. "weekend plans"); keep it the same while you stay on it.${hints.covered.length ? ` Talked about in earlier chats, so never bring these up yourself (follow the learner if they do): ${quote(hints.covered)}.` : ""}${hints.current.length ? ` Already talked about in this chat: ${quote(hints.current)}; when the current one runs dry, move on to a new subject, not back to one of these.` : ""}`);
   }
+  if (todayGrammar && !m.assess) {
+    lines.push(...grammarPromptLines(todayGrammar.keys, todayGrammar.status));
+    if (learnerMessage) lines.push(grammarCoachLine(todayGrammar.keys, "coach.used_grammar"));
+  }
   if (weakSpots.length) {
     const clip = (t) => JSON.stringify(t.length > 120 ? `${t.slice(0, 117)}…` : t);
     const list = weakSpots.map((m) => `${MISTAKE_TYPES[m.type]} (said ${clip(m.example.said)}; correct ${clip(m.example.fix)})`).join("; ");
@@ -2065,6 +2123,7 @@ function normalizeTurn(raw) {
       mistakes: list(c.mistakes).filter((m) => typeof m === "string"),
       tip: str(c.tip),
       used_words: list(c.used_words).filter((u) => u && typeof u === "object"),
+      used_grammar: list(c.used_grammar).filter((u) => u && typeof u === "object"),
     },
     mood: MOODS.includes(t.mood) ? t.mood : "neutral",
     reply: str(t.reply).trim(),
@@ -2420,7 +2479,7 @@ async function chatTurn(settings, history, message) {
   // The level test ends after its answers, whatever the AI said, and never helps or corrects.
   if (mode.assess) {
     turn.conversation_finished = Boolean(message.trim()) && history.length / 2 >= ASSESS_ANSWERS;
-    turn.coach = { understood: true, correction: "", mistakes: [], tip: "", used_words: [] };
+    turn.coach = { understood: true, correction: "", mistakes: [], tip: "", used_words: [], used_grammar: [] };
   }
   return { turn, userText };
 }
@@ -3268,6 +3327,7 @@ function saveCall() {
     log: callLog,
     // Only the next few waiting words: the rest would make every save large.
     today: todayWords ? { ...todayWords, waiting: todayWords.waiting.slice(0, 50) } : null,
+    grammar: todayGrammar,
   };
   store.set(CALL_KEY, snap);
   if (chatId && callLog.length) {
@@ -3293,6 +3353,11 @@ async function resumeCall(snap, { note, refreshWords = false } = {}) {
     state.autoSend = true; // each chat starts on auto-send (the switch in the call changes it for that chat only)
     ui.set({ autoSend: true });
     todayWords = snap.today ?? null;
+    // After a reload the call goes on with its grammar; a saved chat reopened was settled when
+    // it ended, so it starts on the grammar due now.
+    todayGrammar = !refreshWords && snap.grammar?.keys?.length ? snap.grammar : null;
+    const req = state.settings.request;
+    if (refreshWords && grammarFocusOn() && grammarFits(req?.mode, req?.language)) startTodayGrammar(req.level, req.language);
     callLog = [];
     const { vocab } = state.settings;
     let learnt = null;
@@ -3920,6 +3985,7 @@ function liveSystemPrompt(settings, recap = []) {
   if (t) lines.push(`Tense practice: ${t.form}. Use it yourself and ask things whose natural answer needs it (about ${t.ask}).`);
   const weak = recurringMistakes(language);
   if (weak.length) lines.push(`The learner's recurring mistakes: ${weak.map((w) => MISTAKE_TYPES[w.type]).join("; ")}. Now and then ask something whose natural answer needs one of these; never say you're testing.`);
+  if (todayGrammar) lines.push(...grammarPromptLines(todayGrammar.keys, todayGrammar.status, { live: true }));
   lines.push(...liveVocabLines(settings, m));
   if (recap.length) lines.push(`The call was cut off and has just reconnected. The end of it so far:\n${recap.join("\n")}\nCarry on from there in one short line, without greeting again.`);
   return lines.join("\n");
@@ -4223,6 +4289,11 @@ function liveMessage(msg) {
       liveSend({ clientContent: { turns: [{ role: "user", parts: [{ text: live.wordsNote }] }], turnComplete: false } });
       live.wordsNote = null;
     }
+    // Today's grammar: which structures to draw out now (only when that changes).
+    if (live.grammarNote && live.grammarNote !== live.grammarSent) {
+      liveSend({ clientContent: { turns: [{ role: "user", parts: [{ text: live.grammarNote }] }], turnComplete: false } });
+      live.grammarSent = live.grammarNote;
+    }
     // The level test: how many answers so far, so the examiner knows when she may decide.
     const count = MODES[state.settings.request.mode]?.assess ? assessCountNote() : null;
     if (count && count !== live.countNote) {
@@ -4245,21 +4316,33 @@ const LIVE_COACH_SCHEMA = {
   propertyOrdering: ["correction", "mistakes", "tip"],
 };
 
+function liveCoachSchema() {
+  if (!todayGrammar) return LIVE_COACH_SCHEMA;
+  return {
+    ...LIVE_COACH_SCHEMA,
+    properties: { ...LIVE_COACH_SCHEMA.properties, used_grammar: GRAMMAR_USES_SCHEMA },
+    required: [...LIVE_COACH_SCHEMA.required, "used_grammar"],
+    propertyOrdering: [...LIVE_COACH_SCHEMA.propertyOrdering, "used_grammar"],
+  };
+}
+
 async function liveCoach(said, partner) {
   const { language, nativeLanguage, level, tense, mode } = state.settings.request;
   const t = TENSES[tense];
+  const grammarLine = todayGrammar ? ` ${grammarCoachLine(todayGrammar.keys, "used_grammar")}` : "";
   const task = MODES[mode]?.joiner ? " The learner was asked to join two sentences with a connector: a wrong connector or word order is a mistake (verb_position)." : "";
   const check = grammarCheckOn() ? languageToolCheck(said, state.settings.locale) : null;
   try {
     const raw = await aiJson({
-      systemInstruction: `You check one spoken sentence of a ${language} learner (CEFR ${level}, native ${nativeLanguage}) from a phone call. It comes from speech recognition: ignore punctuation, capital letters and obvious transcription slips.${task} correction: only if it has a real grammar or word-choice mistake${t ? ` or isn't in ${t.short} where that was asked for` : ""}, the sentence rewritten correctly, keeping its meaning; else empty. mistakes: each kind it fixes (${PROMPT_MISTAKES}). tip: one short sentence in ${nativeLanguage} explaining the main fix, or praising something literally in the sentence, or empty.`,
-      schema: LIVE_COACH_SCHEMA,
+      systemInstruction: `You check one spoken sentence of a ${language} learner (CEFR ${level}, native ${nativeLanguage}) from a phone call. It comes from speech recognition: ignore punctuation, capital letters and obvious transcription slips.${task} correction: only if it has a real grammar or word-choice mistake${t ? ` or isn't in ${t.short} where that was asked for` : ""}, the sentence rewritten correctly, keeping its meaning; else empty. mistakes: each kind it fixes (${PROMPT_MISTAKES}). tip: one short sentence in ${nativeLanguage} explaining the main fix, or praising something literally in the sentence, or empty.${grammarLine}`,
+      schema: liveCoachSchema(),
       contents: [{ role: "user", parts: [{ text: `The partner said: ${JSON.stringify(partner)}\nThe learner said: ${JSON.stringify(said)}` }] }],
       temperature: 0.2,
     });
     const turn = { coach: { understood: true, correction: typeof raw?.correction === "string" ? raw.correction : "", mistakes: Array.isArray(raw?.mistakes) ? raw.mistakes : [], tip: typeof raw?.tip === "string" ? raw.tip : "" } };
     await addGrammarCheck(turn, said, check);
     if (!live) return; // the call ended meanwhile
+    if (recordGrammar(raw?.used_grammar, said)) live.grammarNote = grammarLiveNote(todayGrammar.keys, todayGrammar.status) ?? live.grammarNote;
     renderCoach(turn.coach);
     if (turn.coach.correction) {
       const types = turn.coach.mistakes.filter((x) => MISTAKE_TYPES[x]);
@@ -4690,6 +4773,7 @@ function officeSystemPrompt(settings, recap = []) {
   }
   const weak = recurringMistakes(language);
   if (weak.length) lines.push(`The learner's recurring mistakes: ${weak.map((w) => MISTAKE_TYPES[w.type]).join("; ")}. Now and then ask something whose natural answer needs one of these; never say you're testing.`);
+  if (todayGrammar) lines.push(...grammarPromptLines(todayGrammar.keys, todayGrammar.status, { live: true }));
   lines.push(...liveVocabLines(settings, MODES.office));
   if (recap.length) lines.push(`Your conversation was cut off and has just reconnected. The end of it so far:\n${recap.join("\n")}\nCarry on from there in one short line, without greeting again.`);
   return lines.join("\n");
@@ -4837,6 +4921,7 @@ async function sendTurn(message) {
     renderStats();
     if (message) {
       recordUsedWords(turn.coach?.used_words);
+      recordGrammar(turn.coach?.used_grammar, message);
       renderCoach(turn.coach);
       if (turn.coach?.correction) {
         const types = (turn.coach.mistakes ?? []).filter((t) => MISTAKE_TYPES[t]);
@@ -5296,6 +5381,8 @@ async function startConversation() {
     rememberTopic(state.settings.topic);
   }
   if (MODES[mode]?.roleCard) state.settings.roleCard = makeRoleCard();
+  todayGrammar = null;
+  if (form.grammarFocus && grammarFits(mode, form.language)) startTodayGrammar(form.level, form.language);
   if (connectors) state.settings.connectors = connectors;
   // Free chats and interviews are kept too, with the subjects they cover.
   if (MODES[mode]?.subjects) state.settings.subjects = [];
@@ -5405,6 +5492,7 @@ function setForm(patch) {
   if ("officeGap" in patch) store.set("office_gap", patch.officeGap);
   if ("sayAgain" in patch) store.set("say_again", patch.sayAgain);
   if ("tutor" in patch) store.set("tutor_voice", patch.tutor);
+  if ("grammarFocus" in patch) store.set("grammar_focus", patch.grammarFocus);
   if ("liveVoice" in patch) store.set("live_voice", patch.liveVoice);
   if ("geminiVoice" in patch && patch.geminiVoice !== before.geminiVoice) {
     store.set("gemini_voice", patch.geminiVoice);
@@ -5639,6 +5727,9 @@ function endCall() {
       nativeLanguage: state.settings.request.nativeLanguage,
     }
     : null;
+  // Today's grammar moves on its schedule (a call with no answer leaves it as it was).
+  const grammar = settleTodayGrammar(spoken);
+  todayGrammar = null;
   officeStop();
   stopLive();
   noteLiveSubjects(); // what a live free chat was about, for the next calls
@@ -5662,7 +5753,7 @@ function endCall() {
   if (refs.text) refs.text.value = "";
   setStatus("");
   renderStats();
-  renderRecap();
+  renderRecap(grammar);
   state.callFixes = [];
   if (verdict) {
     assessPending = null;
@@ -5692,6 +5783,7 @@ function endCall() {
   syncMistakes(); // the call is over: send its mistakes
   syncSpoken();
   syncSentences();
+  syncGrammar();
   syncUsed();
   flushChatUploads(); // and the chat, without waiting
 }
@@ -5711,6 +5803,7 @@ function initTalkloop() {
       officeGap: store.get("office_gap", "normal"),
       sayAgain: store.get("say_again", true),
       tutor: store.get("tutor_voice", true),
+      grammarFocus: grammarFocusOn(),
       liveVoice: liveVoiceOn(),
       geminiVoice: geminiVoiceChoice(),
       grammarCheck: grammarCheckOn(),
@@ -5760,6 +5853,7 @@ function initTalkloop() {
       syncMistakes();
       syncSpoken();
       syncSentences();
+      syncGrammar();
       syncUsed();
       syncChats().catch(() => {});
     });
@@ -5769,6 +5863,7 @@ function initTalkloop() {
       syncMistakes({ keepalive: true });
       syncSpoken({ keepalive: true });
       syncSentences({ keepalive: true });
+      syncGrammar({ keepalive: true });
       syncUsed({ keepalive: true });
       flushChatUploads({ keepalive: true });
     } else if (liveReconnectPending && !state.paused && state.settings?.live && !live && ui.get().view.call) {
@@ -5783,7 +5878,7 @@ export {
   openLookup, submitLookup, closeExplorer, listenWord, saveExplorerWord, useSuggestion, submitComposer, sendTap,
   textFocus, textBlur, insertUmlaut, toggleUmlautShift, onTextInput, onTextBeforeInput, onTextKeyDown,
   setAutoSend, micClick, togglePause, toggleCoach, drillSay, drillHear, skipDrill, heardEdit, heardDelete, endCall,
-  MODES, TENSES, PROVIDERS, markLevelTest, levelTests,
+  MODES, TENSES, PROVIDERS, markLevelTest, levelTests, grammarPreview, grammarFits,
   // the Prüfung tab writes and marks its exam with the learner's AI, and on Gemini its examiners speak with Gemini's voices
   aiJson, providerReady, getProvider, geminiTts, geminiTtsBlocked,
 };

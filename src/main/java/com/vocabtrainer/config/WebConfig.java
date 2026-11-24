@@ -66,10 +66,10 @@ public class WebConfig implements WebMvcConfigurer {
         registry.addInterceptor(sessionInterceptor)
                 .addPathPatterns("/api/**")
                 .excludePathPatterns("/api/vocab", "/api/auth/login", "/api/users", "/api/talkloop/words",
-                        "/api/talkloop/mistakes", "/api/talkloop/spoken", "/api/talkloop/sentences", "/api/talkloop/cloudflare",
+                        "/api/talkloop/mistakes", "/api/talkloop/spoken", "/api/talkloop/grammar", "/api/talkloop/sentences", "/api/talkloop/cloudflare",
                         "/api/talkloop/chats", "/api/talkloop/chats/*", "/api/talkloop/keys", "/api/talkloop/used");
         registry.addInterceptor(talkloopLinkInterceptor)
-                .addPathPatterns("/api/talkloop/words", "/api/talkloop/mistakes", "/api/talkloop/spoken", "/api/talkloop/sentences",
+                .addPathPatterns("/api/talkloop/words", "/api/talkloop/mistakes", "/api/talkloop/spoken", "/api/talkloop/grammar", "/api/talkloop/sentences",
                         "/api/talkloop/cloudflare", "/api/talkloop/chats", "/api/talkloop/chats/*", "/api/talkloop/keys", "/api/talkloop/used", "/mcp/*");
     }
 }
