@@ -976,7 +976,7 @@ function markTopicWords(text) {
   tw.words.push(...added);
   renderTopicWords([...fresh, ...added].map((w) => w.de));
   if (added.length) liveQueueTopicWords();
-  if (tw.reserve.length < 3) refillTopicWords();
+  if (tw.reserve.length < 3 && !tw.story) refillTopicWords();
   return fresh;
 }
 
@@ -1092,6 +1092,7 @@ function renderTopicWords(flash = []) {
           ? tw.source === "ai" ? "None of your words fit this one: just talk!" : "Looking for your words that fit…"
           : used === words.length && tw.owed > 0
             ? "All used! Finding more of your words for where the talk is going…"
+            : tw.story ? "This story's words: say them yourself. Each one you use brings in the next."
             : tw.source === "ai" ? "Your learnt words that fit. Each one you use brings in another." : "Quick match: refining…",
       lang: state.settings?.locale ?? "de-DE",
       words: words.map((w) => ({
@@ -1113,7 +1114,115 @@ function topicWordsRecap() {
   const used = tw.words.filter((w) => w.status === "used").map((w) => w.de);
   const unused = tw.words.filter((w) => w.status !== "used").map((w) => w.de);
   store.set(TOPIC_WORDS_MISSED_KEY, [...new Set([...unused, ...store.get(TOPIC_WORDS_MISSED_KEY, [])])].filter((de) => !used.includes(de)).slice(0, 60));
-  return { used, unused, total: tw.words.length };
+  return { used, unused, total: tw.words.length, story: Boolean(tw.story) };
+}
+
+// ---------- story practice ----------
+// "Sprechen" at the end of a story in the trainer: a call to say that story's words yourself.
+// Before the call, the AI makes up a discussion topic from the story's theme that can't be
+// talked about without those words, and an opening question for each word. The words are in
+// the side panel and ticked as the learner says them, as in any call with topic words.
+// practiseStory keeps the story here until the next call starts (startConversation).
+// story: { id, titleDe, titleEn, text, words: [{ de, en }] }
+let pendingStory = null;
+let storyStarting = false; // its topic is being made
+const STORY_TEXT_MAX = 3000;
+const STORY_PLAN_WAIT = 12000; // ms; then the call starts on the story itself
+
+// Starts the story's call at once when Talkloop is ready; otherwise the setup screen shows it
+// and its Start button runs it. Returns "started", "waiting" (setup shows it) or "busy" (a call is on).
+function practiseStory(story) {
+  if (!story?.words?.length) return "waiting";
+  pendingStory = {
+    id: String(story.id ?? ""),
+    titleDe: String(story.titleDe ?? ""),
+    titleEn: String(story.titleEn ?? ""),
+    text: String(story.text ?? "").slice(0, STORY_TEXT_MAX),
+    words: story.words.filter((w) => w?.de).map((w) => ({ de: String(w.de), en: String(w.en ?? "") })),
+  };
+  ui.set({ storyTalk: { title: pendingStory.titleDe, count: pendingStory.words.length } });
+  const view = ui.get().view;
+  if (view.call) return "busy";
+  if (!view.setup) return "waiting";
+  startConversation();
+  return "started";
+}
+
+function cancelStoryTalk() {
+  pendingStory = null;
+  ui.set({ storyTalk: null });
+}
+
+const STORY_PLAN_SCHEMA = {
+  type: "OBJECT",
+  properties: {
+    topic: { type: "STRING" },
+    words: {
+      type: "ARRAY",
+      items: {
+        type: "OBJECT",
+        properties: { de: { type: "STRING" }, angle: { type: "STRING" } },
+        required: ["de", "angle"],
+        propertyOrdering: ["de", "angle"],
+      },
+    },
+  },
+  required: ["topic", "words"],
+  propertyOrdering: ["topic", "words"],
+};
+
+// The AI's plan for the story's call: { topic, angles: Map(de -> question) }, or null.
+async function storyPlan(story, language, level) {
+  const raw = await aiJson({
+    systemInstruction: `You prepare a ${language} speaking practice at CEFR ${level}. The learner has just read a short story and must now say its words themselves in a conversation. Make up ONE discussion topic in ${language} (one short line, a question or a claim people can disagree on) that comes from the story's theme, relates to the learner's own life or opinions, and cannot be discussed properly without using these words: choose it so that as many of them as possible are the natural words for it. Not a question about the story's facts, and don't put the words themselves in the topic line: the learner has to come up with them. Then, for each word, angle: in English, at most 12 words, a question on that topic whose natural answer needs the word. Write de exactly as given; best-fitting words first.`,
+    schema: STORY_PLAN_SCHEMA,
+    contents: [{ role: "user", parts: [{ text: `Story "${story.titleDe}" (${story.titleEn}):\n${story.text}\n\nWords:\n${story.words.map((w) => `${w.de}${w.en ? ` — ${w.en}` : ""}`).join("\n")}` }] }],
+    temperature: 0.5,
+  });
+  const topic = String(raw?.topic ?? "").trim().slice(0, 160);
+  if (!topic) return null;
+  const angles = new Map();
+  for (const p of Array.isArray(raw?.words) ? raw.words : []) {
+    const w = story.words.find((x) => x.de === p?.de) ?? story.words.find((x) => bareWord(x.de) === bareWord(p?.de ?? ""));
+    if (w && !angles.has(w.de)) angles.set(w.de, String(p.angle ?? "").slice(0, 140));
+  }
+  return { topic, angles };
+}
+
+// The plan, or null if it fails or takes too long: the call never waits long for it.
+function storyPlanInTime(story, language, level) {
+  return Promise.race([
+    storyPlan(story, language, level).catch((error) => { debugLog(`story topic: none (${error.message})`); return null; }),
+    new Promise((resolve) => setTimeout(() => resolve(null), STORY_PLAN_WAIT)),
+  ]);
+}
+
+// The panel's words are the story's own words (all of them, none from elsewhere), the ones
+// the topic needs most first, each with its opening question.
+function prepareStoryWords(settings, angles = new Map()) {
+  const order = [...angles.keys()];
+  const rank = (w) => (order.includes(w.de) ? order.indexOf(w.de) : 999);
+  const entries = [...settings.story.words].sort((a, b) => rank(a) - rank(b)).map((w) => topicWordEntry(w, { angle: angles.get(w.de) ?? "" }));
+  settings.topicWords = { subject: conversationSubject(settings), gen: 1, source: "ai", story: true, owed: 0, ...splitTopicWords([], entries) };
+  renderTopicWords();
+}
+
+const storyOpener = (settings) => settings.storyTopic
+  ? `(Today's topic: "${settings.topic}". It comes from the story "${settings.story.titleDe}" the learner has just read. In one or two short sentences, link it to one moment in the story, naming the person or thing in it as if you both just read it ("Wie Lena mit ihrem Kredit …"), never "im Text" or "in der Geschichte", and give your own opinion on the topic, then ask the learner what they think and why. No greeting chat, no weather.)`
+  : `(The learner has just read the story "${settings.story.titleDe}". In one or two short sentences, react to one moment in it, naming the person or thing in it, never "im Text", then ask the learner one easy question about it: what they think, or what they would have done. No greeting chat, no weather.)`;
+
+// What the partner is told about the story (turn-based and live calls alike).
+function storyLines(settings, { live: isLive = false } = {}) {
+  const story = settings?.story;
+  if (!story) return [];
+  return [
+    `The learner has just read this short story in their German trainer, "${story.titleDe}" (${story.titleEn}):\n"""\n${story.text}\n"""`,
+    settings.storyTopic
+      ? `This ${isLive ? "call" : "conversation"} practises that story's words. The topic was made from the story so that it needs them: discuss the topic, using the story only as a starting point and an example. Don't retell the story and never test its facts like an exam. If the topic is used up, take another side of the same theme rather than a new topic.`
+      : `This ${isLive ? "call" : "conversation"} practises that story's words. Talk about the story for a few exchanges (what happened, what the learner thinks of the people and their choices, what they would have done), then about its theme in the learner's own life and opinions. Don't retell the story and never test its facts like an exam.`,
+    "Talk as someone who has read the story too: never say \"im Text\" or \"in der Geschichte steht\".",
+    "The point of the call is that the learner says the story's words themselves (they are shown in a side panel), from memory: keep asking questions whose natural answer needs one of the words not used yet. Don't say a word the learner hasn't used yet yourself, so they have to recall it; once they have used it, use it freely. Praise briefly when they use one well.",
+  ];
 }
 
 // ---------- mistake tracker ----------
@@ -2378,7 +2487,9 @@ async function chatTurn(settings, history, message) {
   let userText = message.trim();
   if (!userText) {
     // The opening turn: in "Discuss a topic" the app has chosen the topic.
-    if (mode.topics) {
+    if (settings.story) {
+      userText = storyOpener(settings);
+    } else if (mode.topics) {
       const topic = settings.topic ?? pickTopic(settings.request.level, recentTopics());
       userText = mode.opener(topic);
     } else if (mode.themes) {
@@ -2407,7 +2518,7 @@ async function chatTurn(settings, history, message) {
     : null;
   // Topic words only once the conversation is going (never in the opening reply).
   const wordLines = history.length >= 2 ? topicWordLines(settings) : [];
-  const systemInstruction = [turnSystemPrompt(settings.request, targetWords, learnt, message.trim(), recurringMistakes(settings.request.language), today, hints), ...wordLines].join("\n");
+  const systemInstruction = [turnSystemPrompt(settings.request, targetWords, learnt, message.trim(), recurringMistakes(settings.request.language), today, hints), ...storyLines(settings), ...wordLines].join("\n");
   // A drill is short, plain and only needs the last few turns: less to read and write, so
   // replies come sooner, and a low temperature keeps its questions sensible.
   const contents = historyToContents(mode.drill ? history.slice(-DRILL_HISTORY) : history, userText);
@@ -3968,6 +4079,7 @@ function liveSystemPrompt(settings, recap = []) {
     ...(m.usesScene && persona.goal ? [`Scene goal: ${persona.goal}`] : []),
     ...(m.usesScene ? sceneVariety(scenario) : []),
     ...(settings.topic ? [`Today's topic: "${settings.topic}". Stay on it.`] : []),
+    ...storyLines(settings, { live: true }),
     ...(m.themes && settings.subjects?.length ? [`Start with ${themeByName(settings.subjects[0])?.ask ?? settings.subjects[0]}.`] : []),
     ...(m.subjects && !m.office ? liveSubjectLines(settings, m) : []),
     ...(settings.roleCard ? [`The learner's role card (they play this person): ${settings.roleCard}.`] : []),
@@ -3997,6 +4109,7 @@ function liveSystemPrompt(settings, recap = []) {
 const LIVE_VOCAB_WORDS = 20;
 
 function liveVocabLines(settings, m) {
+  if (settings.story && !settings.vocab?.enabled) return settings.topicWords ? topicWordLines(settings, { live: true }) : [];
   if (!settings.vocab?.enabled || m.drill || m.joiner) return [];
   const fmt = (w) => (w.en ? `${w.de} (${w.en})` : w.de);
   const today = todayWords?.active ?? [];
@@ -4023,6 +4136,7 @@ function liveOpener(settings) {
   if (m.office) return "(You are now standing at the learner's desk. Get their attention and ask whether they have a moment, in one short line, and then wait for their answer.)";
   const drill = LIVE_DRILLS[settings.request.mode]?.(settings.request, settings);
   if (drill) return drill.opener;
+  if (settings.story) return storyOpener(settings);
   if (m.topics) return m.opener(settings.topic ?? "");
   if (m.themes) return m.opener(themeByName(chatThemes(settings)[0]));
   return typeof m.opener === "string" ? m.opener : "(Greet the learner and start.)";
@@ -5307,7 +5421,9 @@ function showVocabStatus(text, { scroll = false } = {}) {
 async function startConversation() {
   const form = ui.get().form;
   const scenario = form.scenario;
-  const mode = form.mode;
+  // A story from the trainer (practiseStory): a topic made from it, whatever mode is chosen.
+  const story = pendingStory;
+  const mode = story ? "topic" : form.mode;
   const usesScene = (MODES[mode] ?? MODES.scene).usesScene;
   // The connector drill is about word order only: no words of the learner's to bring in.
   const useVocab = form.useVocab && !ui.get().useVocab.disabled && !MODES[mode]?.joiner && !MODES[mode]?.assess;
@@ -5325,7 +5441,8 @@ async function startConversation() {
     // Linked: a few learnt words of these levels to say today (see the speaking schedule).
     todayWords = null;
     const drill = Boolean(MODES[mode]?.drill);
-    if (learnt) pickTodayWords(learnt.filter((w) => levels.includes(w.level)), { evenIfNotDue: drill });
+    // A story's call is about the story's words only.
+    if (learnt && !story) pickTodayWords(learnt.filter((w) => levels.includes(w.level)), { evenIfNotDue: drill });
     // Not linked: the drill takes the imported words of these levels instead.
     else if (drill) pickTodayWords(shuffled(((await idbGet("vocab_words").catch(() => null)) ?? []).filter((w) => levels.includes(w.level))), { evenIfNotDue: true });
   } else {
@@ -5352,6 +5469,17 @@ async function startConversation() {
     return;
   }
 
+  // The story's topic is made now (a few seconds at most), so the call opens on it.
+  let plan = null;
+  if (story) {
+    if (storyStarting) return; // already being started (a second tap)
+    storyStarting = true;
+    showVocabStatus(`Making a topic from „${story.titleDe}“ that needs its ${story.words.length} words…`, { scroll: true });
+    try { plan = await storyPlanInTime(story, form.language, form.level); } finally { storyStarting = false; }
+    if (pendingStory !== story) return; // cancelled meanwhile
+    showVocabStatus("");
+  }
+
   state.settings = {
     locale: LANGUAGES.find((l) => l.value === form.language)?.locale ?? "de-DE",
     level: form.level,
@@ -5375,7 +5503,13 @@ async function startConversation() {
   // "Discuss a topic": the topic is chosen now, so the header can show it and the opening
   // turn (chatTurn) uses it.
   chatId = null;
-  if (MODES[mode]?.topics) {
+  if (story) {
+    state.settings.story = story;
+    state.settings.storyTopic = Boolean(plan);
+    state.settings.topic = plan?.topic ?? `Geschichte: „${story.titleDe}“`;
+    pendingStory = null;
+    ui.set({ storyTalk: null });
+  } else if (MODES[mode]?.topics) {
     state.settings.topic = pickTopic(state.settings.level, recentTopics());
     store.set("last_topic", state.settings.topic);
     rememberTopic(state.settings.topic);
@@ -5394,7 +5528,8 @@ async function startConversation() {
   }
   // The learnt words that fit this conversation, in the side panel: a quick list now, the AI's
   // pick in the background (never waited for). The Büro picks them per visit.
-  if (!MODES[mode]?.office && !MODES[mode]?.assess) prepareTopicWords(state.settings);
+  if (story) prepareStoryWords(state.settings, plan?.angles);
+  else if (!MODES[mode]?.office && !MODES[mode]?.assess) prepareTopicWords(state.settings);
   else renderTopicWords();
   bumpStreak();
   renderStats();
@@ -5878,7 +6013,7 @@ export {
   openLookup, submitLookup, closeExplorer, listenWord, saveExplorerWord, useSuggestion, submitComposer, sendTap,
   textFocus, textBlur, insertUmlaut, toggleUmlautShift, onTextInput, onTextBeforeInput, onTextKeyDown,
   setAutoSend, micClick, togglePause, toggleCoach, drillSay, drillHear, skipDrill, heardEdit, heardDelete, endCall,
-  MODES, TENSES, PROVIDERS, markLevelTest, levelTests, grammarPreview, grammarFits,
+  MODES, TENSES, PROVIDERS, markLevelTest, levelTests, grammarPreview, grammarFits, practiseStory, cancelStoryTalk,
   // the Prüfung tab writes and marks its exam with the learner's AI, and on Gemini its examiners speak with Gemini's voices
   aiJson, providerReady, getProvider, geminiTts, geminiTtsBlocked,
 };

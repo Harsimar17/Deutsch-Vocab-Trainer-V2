@@ -62,6 +62,12 @@ tap the words you don't know, and mark it as read. When you have read all storie
 a phase, do its **Phasentest**. After you pass it, short refreshers come back after
 1, 7, 30, 90 and 180 days, so you don't forget the words.
 
+**Sprechen after a story:** at the end of every story, tap **🎙 Practise these words**.
+Talkloop opens and starts a call on a topic made from that story, one you can't talk
+about without the story's words. The words are listed beside the call and ticked as
+you say them; the partner keeps asking questions that need the ones you haven't said yet.
+The call uses your Talkloop settings (with *Live voice call* ticked, Gemini's voice).
+
 Good order for speaking: **Phase 1** (everyday life) → **Phase 16** (connectors like
 *weil, obwohl, deshalb*) → **Phase 2** (work and studies) → **Phases 12 and 13** (verbs) →
 then the rest. If you have a B1 exam soon, do **Phases 5, 6 and 15** earlier.
@@ -340,6 +346,17 @@ only counted if the sentence has the structure's words). After the call the reca
 them, and each moves on a schedule like today's words: used well (twice, or once the first
 time), up a stage, back after 1, 3, 7 and 21 days; used wrongly more than rightly, back to
 stage 1; not used at all, back in the next call. Kept here (`POST /api/talkloop/grammar`).
+
+**Story practice.** *🎙 Practise these words* at the end of a story (`trainer/stories/stories.jsx`)
+hands the story's text and glossary to the engine (`practiseStory` in `engine.js`) and opens the
+Talkloop tab. The call starts at once if the setup screen is showing; during a call, or before
+the keys are set, the setup screen shows the story and its Start button runs it. Before the call
+the AI makes a discussion topic from the story's theme that needs its words (not containing them),
+plus an opening question per word (`storyPlan`, at most 12 s, else the call is about the story
+itself). It runs as *Discuss a topic* whatever mode is chosen, without today's words: the panel
+(topic words) holds only the story's words, never refilled from the learner's other words, and
+the partner is told the story and to make the learner say the words before it says them itself.
+Works in turn-based and live calls; the recap lists the words used and still to say.
 
 **Sprechstand** (mode *Sprechstand — test my speaking level*): a speaking level test from A1 to B1,
 like an oral placement interview. An examiner (Frau Weber) asks 12 questions: A1 first, then A2, then B1,

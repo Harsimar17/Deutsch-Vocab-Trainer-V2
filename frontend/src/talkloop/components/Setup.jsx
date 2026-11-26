@@ -1,7 +1,7 @@
 import React, { useEffect, useRef } from "react";
 import { StarButton, Pull, Blur } from "../../bits/fx.jsx";
 import { useUi } from "../ui.js";
-import { setForm, startConversation, changeKey, chooseAi, openChat, deleteChat, topicChats, MODES, markLevelTest, levelTests, grammarPreview, grammarFits } from "../engine.js";
+import { setForm, startConversation, changeKey, chooseAi, openChat, deleteChat, topicChats, MODES, markLevelTest, levelTests, grammarPreview, grammarFits, cancelStoryTalk } from "../engine.js";
 import { LANGUAGES, NATIVE_LANGUAGES, LEVELS, MODE_OPTIONS, OFFICE_GAPS, TENSE_OPTIONS, SCENE_OPTIONS, GEMINI_VOICE_OPTIONS } from "../options.js";
 
 const day = (at) => new Date(at).toLocaleDateString([], { day: "numeric", month: "short" });
@@ -110,8 +110,8 @@ function Recap({ recap }) {
           {line("Said ✓", recap.said)}
           {line("Practise again", recap.tried)}
           {line("Not reached", recap.missed)}
-          {recap.topic && line(`Topic words used ${recap.topic.used.length}/${recap.topic.total} ✓`, recap.topic.used.length ? recap.topic.used : ["none yet"])}
-          {recap.topic && line("Topic words for next time", recap.topic.unused)}
+          {recap.topic && line(`${recap.topic.story ? "Story" : "Topic"} words used ${recap.topic.used.length}/${recap.topic.total} ✓`, recap.topic.used.length ? recap.topic.used : ["none yet"])}
+          {recap.topic && line(recap.topic.story ? "Story words still to say" : "Topic words for next time", recap.topic.unused)}
           {recap.fixes?.length > 0 && (
             <div className="call-fixes">
               <p><strong>Grammar to fix ({recap.fixes.length})</strong></p>
@@ -176,6 +176,7 @@ export function Setup() {
   const vocabStatusAt = useUi((s) => s.vocabStatusAt);
   const useVocab = useUi((s) => s.useVocab);
   const connectors = useUi((s) => s.connectors);
+  const storyTalk = useUi((s) => s.storyTalk);
   const statusRef = useRef(null);
   useEffect(() => {
     if (vocabStatusAt) statusRef.current?.scrollIntoView({ block: "center", behavior: "smooth" });
@@ -299,7 +300,13 @@ export function Setup() {
         Live voice call <span className="muted">(Gemini 3.8 Live: replies in about a second and you can interrupt)</span>
       </label>
 
-      <Pull><StarButton id="start" type="button" className="primary" onClick={startConversation}>Start conversation</StarButton></Pull>
+      {storyTalk && (
+        <p className="muted" role="status">
+          📖 Next call practises the story „{storyTalk.title}“: a topic that needs its {storyTalk.count} words, ticked as you say them.{" "}
+          <button type="button" onClick={cancelStoryTalk}>Not now</button>
+        </p>
+      )}
+      <Pull><StarButton id="start" type="button" className="primary" onClick={startConversation}>{storyTalk ? "Start story practice" : "Start conversation"}</StarButton></Pull>
       <Chats />
     </section>
   );

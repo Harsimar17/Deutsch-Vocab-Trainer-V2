@@ -149,7 +149,7 @@ export const PaperClip = () => (
 // The story as a notebook page on a desk, like a mission briefing: the page
 // slides in, the header types itself, the chapter is stamped, the paragraphs
 // appear one by one. Words stay tappable for their meaning.
-export function StoryReader({ id, read, showEn, onRead, onSettings }) {
+export function StoryReader({ id, read, showEn, onRead, onSettings, onPractise }) {
   const [content, error] = useContent();
   const story = content ? content.reader(id) : null;
   const [tip, setTip] = useState(null);
@@ -247,6 +247,19 @@ export function StoryReader({ id, read, showEn, onRead, onSettings }) {
           </div>
         )}
       </div>
+      {onPractise && story.glossary.length > 0 && (
+        <div className="reveal" style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "6px", padding: "14px 12px", border: "1px dashed var(--line)", borderRadius: "14px", textAlign: "center" }}>
+          <div style={{ ...monoLabel }}>Sprechen</div>
+          <div style={{ fontSize: "14px", color: "var(--ink-muted)", maxWidth: "420px" }}>
+            Say this story’s {story.glossary.length} words yourself: a voice call on a topic that needs them, each ticked as you use it.
+          </div>
+          <button onClick={() => onPractise({
+            id: story.id, titleDe: story.titleDe, titleEn: story.titleEn,
+            text: story.paragraphs.map((p) => p.speech).join(" "),
+            words: story.glossary.map((g) => ({ de: g.de, en: g.en })),
+          })} style={{ ...navBtnStyle, marginTop: "4px" }}>🎙 Practise these words</button>
+        </div>
+      )}
       <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "12px", paddingTop: "4px" }}>
         <button onClick={toggleRead} style={{ ...navBtnStyle, background: read ? "var(--good)" : "transparent", border: "1px solid " + (read ? "var(--good)" : "var(--ink-muted)"), color: read ? "#F6F1E5" : "var(--ink-muted)", boxShadow: "none" }}>
           {read ? "✓ read" : "mark as read"}
@@ -535,7 +548,7 @@ export function PhaseRound({ idx, set, refresh, retake, onExit, onNext, onChange
 // test statuses are loaded on opening Stories and again after a Phasentest.
 // Loaded once per login; fetched again only after a phase test (which changes it).
 export const STORY_PROGRESS = { value: null, stale: true };
-export function StoriesPage({ settings, onSettings, onChange }) {
+export function StoriesPage({ settings, onSettings, onChange, onPractise }) {
   const [progress, setProgressState] = useState(STORY_PROGRESS.value);
   const setProgress = (fn) => setProgressState((p) => (STORY_PROGRESS.value = typeof fn === "function" ? fn(p) : fn));
   useEffect(() => {
@@ -548,7 +561,7 @@ export function StoriesPage({ settings, onSettings, onChange }) {
   if (settings.storyTest) return <PhaseTestPage key={settings.storyTest} idx={settings.storyTest} onSettings={onSettings} onChange={onChange} />;
   if (settings.storyOpen) {
     return <StoryReader id={settings.storyOpen} read={!!(progress && progress.read.includes(settings.storyOpen))} showEn={!!settings.storyShowEn}
-      onRead={onRead} onSettings={onSettings} />;
+      onRead={onRead} onSettings={onSettings} onPractise={onPractise} />;
   }
   return <StoriesList progress={progress} onSettings={onSettings} />;
 }

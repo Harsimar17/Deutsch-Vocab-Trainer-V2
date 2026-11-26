@@ -28,6 +28,7 @@ let state = {
   useVocab: { checked: true, disabled: true },
   chatgptUrl: "",
   connectors: [], // [{ value, label }] for the connector choice
+  storyTalk: null, // { title, count }: a story from the trainer waiting for its call (practiseStory)
   recap: null, // { kind: "words" | "sentences", ... } after a call
   chatsVersion: 0,
   mistakesVersion: 0,

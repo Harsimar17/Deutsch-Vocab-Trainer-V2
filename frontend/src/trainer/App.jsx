@@ -10,6 +10,7 @@ import { AddWord, SettingsPanel } from "./settings.jsx";
 import { TabBar, UserMenu, ModeBento } from "./frame.jsx";
 import { FormulasPage } from "./grammar.jsx";
 import { TalkloopPage } from "../talkloop/TalkloopPage.jsx";
+import { practiseStory } from "../talkloop/engine.js";
 import { ExamPage } from "../exam/ExamPage.jsx";
 import { PageTitle, Eyebrow, Wordmark, Rotating, Decrypt, Reveal, Fade, Sparks, StarButton, Spot, GalaxyField, AppBackdrop, GooeySections, Digits, Typed } from "../bits/fx.jsx";
 
@@ -267,7 +268,8 @@ export function App() {
         {visited.current.stories && (
           <div style={show("stories")}>
             <Fade>
-              <StoriesPage settings={s} onSettings={onSettings} onChange={applyChange} />
+              <StoriesPage settings={s} onSettings={onSettings} onChange={applyChange}
+                onPractise={(story) => { setTalk(true); window.scrollTo(0, 0); practiseStory(story); }} />
             </Fade>
           </div>
         )}
