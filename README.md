@@ -347,6 +347,14 @@ them, and each moves on a schedule like today's words: used well (twice, or once
 time), up a stage, back after 1, 3, 7 and 21 days; used wrongly more than rightly, back to
 stage 1; not used at all, back in the next call. Kept here (`POST /api/talkloop/grammar`).
 
+**A real person on the phone.** In a live call (`liveSystemPrompt`, `humanLines` in `engine.js`) the
+partner is told to talk like a person, not a tutor: short reactions as often as longer turns, not a
+question every time, the fillers of spoken German, real feelings and opinions, coming back to what
+the learner said earlier, no "Sehr gut!" or summing up, and the time of day to greet by. Mika, the
+partner of the conversation modes, has the same life in every call (`PARTNER_LIFE`: a sound
+technician in Leipzig with a WG, a band and a sister in Hamburg) to tell stories from. Corrections
+still happen, briefly; asked sincerely, the partner says it is an AI.
+
 **Story practice.** *🎙 Practise these words* at the end of a story (`trainer/stories/stories.jsx`)
 hands the story's text and glossary to the engine (`practiseStory` in `engine.js`) and opens the
 Talkloop tab. The call starts at once if the setup screen is showing; during a call, or before
