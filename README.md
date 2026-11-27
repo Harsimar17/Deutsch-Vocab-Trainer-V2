@@ -348,8 +348,9 @@ time), up a stage, back after 1, 3, 7 and 21 days; used wrongly more than rightl
 stage 1; not used at all, back in the next call. Kept here (`POST /api/talkloop/grammar`).
 
 **A real person on the phone.** In a live call (`liveSystemPrompt`, `humanLines` in `engine.js`) the
-partner is told to talk like a person, not a tutor: short reactions as often as longer turns, not a
-question every time, the fillers of spoken German, real feelings and opinions, coming back to what
+partner is told to talk like a person, not a tutor: short reactions as often as longer turns, but
+every turn ends with one easy question or invitation (a learner doesn't pick a conversation up on
+their own, so without it the call went quiet) and it never wraps the call up itself, the fillers of spoken German, real feelings and opinions, coming back to what
 the learner said earlier, no "Sehr gut!" or summing up, and the time of day to greet by. Mika, the
 partner of the conversation modes, has the same life in every call (`PARTNER_LIFE`: a sound
 technician in Leipzig with a WG, a band and a sister in Hamburg) to tell stories from. Corrections
