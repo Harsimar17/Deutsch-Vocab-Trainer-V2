@@ -4179,6 +4179,28 @@ function liveSend(message) {
   if (live?.ws?.readyState === WebSocket.OPEN) live.ws.send(JSON.stringify(message));
 }
 
+// A text turn from the app that Gemini answers, with any quiet coach notes waiting to go along.
+// Notes are never sent alone with turnComplete: false: the Live API then waits for the rest of
+// that turn and stops answering the learner's voice until it comes.
+function liveTurn(text) {
+  const notes = Object.values(live?.notes ?? {}).filter(Boolean);
+  if (live) live.notes = {};
+  const parts = [...notes, text].map((t) => ({ text: t }));
+  liveSend({ clientContent: { turns: [{ role: "user", parts }], turnComplete: true } });
+}
+
+// Gemini normally answers the learner's voice by itself. If it hasn't started a few seconds after
+// they stopped talking (a missed end of speech), the app asks for the answer.
+const LIVE_NUDGE_MS = 3000;
+function liveWatchReply() {
+  clearTimeout(live.nudge);
+  live.nudge = setTimeout(() => {
+    if (!live || live.ws?.readyState !== WebSocket.OPEN || live.talking || live.speaking || live.muted) return;
+    debugLog("live: no reply to the learner, asking for one");
+    liveTurn("(Coach, not the learner: the learner has finished speaking. Answer what they just said.)");
+  }, LIVE_NUDGE_MS);
+}
+
 function bytesToBase64(bytes) {
   let s = "";
   for (let i = 0; i < bytes.length; i += 0x8000) s += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
@@ -4235,6 +4257,7 @@ function liveGate(chunk) {
     live.activeAt = Date.now(); // the learner is talking (the Büro doesn't wait for Gemini's transcript)
     if (!live.talking) {
       live.talking = true;
+      clearTimeout(live.nudge);
       officeSceneUpdate();
       live.preroll.forEach(send);
       live.preroll = [];
@@ -4247,6 +4270,7 @@ function liveGate(chunk) {
       live.talking = false;
       officeSceneUpdate();
       liveSend({ realtimeInput: { audioStreamEnd: true } });
+      liveWatchReply();
     }
   } else {
     live.preroll.push(chunk);
@@ -4337,7 +4361,7 @@ function startLiveDrill(said, correction) {
 function liveNote(text) {
   liveFlushReply();
   liveStopVoice();
-  liveSend({ clientContent: { turns: [{ role: "user", parts: [{ text: `(Coach, not the learner: ${text})` }] }], turnComplete: true } });
+  liveTurn(`(Coach, not the learner: ${text})`);
 }
 
 // Gemini heard the attempt and answers it itself; the app only decides when to put the panel
@@ -4385,7 +4409,7 @@ function liveMessage(msg) {
     const start = live.resumed
       ? "(The call was on hold or the line dropped, and it is back now: carry on from where we were in one short line, without greeting again.)"
       : live.recap.length ? "(The call reconnected: carry on.)" : liveOpener(state.settings);
-    liveSend({ clientContent: { turns: [{ role: "user", parts: [{ text: start }] }], turnComplete: true } });
+    liveTurn(start);
     return;
   }
   const update = msg.sessionResumptionUpdate;
@@ -4415,6 +4439,7 @@ function liveMessage(msg) {
   const c = msg.serverContent;
   if (!c) return;
   if (c.inputTranscription?.text || c.outputTranscription?.text || c.modelTurn) live.activeAt = Date.now();
+  if (c.outputTranscription?.text || c.modelTurn) clearTimeout(live.nudge); // Gemini is answering
   if (c.inputTranscription?.text) {
     live.heard += c.inputTranscription.text; // not shown above the text box; it goes to the chat when the turn ends
   }
@@ -4431,20 +4456,21 @@ function liveMessage(msg) {
     liveFlushReply();
     live.turnOpen = false;
     sendTutorFix(); // a mistake the coach found that this reply didn't correct
-    // The AI's word pick, as context only (turnComplete false: no reply is asked for).
+    // Quiet notes for Gemini, held until the app next sends it a turn (see liveTurn).
+    // The AI's word pick:
     if (live.wordsNote) {
-      liveSend({ clientContent: { turns: [{ role: "user", parts: [{ text: live.wordsNote }] }], turnComplete: false } });
+      live.notes.words = live.wordsNote;
       live.wordsNote = null;
     }
     // Today's grammar: which structures to draw out now (only when that changes).
     if (live.grammarNote && live.grammarNote !== live.grammarSent) {
-      liveSend({ clientContent: { turns: [{ role: "user", parts: [{ text: live.grammarNote }] }], turnComplete: false } });
+      live.notes.grammar = live.grammarNote;
       live.grammarSent = live.grammarNote;
     }
     // The level test: how many answers so far, so the examiner knows when she may decide.
     const count = MODES[state.settings.request.mode]?.assess ? assessCountNote() : null;
     if (count && count !== live.countNote) {
-      liveSend({ clientContent: { turns: [{ role: "user", parts: [{ text: count }] }], turnComplete: false } });
+      live.notes.count = count;
       live.countNote = count;
     }
     if (live.leaveAfterTurn) officeLeave(live.leaveAfterTurn); // waits for the goodbye to finish playing
@@ -4534,7 +4560,7 @@ function sendTutorFix() {
   const next = state.settings.sayAgain
     ? "then ask them to say it once more and wait"
     : "then carry on from where you were, without asking your last question again";
-  liveSend({ clientContent: { turns: [{ role: "user", parts: [{ text: `(Coach, not the learner: their last sentence ${JSON.stringify(fix.said)} had a mistake you didn't correct. As their tutor, correct it out loud now: the correct sentence is ${JSON.stringify(fix.correction)}. Say it, and why in a few simple words, ${next}.)` }] }], turnComplete: true } });
+  liveTurn(`(Coach, not the learner: their last sentence ${JSON.stringify(fix.said)} had a mistake you didn't correct. As their tutor, correct it out loud now: the correct sentence is ${JSON.stringify(fix.correction)}. Say it, and why in a few simple words, ${next}.)`);
 }
 
 // Every correction of this call, for the recap when it ends.
@@ -4561,7 +4587,7 @@ async function startLive() {
   // handle is cleared when a colleague comes over, and earlier visits are in its memory.
   const handle = callLog.length ? liveHandle() : null;
   const recap = handle ? [] : callLog.slice(office ? state.settings.visitLogStart ?? 0 : 0).slice(-LIVE_RECAP).map((e) => ("you" in e ? `Learner: ${e.you}` : `You: ${e.reply}`));
-  live = { ws: null, stream: null, tap: null, ready: false, muted: false, heard: "", reply: "", replyId: null, lastReply: "", sources: new Set(), playHead: 0, speaking: false, recap, resumed: Boolean(handle), goingAway: false, micBuf: new Int16Array(LIVE_CHUNK), micLen: 0, micPos: 0, ending: false, floor: null, talking: false, quiet: 0, preroll: [], micSent: 0, micTotal: 0 };
+  live = { ws: null, stream: null, tap: null, ready: false, muted: false, heard: "", reply: "", replyId: null, lastReply: "", sources: new Set(), playHead: 0, speaking: false, recap, resumed: Boolean(handle), goingAway: false, micBuf: new Int16Array(LIVE_CHUNK), micLen: 0, micPos: 0, ending: false, floor: null, talking: false, quiet: 0, preroll: [], micSent: 0, micTotal: 0, notes: {}, nudge: null };
   setMic(true);
   setStatus(handle ? "Reconnecting the live call…" : "Connecting the live call…");
   try {
@@ -4654,6 +4680,7 @@ function stopLive() {
   liveFlushLearner();
   liveFlushReply();
   liveStopVoice();
+  clearTimeout(l.nudge);
   live = null;
   try { l.ws?.close(); } catch { /* closed already */ }
   try { l.source?.disconnect(); l.tap?.disconnect(); } catch { /* gone already */ }
@@ -4676,7 +4703,7 @@ function liveSendText(text) {
   addLearnerMessage(text);
   state.history.push({ role: "user", content: text });
   liveStopVoice();
-  liveSend({ clientContent: { turns: [{ role: "user", parts: [{ text }] }], turnComplete: true } });
+  liveTurn(text);
   live.lastSaid = text;
   live.turnOpen = true;
   if (MODES[state.settings.request.mode]?.assess) liveAssessAnswer();
